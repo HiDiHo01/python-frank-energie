@@ -1,0 +1,34 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: 3.12
+          environment-file: environment.yml
+          activate-environment: python-frank-energie
+          use-mamba: false  # Set to false to use classic solver
+
+      - name: Verify Conda Environment
+        run: conda info --envs
+
+      - name: Run Tests
+        run: |
+          conda activate python-frank-energie
+          pytest
