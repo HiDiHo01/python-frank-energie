@@ -1,0 +1,19 @@
+name: python-frank-energie
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pandas
+  - requests
+  - pyyaml
+  - numpy
+  - scikit-learn
+  - pytest
+  - pytest-cov
+  - jupyterlab
+  - pip
+  - pip:
+      - homeassistant
+      - aiohttp
+      - fastapi
