@@ -1,5 +1,5 @@
 pip==24.2
-poetry==1.8.3
+poetry==1.8.4
 freezegun==1.5.1
 homesssistant
 jwt
