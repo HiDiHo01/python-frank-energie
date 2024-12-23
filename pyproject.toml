@@ -50,7 +50,7 @@ flake8-eradicate = "^1.2.1"
 flake8-markdown = "^0.3.0"
 freezegun = "^1.5.1"
 darglint = "^1.8.1"
-safety = "^3.2.13"
+safety = "^3.2.14"
 codespell = "^2.3.0"
 bandit = "^1.8.0"
 
