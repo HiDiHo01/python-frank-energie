@@ -108,5 +108,4 @@ async def execute_query():
 
 
 if __name__ == "__main__":
-if __name__ == "__main__":
     sys.exit(asyncio.run(execute_query()))
