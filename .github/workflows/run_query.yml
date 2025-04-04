@@ -1,0 +1,39 @@
+name: Run Frank Energie Query
+
+on:
+  workflow_dispatch:  # Allows manual triggering
+  schedule:
+    - cron: '0 6 * * *'  # Every day at 06:00 UTC
+
+jobs:
+  run-query:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          # cache: poetry  # Caching voor snellere builds
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          poetry --version
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry --version
+      - name: Install Dependencies with Poetry
+        run: poetry install --no-interaction --no-root
+
+      - name: Execute Frank Energie Query
+        run: |
+          set -e
+          poetry run python scripts/query_script.py
