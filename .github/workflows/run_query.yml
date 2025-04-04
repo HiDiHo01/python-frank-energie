@@ -1,3 +1,11 @@
+# This is a GitHub Actions workflow file that automates the process of running a Python script
+# using Poetry for dependency management. The script is executed daily at 06:00 UTC and can also be triggered manually.
+# It includes steps for checking out the repository, setting up Python, installing Poetry, configuring it,
+# installing dependencies, and finally executing the specified Python script.
+# The workflow is designed to run on the latest version of Ubuntu and uses caching for Poetry to speed up builds.
+# The script being executed is located in the 'scripts' directory and is named 'query_script.py'.
+# The workflow is triggered by a cron job and can also be manually triggered through the GitHub Actions interface.
+# The workflow is defined in YAML format and includes a series of steps that are executed sequentially.
 name: Run Frank Energie Query
 
 on:
