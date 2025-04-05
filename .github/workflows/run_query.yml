@@ -44,4 +44,5 @@ jobs:
       - name: Execute Frank Energie Query
         run: |
           set -e
-          poetry run python scripts/query_script.py
+          poetry run python python-frank-energie/scripts/test_query.py
+          # poetry run python scripts/query_script.py
