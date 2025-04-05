@@ -1,27 +1,44 @@
-name: Publish Python Package
+name: Publish to PyPI on Version Tag
 
 on:
   push:
     tags:
-      - 'v*'  # Only trigger on version tags like v0.1.0
+      - 'v*.*.*'  # Only run when a version tag is pushed
+
+permissions:
+  id-token: write  # Required for OIDC
+  contents: read
 
 jobs:
   build-and-publish:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
+    environment: pypi  # Optional but recommended for security
 
-    permissions:
-      id-token: write  # Required for trusted publishing
-      contents: read
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+      fail-fast: false
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # - name: List available Python versions
+      #   run: pyenv install --list
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install build tools
         run: |
@@ -33,4 +50,8 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://upload.pypi.org/legacy/  # Change to test.pypi.org for testing
+          # repository-url: https://upload.pypi.org/legacy/  # Change to test.pypi.org for testing
+          repository-url: https://test.pypi.org/legacy/
+
+      - name: Verify package metadata
+        run: python -m pip install --upgrade twine && twine check dist/*
