@@ -32,6 +32,7 @@ six = "^1.17.0"
 python-dateutil = "^2.9.0"
 PyJWT = "^2.10.1"
 syrupy = "^4.9.1"
+python_frank_energie = "^2025.4.6"
 
 [tool.poetry.group.dev.dependencies]
 colorama = "^0.4.6"
@@ -65,6 +66,7 @@ darglint = "^1.8.1"
 safety = "^3.2.7"
 codespell = "^2.3.0"
 bandit = "^1.8.2"
+python_frank_energie = "^2025.4.6"
 
 [tool.poetry.urls]
 "Bug Tracker" = "https://github.com/dcsbl/python-frank-energie/issues"
