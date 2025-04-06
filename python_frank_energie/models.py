@@ -1392,8 +1392,33 @@ class Price:
 
         # self.date_from = datetime.fromisoformat(data['from'])
         # self.date_till = datetime.fromisoformat(data['till'])
-        self.date_from = datetime.fromisoformat(data.get('from', ''))
-        self.date_till = datetime.fromisoformat(data.get('till', ''))
+        date_from_str = data.get('from', '')
+        date_till_str = data.get('till', '')
+        self.date_from = None
+        self.date_till = None
+
+        if date_from_str:
+            try:
+                # If the timezone format includes a colon, use dateutil.parser
+                if '+' in date_from_str and ':' in date_from_str:
+                    self.date_from = parse(date_from_str)  # Use dateutil parser for full ISO
+                else:
+                    self.date_from = datetime.fromisoformat(date_from_str)  # Regular datetime
+            except ValueError:
+                logging.warning("Invalid ISO date format: '%s'", date_from_str)
+
+        if date_till_str:
+            try:
+                # If the timezone format includes a colon, use dateutil.parser
+                if '+' in date_till_str and ':' in date_till_str:
+                    self.date_till = parse(date_till_str)  # Use dateutil parser for full ISO
+                else:
+                    self.date_till = datetime.fromisoformat(date_till_str)  # Regular datetime
+            except ValueError:
+                logging.warning("Invalid ISO date format: '%s'", date_till_str)
+
+        # self.date_from = datetime.fromisoformat(data.get('from', ''))
+        # self.date_till = datetime.fromisoformat(data.get('till', ''))
 
         """ The market price of the product or service. """
         self.market_price = data["marketPrice"]
