@@ -1399,16 +1399,29 @@ class Price:
 
         if date_from_str:
             try:
-                # Replace 'Z' with '+00:00' for UTC
-                date_from_str = date_from_str.replace('Z', '+00:00')
-                self.date_from = datetime.fromisoformat(date_from_str)  # Regular datetime
+                # Step 1: Replace 'Z' with '+00:00' to indicate UTC
+                date_str = date_from_str.replace('Z', '+00:00')
+                
+                # Step 2: Parse the date string to a datetime object
+                dt = datetime.fromisoformat(date_str)
+                
+                # Step 3: Convert the datetime object to ISO 8601 format
+                iso_format_date = dt.isoformat()
+                self.date_from = datetime.fromisoformat(iso_format_date)  # Regular datetime
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_from_str)
 
         if date_till_str:
             try:
-                date_till_str = date_till_str.replace('Z', '+00:00')
-                self.date_till = datetime.fromisoformat(date_till_str)  # Regular datetime
+                # Step 1: Replace 'Z' with '+00:00' to indicate UTC
+                date_str = date_till_str.replace('Z', '+00:00')
+                
+                # Step 2: Parse the date string to a datetime object
+                dt = datetime.fromisoformat(date_str)
+                
+                # Step 3: Convert the datetime object to ISO 8601 format
+                iso_format_date = dt.isoformat()
+                self.date_till = datetime.fromisoformat(iso_format_date)  # Regular datetime
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_till_str)
 
