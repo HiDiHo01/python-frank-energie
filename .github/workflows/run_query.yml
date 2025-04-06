@@ -40,7 +40,9 @@ jobs:
           poetry --version
           poetry lock
       - name: Install Dependencies with Poetry
-        run: poetry install --no-interaction --no-root
+        run: |
+          poetry add ./python-frank-energie --dev --editable
+          poetry install --no-interaction
 
       - name: Execute Frank Energie Query
         run: |
