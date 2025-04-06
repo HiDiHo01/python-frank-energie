@@ -20,7 +20,8 @@ from datetime import datetime, timedelta, timezone
 from python_frank_energie import FrankEnergie
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s [Line %(lineno)d]")
 _LOGGER = logging.getLogger(__name__)
 
 
