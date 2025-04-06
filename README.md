@@ -1,3 +1,4 @@
+[![Run Frank Energie Query](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/run_query.yml/badge.svg)](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/run_query.yml)
 # python-frank-energie
 
 Asyncio package to communicate with Frank Energie. This package is created to be used with https://github.com/bajansen/home-assistant-frank_energie.
