@@ -44,6 +44,7 @@ jobs:
           # poetry add ./python-frank-energie --dev --editable
           poetry install --no-interaction
           pip install -e ./  # Install the current repository as an editable package
+          pip install pytz
 
       - name: Execute Frank Energie Query
         run: |
