@@ -1399,21 +1399,16 @@ class Price:
 
         if date_from_str:
             try:
-                # If the timezone format includes a colon, use dateutil.parser
-                if '+' in date_from_str and ':' in date_from_str:
-                    self.date_from = parse(date_from_str)  # Use dateutil parser for full ISO
-                else:
-                    self.date_from = datetime.fromisoformat(date_from_str)  # Regular datetime
+                # Replace 'Z' with '+00:00' for UTC
+                date_from_str = date_from_str.replace('Z', '+00:00')
+                self.date_from = datetime.fromisoformat(date_from_str)  # Regular datetime
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_from_str)
 
         if date_till_str:
             try:
-                # If the timezone format includes a colon, use dateutil.parser
-                if '+' in date_till_str and ':' in date_till_str:
-                    self.date_till = parse(date_till_str)  # Use dateutil parser for full ISO
-                else:
-                    self.date_till = datetime.fromisoformat(date_till_str)  # Regular datetime
+                date_till_str = date_till_str.replace('Z', '+00:00')
+                self.date_till = datetime.fromisoformat(date_till_str)  # Regular datetime
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_till_str)
 
