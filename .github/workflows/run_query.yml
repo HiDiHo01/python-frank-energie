@@ -41,7 +41,7 @@ jobs:
           poetry lock
       - name: Install Dependencies with Poetry
         run: |
-          poetry add ./python-frank-energie --dev --editable
+          # poetry add ./python-frank-energie --dev --editable
           poetry install --no-interaction
           pip install -e ./  # Install the current repository as an editable package
 
