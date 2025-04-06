@@ -16,15 +16,18 @@ on:
 jobs:
   run-query:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
           # cache: poetry  # Caching voor snellere builds
 
       - name: Install Poetry
@@ -39,6 +42,7 @@ jobs:
           poetry config virtualenvs.in-project true
           poetry --version
           poetry lock
+
       - name: Install Dependencies with Poetry
         run: |
           # poetry add ./python-frank-energie --dev --editable
@@ -50,3 +54,9 @@ jobs:
         run: |
           set -e
           poetry run /home/runner/work/python-frank-energie/python-frank-energie/.venv/bin/python /home/runner/work/python-frank-energie/python-frank-energie/scripts/test_query.py
+
+      - name: Upload Log Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frank-energie-logs-${{ matrix.python-version }}
+          path: logs/output_${{ matrix.python-version }}.log
