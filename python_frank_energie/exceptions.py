@@ -27,5 +27,8 @@ class NetworkError(FrankEnergieException):
 class SmartTradingNotEnabledException(FrankEnergieException):
     """Exception raised when smart trading is not enabled for the user."""
 
+class SmartChargingNotEnabledException(FrankEnergieException):
+    """Exception raised when smart charging is not enabled for the user."""
+
 class ConnectionException(FrankEnergieException):
     """Raised for network-related errors in FrankEnergie."""

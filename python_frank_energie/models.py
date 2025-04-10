@@ -12,7 +12,7 @@ from typing import Any, Optional, Set, Union
 import jwt
 import pytz
 from dateutil import parser
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field, field_validator, model_validator, EmailStr
 
 from .exceptions import AuthException, RequestException
 from .time_periods import TimePeriod
@@ -21,7 +21,7 @@ DEFAULT_ROUND = 6
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-VERSION = "2025.4.1"
+VERSION = "2025.4.11"
 
 
 @dataclass
@@ -283,7 +283,7 @@ class Invoices:
 
         return expected_costs_this_year
 
-    def get_unique_years(self) -> set[int]:
+    def get_unique_years(self) -> Set[int]:
         """Get the unique years present in allPeriodsInvoices."""
         unique_years = {
             invoice.StartDate.year for invoice in self.allPeriodsInvoices}
@@ -420,6 +420,8 @@ class EnergyCategory:
             if data is None:
                 return EnergyCategory(usage_total=0.00, costs_total=0.00, unit="", items=[])
 
+            # usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else 0.00
+            # costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else 0.00
             usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else 0.00
             costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else 0.00
 
@@ -491,7 +493,7 @@ class UserSites:
 
     @staticmethod
     def from_dict(data: dict[str, str]) -> 'UserSites':
-        """Parse the response from the me query."""
+        """Parse the response from the UserSites query."""
         _LOGGER.debug("UserSites %s", data)
 
         if errors := data.get("errors"):
@@ -1346,32 +1348,170 @@ class MonthSummary:
 
 
 @dataclass
+class ChargeSettings:
+    """Represents the charge settings for an enode charger."""
+    calculated_deadline: datetime
+    capacity: float
+    deadline: Optional[datetime]
+    hour_friday: int
+    hour_monday: int
+    hour_saturday: int
+    hour_sunday: int
+    hour_thursday: int
+    hour_tuesday: int
+    hour_wednesday: int
+    id: str
+    initial_charge: float
+    initial_charge_timestamp: datetime
+    is_smart_charging_enabled: bool
+    is_solar_charging_enabled: bool
+    max_charge_limit: float
+    min_charge_limit: float
+
+
+@dataclass
+class ChargeState:
+    """Represents the charge state for an enode charger."""
+    battery_capacity: Optional[float]
+    battery_level: Optional[float]
+    charge_limit: Optional[float]
+    charge_rate: Optional[float]
+    charge_time_remaining: Optional[float]
+    is_charging: bool
+    is_fully_charged: Optional[bool]
+    is_plugged_in: bool
+    last_updated: datetime
+    power_delivery_state: str
+    range: Optional[float]
+
+
+@dataclass
+class Intervention:
+    """Represents an intervention for an enode charger."""
+    description: str
+    title: str
+
+
+@dataclass
+class EnodeCharger:
+    """Represents a single enode charger with relevant information."""
+    can_smart_charge: bool
+    charge_settings: ChargeSettings
+    charge_state: ChargeState
+    id: str
+    information: dict
+    interventions: list[Intervention]
+    is_reachable: bool
+    last_seen: datetime
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'EnodeCharger':
+        """Create an instance of EnodeCharger from a dictionary."""
+        charge_settings_data = data['chargeSettings']
+        charge_state_data = data['chargeState']
+        interventions_data = data['interventions']
+        
+        charge_settings = ChargeSettings(
+            calculated_deadline=datetime.fromisoformat(charge_settings_data['calculatedDeadline']),
+            capacity=charge_settings_data['capacity'],
+            deadline=datetime.fromisoformat(charge_settings_data['deadline']) if charge_settings_data['deadline'] else None,
+            hour_friday=charge_settings_data['hourFriday'],
+            hour_monday=charge_settings_data['hourMonday'],
+            hour_saturday=charge_settings_data['hourSaturday'],
+            hour_sunday=charge_settings_data['hourSunday'],
+            hour_thursday=charge_settings_data['hourThursday'],
+            hour_tuesday=charge_settings_data['hourTuesday'],
+            hour_wednesday=charge_settings_data['hourWednesday'],
+            id=charge_settings_data['id'],
+            initial_charge=charge_settings_data['initialCharge'],
+            initial_charge_timestamp=datetime.fromisoformat(charge_settings_data['initialChargeTimestamp']),
+            is_smart_charging_enabled=charge_settings_data['isSmartChargingEnabled'],
+            is_solar_charging_enabled=charge_settings_data['isSolarChargingEnabled'],
+            max_charge_limit=charge_settings_data['maxChargeLimit'],
+            min_charge_limit=charge_settings_data['minChargeLimit']
+        )
+
+        charge_state = ChargeState(
+            battery_capacity=charge_state_data['batteryCapacity'],
+            battery_level=charge_state_data['batteryLevel'],
+            charge_limit=charge_state_data['chargeLimit'],
+            charge_rate=charge_state_data['chargeRate'],
+            charge_time_remaining=charge_state_data['chargeTimeRemaining'],
+            is_charging=charge_state_data['isCharging'],
+            is_fully_charged=charge_state_data['isFullyCharged'],
+            is_plugged_in=charge_state_data['isPluggedIn'],
+            last_updated=datetime.fromisoformat(charge_state_data['lastUpdated']),
+            power_delivery_state=charge_state_data['powerDeliveryState'],
+            range=charge_state_data['range']
+        )
+
+        interventions = [Intervention(description=intervention['description'], title=intervention['title'])
+                         for intervention in interventions_data]
+
+        return cls(
+            can_smart_charge=data['canSmartCharge'],
+            charge_settings=charge_settings,
+            charge_state=charge_state,
+            id=data['id'],
+            information=data['information'],
+            interventions=interventions,
+            is_reachable=data['isReachable'],
+            last_seen=datetime.fromisoformat(data['lastSeen'])
+        )
+
+
+@dataclass
+class EnodeChargers:
+    """Represents a collection of enode chargers."""
+    chargers: list[EnodeCharger]
+
+    @classmethod
+    def from_dict(cls, data: list[dict]) -> 'EnodeChargers':
+        """Create an instance of EnodeChargers from a list of dictionaries."""
+        chargers = [EnodeCharger.from_dict(item) for item in data]
+        return cls(chargers=chargers)
+
+    def old_as_dict(self) -> dict[str, EnodeCharger]:
+        """Convert the charger list to a dictionary keyed by charger ID."""
+        return {charger.id: charger for charger in self.chargers}
+
+    def as_dict(self) -> dict[str, EnodeCharger]:
+        """Return only chargers with smart charging enabled as a dict keyed by charger ID."""
+        return {
+            charger.id: charger
+            for charger in self.chargers
+            if charger.charge_settings.is_smart_charging_enabled
+        }
+
+@dataclass
 class Price:
     """Price data for one hour."""
 
     date_from: datetime
     date_till: datetime
-    price_data: Any
-    unit: float
+    price_data: list['Price']
     energy_type: Optional[str] = None
     market_price: float = 0.0
     market_price_tax: float = 0.0
     sourcing_markup_price: float = 0.0
     energy_tax_price: float = 0.0
     total: float = 0.0
-    per_unit: str = None
+    per_unit: Optional[str] = None
+    unit: Optional[str] = None      
     tax_rate: float = 0.0
     tax: float = 0.0
     # start_time: datetime = None
     # timestamp: datetime = None
-    start_time: datetime = field(default_factory=datetime.now)
-    timestamp: datetime = field(default_factory=datetime.now)
+    # start_time: datetime = field(default_factory=datetime.now)
+    # timestamp: datetime = field(default_factory=datetime.now)
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     for_now: bool = False
     for_today: bool = False
     for_tomorrow: bool = False
     for_upcoming: bool = False
-    market_price_including_tax: Optional[float] = None
-    market_price_including_tax_and_markup: Optional[float] = None
+    market_price_including_tax: float = 0.0
+    market_price_including_tax_and_markup: float = 0.0
 
     def __post_init__(self):
         """Initialize energy_type if provided in data."""
@@ -1390,8 +1530,6 @@ class Price:
         self.energy_type = energy_type
         # self.energy_type = data.get("energy_type", None)
 
-        # self.date_from = datetime.fromisoformat(data['from'])
-        # self.date_till = datetime.fromisoformat(data['till'])
         date_from_str = data.get('from', '')
         date_till_str = data.get('till', '')
         self.date_from = None
@@ -1450,7 +1588,13 @@ class Price:
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
-        return f"{self.date_from} -> {self.date_till}: {self.total} {self.per_unit}"
+        # return f"{self.date_from} -> {self.date_till}: {self.total} {self.per_unit}"
+        return "%s -> %s: %.4f %s" % (
+            self.date_from.isoformat() if self.date_from else "N/A",
+            self.date_till.isoformat() if self.date_till else "N/A",
+            self.total,
+            self.per_unit or ""
+        )
 
     @property
     def ET(self, data) -> str:
@@ -1655,6 +1799,14 @@ class PriceData:
     upcoming_prices: list[Price] = None
     elec_previoushour: float = None
     elec_nexthour: float = None
+    gas_unit: str = None
+    elec_unit: str = None
+
+    PriceDataAvg = namedtuple('PriceDataAvg', [
+        'values', 'total', 'market_price_with_tax_and_markup',
+        'market_markup_price', 'market_price_with_tax',
+        'market_price_tax', 'market_price'
+    ])
 
     def __init__(self, prices: Optional[list['Price']] = None, energy_type: Optional[str] = None):
         self.price_data = [Price({**price, "energy_type": energy_type})
@@ -2183,12 +2335,6 @@ class PriceData:
         if not upcoming_prices:
             return None
 
-        PriceDataAvg = namedtuple('PriceDataAvg', [
-            'values', 'total', 'market_price_with_tax_and_markup',
-            'market_markup_price', 'market_price_with_tax',
-            'market_price_tax', 'market_price'
-        ])
-
         avg = round(mean(price.total for price in upcoming_prices),
                     DEFAULT_ROUND)
         market_price_with_tax_and_markup_avg = round(mean(
@@ -2202,6 +2348,12 @@ class PriceData:
         market_price_avg = round(
             mean(price.market_price for price in upcoming_prices), DEFAULT_ROUND)
 
+        PriceDataAvg = namedtuple('PriceDataAvg', [
+            'values', 'total', 'market_price_with_tax_and_markup',
+            'market_markup_price', 'market_price_with_tax',
+            'market_price_tax', 'market_price'
+        ])
+
         return PriceDataAvg(
             values=upcoming_prices,
             total=avg,
@@ -2213,7 +2365,7 @@ class PriceData:
         )
 
     @property
-    def tomorrow_avg(self):
+    def tomorrow_avg(self) -> Optional[PriceDataAvg]:
         """Get the average of tomorrow's prices."""
         now = datetime.now(timezone.utc).astimezone()
         tomorrow = now + timedelta(days=1)
@@ -2230,12 +2382,6 @@ class PriceData:
         if not tomorrow_prices:
             return None
 
-        PriceDataAvg = namedtuple('PriceDataAvg', [
-            'values', 'total', 'market_price_with_tax_and_markup',
-            'market_markup_price', 'market_price_with_tax',
-            'market_price_tax', 'market_price'
-        ])
-
         avg = round(mean(price.total for price in tomorrow_prices),
                     DEFAULT_ROUND)
         market_price_with_tax_and_markup_avg = round(mean(
@@ -2248,6 +2394,12 @@ class PriceData:
             mean(price.sourcing_markup_price for price in tomorrow_prices), DEFAULT_ROUND)
         market_price_avg = round(
             mean(price.market_price for price in tomorrow_prices), DEFAULT_ROUND)
+
+        PriceDataAvg = namedtuple('PriceDataAvg', [
+            'values', 'total', 'market_price_with_tax_and_markup',
+            'market_markup_price', 'market_price_with_tax',
+            'market_price_tax', 'market_price'
+        ])
 
         return PriceDataAvg(
             values=tomorrow_prices,

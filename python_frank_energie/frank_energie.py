@@ -7,6 +7,8 @@ from http import HTTPStatus
 from typing import Any, Optional
 import logging
 
+_LOGGER = logging.getLogger(__name__)
+
 import aiohttp
 import requests
 import sys
@@ -17,17 +19,18 @@ from .authentication import Authentication
 from .exceptions import (AuthException, AuthRequiredException,
                          ConnectionException, FrankEnergieError,
                          FrankEnergieException, LoginError, NetworkError,
-                         RequestException, SmartTradingNotEnabledException)
-from .models import (Authentication, EnergyConsumption, Invoice, Invoices,
+                         RequestException, SmartTradingNotEnabledException, SmartChargingNotEnabledException)
+from .models import (Authentication, EnergyConsumption, EnodeChargers, Invoice, Invoices,
                      MarketPrices, Me, MonthInsights, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.3.22"
+VERSION = "2025.4.11"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 class FrankEnergieQuery:
+    """Represents a GraphQL query for the FrankEnergie API."""
     def __init__(self, query: str, operation_name: str, variables: Optional[dict[str, Any]] = None):
         self.query = query
         self.operation_name = operation_name
@@ -49,7 +52,7 @@ def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
 
 
 class FrankEnergie:
-    """FrankEnergie API."""
+    """FrankEnergie API client."""
 
     DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
 
@@ -77,6 +80,7 @@ class FrankEnergie:
             The response from the API as a dictionary.
 
         Raises:
+            NetworkError: If the network request fails.
             FrankEnergieException: If the request fails.
         """
         # if self._session is None:
@@ -86,25 +90,26 @@ class FrankEnergie:
             self._session = ClientSession()
             self._close_session = True
 
-        try:
-            # print(f"Request: POST {self.DATA_URL}")
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._auth.authToken}"
-            } if self._auth is not None else None
-            # print(f"Request headers: {headers}")
-            logging.debug("Request headers: %s", headers)
-            # print(f"Request payload: {query}")
-            # print(f"Request payload: {query.to_dict()}")
-            logging.debug("Request payload: %s", query.to_dict())
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._auth.authToken}"
+        } if self._auth is not None else None
 
+        # print(f"Request: POST {self.DATA_URL}")
+        # print(f"Request headers: {headers}")
+        logging.debug("Request headers: %s", headers)
+        # print(f"Request payload: {query}")
+        # print(f"Request payload: {query.to_dict()}")
+        logging.debug("Request payload: %s", query.to_dict())
+
+        try:
             async with self._session.post(
                 self.DATA_URL,
                 json=query.to_dict(),
                 headers=headers
             ) as resp:
                 resp.raise_for_status()
-                response = await resp.json()
+                response: dict[str, Any] = await resp.json()
 
             # self._process_diagnostic_data(response)
             self._handle_errors(response)
@@ -118,11 +123,26 @@ class FrankEnergie:
                 return response
 
         except (asyncio.TimeoutError, ClientError, KeyError) as error:
-            raise FrankEnergieException(f"Request failed: {error}") from error
+            _LOGGER.error("Request failed: %s", error)
+            raise NetworkError(f"Request failed: {error}") from error
+        except aiohttp.ClientResponseError as error:
+            if error.status == HTTPStatus.UNAUTHORIZED:
+                raise AuthRequiredException("Authentication required.") from error
+            elif error.status == HTTPStatus.FORBIDDEN:
+                raise AuthException("Forbidden: Invalid credentials.") from error
+            elif error.status == HTTPStatus.BAD_REQUEST:
+                raise RequestException("Bad request: Invalid query.") from error
+            elif error.status == HTTPStatus.INTERNAL_SERVER_ERROR:
+                raise FrankEnergieException("Internal server error.") from error
+            else:
+                raise FrankEnergieException(f"Unexpected response: {error}") from error
         except Exception as error:
-            import traceback
-            traceback.print_exc()
-            raise error
+            _LOGGER.exception("Unexpected error during query: %s", error)
+            raise FrankEnergieException("Unexpected error occurred.") from error
+#         except Exception as error:
+#             import traceback
+#             traceback.print_exc()
+#             raise error
 
     def _process_diagnostic_data(self, response: dict[str, Any]) -> None:
         """Process the diagnostic data and update the sensor state.
@@ -164,9 +184,13 @@ class FrankEnergie:
                 elif message == "user-error:smart-trading-not-enabled":
                     raise SmartTradingNotEnabledException(
                         "Smart trading is not enabled for this user.")
+                elif message == "user-error:smart-charging-not-enabled":
+                    raise SmartChargingNotEnabledException(
+                        "Smart charging is not enabled for this user.")
                 else:
                     print(message)
-                    raise AuthException("Authorization error")
+                    _LOGGER.error("Unhandled error: %s", message)
+                    # raise AuthException("Authorization error")
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
@@ -331,6 +355,105 @@ class FrankEnergie:
             raise FrankEnergieException(
               f"Failed to fetch month summary: {e}"
               ) from e
+
+    async def enode_chargers(self, site_reference: str, start_date: date) -> dict[str, EnodeChargers]:
+        """Retrieve the enode charger information for the specified site reference.
+
+        Args:
+            site_reference: The site reference for which to retrieve the enode charger information.
+            start_date: The start date for filtering the enode charger information.
+
+        Returns:
+            The enode charger information.
+
+        Raises:
+            AuthRequiredException: If the client is not authenticated.
+            FrankEnergieException: If the request fails.
+        """
+        if self._auth is None or not self.is_authenticated:
+            _LOGGER.debug("Skipping Enode Chargers: not authenticated.")
+            return {}
+            # raise AuthRequiredException("Authentication is required.")
+
+        query = FrankEnergieQuery(
+            """
+            query EnodeChargers {
+                enodeChargers {
+                    canSmartCharge
+                    chargeSettings {
+                        calculatedDeadline
+                        capacity
+                        deadline
+                        hourFriday
+                        hourMonday
+                        hourSaturday
+                        hourSunday
+                        hourThursday
+                        hourTuesday
+                        hourWednesday
+                        id
+                        initialCharge
+                        initialChargeTimestamp
+                        isSmartChargingEnabled
+                        isSolarChargingEnabled
+                        maxChargeLimit
+                        minChargeLimit
+                    }
+                    chargeState {
+                        batteryCapacity
+                        batteryLevel
+                        chargeLimit
+                        chargeRate
+                        chargeTimeRemaining
+                        isCharging
+                        isFullyCharged
+                        isPluggedIn
+                        lastUpdated
+                        powerDeliveryState
+                        range
+                    }
+                    id
+                    information {
+                        brand
+                        model
+                        year
+                    }
+                    interventions {
+                        description
+                        title
+                    }
+                    isReachable
+                    lastSeen
+                }
+            }
+            """,
+            "EnodeChargers",
+            {"siteReference": site_reference},
+        )
+
+        try:
+
+            response = await self._query(query)
+            # Response data for testing purposes
+            # response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
+            # response = {"data": {"enodeChargers": [{"canSmartCharge": True, "chargeSettings": {"calculatedDeadline": "2025-03-24T06:00:00.000Z", "capacity": 75, "deadline": None, "hourFriday": 420, "hourMonday": 420, "hourSaturday": 420, "hourSunday": 420, "hourThursday": 420, "hourTuesday": 420, "hourWednesday": 420, "id": "cm3rogazq06pz13p8eucfutnx", "initialCharge": 0, "initialChargeTimestamp": "2024-11-21T19:00:15.396Z", "isSmartChargingEnabled": True, "isSolarChargingEnabled": False, "maxChargeLimit": 80, "minChargeLimit": 20}, "chargeState": {"batteryCapacity": None, "batteryLevel": None, "chargeLimit": None, "chargeRate": None, "chargeTimeRemaining": None, "isCharging": False, "isFullyCharged": None, "isPluggedIn": False, "lastUpdated": "2025-03-23T16:06:57.000Z", "powerDeliveryState": "UNPLUGGED", "range": None}, "id": "cm3rogazq06pz13p8eucfutnx", "information": {"brand": "Wallbox", "model": "Pulsar Plus", "year": None}, "interventions": [], "isReachable": True, "lastSeen": "2025-03-23T16:24:51.913Z"}, {"canSmartCharge": True, "chargeSettings": {"calculatedDeadline": "2025-03-24T06:00:00.000Z", "capacity": 75, "deadline": None, "hourFriday": 420, "hourMonday": 420, "hourSaturday": 420, "hourSunday": 420, "hourThursday": 420, "hourTuesday": 420, "hourWednesday": 420, "id": "cm3rogap606pu13p8w08epzjx", "initialCharge": 0, "initialChargeTimestamp": "2024-11-21T19:00:15.016Z", "isSmartChargingEnabled": True, "isSolarChargingEnabled": False, "maxChargeLimit": 80, "minChargeLimit": 20}, "chargeState": {"batteryCapacity": None, "batteryLevel": None, "chargeLimit": None, "chargeRate": 10.71, "chargeTimeRemaining": None, "isCharging": True, "isFullyCharged": None, "isPluggedIn": True, "lastUpdated": "2025-03-23T16:23:53.000Z", "powerDeliveryState": "PLUGGED_IN:CHARGING", "range": None}, "id": "cm3rogap606pu13p8w08epzjx", "information": {"brand": "Wallbox", "model": "Pulsar Plus", "year": None}, "interventions": [], "isReachable": True, "lastSeen": "2025-03-23T16:24:50.746Z"}]}}
+            chargers = response.get("data", {}).get("enodeChargers", [])
+            _LOGGER.debug("Format for 'enodeChargers' response: %s", type(response))
+            _LOGGER.debug("Format for 'enodeChargers' chargers: %s", type(chargers))
+            # if not isinstance(chargers, list):
+            #     _LOGGER.debug("Unexpected format for 'enodeChargers': %s", chargers)
+            #     return []
+            return EnodeChargers.from_dict(response['data']['enodeChargers'])
+        except Exception as error:
+            _LOGGER.debug("Error in enode_chargers: %s", error)
+            _LOGGER.exception("Unexpected error during query: %s", error)
+            return {}
+            # raise FrankEnergieException("Unexpected error occurred.") from error
+#        except Exception as e:
+#            raise FrankEnergieException(
+#              f"Failed to fetch Enode Chargers: {e}"
+#              ) from e
+
 
     async def UserEnergyConsumption(self) -> EnergyConsumption:
         if self._auth is None:
@@ -1335,9 +1458,9 @@ class FrankEnergie:
                         periodTradeIndex
                         periodTradingResult
                         sessions {
-                        cumulativeTradingResult
-                        date
-                        tradingResult
+                            cumulativeTradingResult
+                            date
+                            tradingResult
                         }
                         totalTradingResult
                     }
@@ -1376,6 +1499,11 @@ class FrankEnergie:
         if self._auth is None:
             return False
         return self._auth.authTokenValid()
+
+    def _check_authentication(self) -> None:
+        """Check if client is authenticated and raise exception if not."""
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
 
     async def close(self) -> None:
         """Close client session."""
