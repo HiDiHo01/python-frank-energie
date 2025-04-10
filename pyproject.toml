@@ -1,14 +1,14 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2025.4.6"
+version = "2025.4.11"
 description = "Asynchronous Python client for the Frank Energie"
-authors = ["DCSBL"]
-maintainers = ["DCSBL"]
+authors = ["HiDiHo01"]
+maintainers = ["HiDiHo01"]
 license = "Apache License 2.0"
 readme = "README.md"
-homepage = "https://github.com/dcsbl/python-frank-energie"
-repository = "https://github.com/dcsbl/python-frank-energie"
-documentation = "https://github.com/dcsbl/python-frank-energie"
+homepage = "https://github.com/HiDiHo01/python-frank-energie"
+repository = "https://github.com/HiDiHo01/python-frank-energie"
+documentation = "https://github.com/HiDiHo01/python-frank-energie"
 classifiers = [
     "Programming Language :: Python :: 3.10",
     "License :: OSI Approved :: Apache Software License",
@@ -72,8 +72,8 @@ codespell = "^2.3.0"
 bandit = "^1.8.2"
 
 [tool.poetry.urls]
-"Bug Tracker" = "https://github.com/dcsbl/python-frank-energie/issues"
-Changelog = "https://github.com/dcsbl/python-frank-energie/releases"
+"Bug Tracker" = "https://github.com/HiDiHo01/python-frank-energie/issues"
+Changelog = "https://github.com/HiDiHo01/python-frank-energie/releases"
 
 [tool.black]
 target-version = ['py310']
