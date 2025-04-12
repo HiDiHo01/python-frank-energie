@@ -12,7 +12,7 @@ from typing import Any, Optional, Set, Union
 import jwt
 import pytz
 from dateutil import parser
-from pydantic import BaseModel, Field, field_validator, model_validator, EmailStr
+from pydantic import BaseModel, EmailStr
 
 from .exceptions import AuthException, RequestException
 from .time_periods import TimePeriod
@@ -2708,7 +2708,9 @@ class SmartBatteries:
         """Parse the response from the smartBatteries query."""
 
         if not data:
-            raise RequestException("Unexpected response")
+            _LOGGER.debug("No data found")
+            return SmartBatteries(smart_batteries=[])
+            # raise RequestException("Unexpected response")
 
         _LOGGER.debug("SmartBatteries %s", data)
 
@@ -2718,11 +2720,16 @@ class SmartBatteries:
         payload = data.get("smartBatteries")
         if not payload:
             raise RequestException("Unexpected response")
+        if not isinstance(payload, list):
+            raise RequestException("Expected 'smartBatteries' to be a list.")
+
+        print(payload)
 
         return SmartBatteries(
             smart_batteries=[
                 SmartBatteries.SmartBattery.from_dict(smart_battery)
-                for smart_battery in payload.get("smartBatteries", [])
+                for smart_battery in payload
+                # for smart_battery in payload.get("smartBatteries", [])
             ],
         )
 
@@ -2741,7 +2748,8 @@ class SmartBatterySessions:
 
         payload = data.get("data")
         if not payload:
-            raise RequestException("Unexpected response")
+            return None
+           # raise RequestException("Unexpected response")
 
         smart_battery_session_data = payload.get("smartBatterySessions")
         return SmartBatterySessions(
