@@ -6,12 +6,14 @@ from datetime import date, timedelta
 from http import HTTPStatus
 from typing import Any, Optional
 import logging
+from homeassistant.const import __version__ as ha_version
 
 _LOGGER = logging.getLogger(__name__)
 
 import aiohttp
 import requests
 import sys
+import platform
 from aiohttp.client import ClientResponse, ClientSession
 from aiohttp.client_exceptions import ClientError
 
@@ -22,9 +24,9 @@ from .exceptions import (AuthException, AuthRequiredException,
                          RequestException, SmartTradingNotEnabledException, SmartChargingNotEnabledException)
 from .models import (Authentication, EnergyConsumption, EnodeChargers, Invoice, Invoices,
                      MarketPrices, Me, MonthInsights, MonthSummary,
-                     PeriodUsageAndCosts, SmartBatteries, SmartBatterySessions, User, UserSites)
+                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatterySummary, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.4.11"
+VERSION = "2025.4.28"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -70,6 +72,18 @@ class FrankEnergie:
         if auth_token is not None or refresh_token is not None:
             self._auth = Authentication(auth_token, refresh_token)
 
+    @staticmethod
+    def generate_system_user_agent() -> str:
+        """Generate the system user-agent string for API requests."""
+        system = platform.system()  # e.g., 'Darwin' for macOS, 'Windows' for Windows
+        system_platform = sys.platform  # e.g., 'win32', 'linux', 'darwin'
+        release = platform.release()  # OS version (e.g., '10.15.7')
+        home_assistant_version = ha_version  # Home Assistant version
+        version = VERSION  # App version
+
+        user_agent = f"FrankEnergie/{version} {system}/{release} {system_platform} HomeAssistant/{home_assistant_version}"
+        return user_agent
+
     async def _query(self, query: FrankEnergieQuery) -> dict[str, Any]:
         """Send a query to the FrankEnergie API.
 
@@ -83,15 +97,14 @@ class FrankEnergie:
             NetworkError: If the network request fails.
             FrankEnergieException: If the request fails.
         """
-        # if self._session is None:
-        #     self._session = ClientSession()
-        #     self._close_session = True
+
         if not isinstance(self._session, ClientSession):
             self._session = ClientSession()
             self._close_session = True
 
         headers = {
             "Content-Type": "application/json",
+            "User-Agent": self.generate_system_user_agent(),
             "Authorization": f"Bearer {self._auth.authToken}"
         } if self._auth is not None else None
 
@@ -100,7 +113,10 @@ class FrankEnergie:
         logging.debug("Request headers: %s", headers)
         # print(f"Request payload: {query}")
         # print(f"Request payload: {query.to_dict()}")
-        logging.debug("Request payload: %s", query.to_dict())
+        if isinstance(query, dict):
+            logging.debug("Request payload: %s", query)
+        else:
+            logging.debug("Request payload: %s", query.to_dict())
 
         try:
             async with self._session.post(
@@ -163,34 +179,41 @@ class FrankEnergie:
         """
 
         errors = response.get("errors")
-        if errors:
-            for error in errors:
-                message = error["message"]
-                if message == "user-error:password-invalid":
-                    raise AuthException("Invalid password")
-                elif message == "user-error:auth-not-authorised":
-                    raise AuthException("Not authorized")
-                elif message == "user-error:auth-required":
-                    raise AuthRequiredException("Authentication required")
-                elif message == "Graphql validation error":
-                    raise FrankEnergieException(
-                        "Request failed: Graphql validation error")
-                elif message.startswith("No marketprices found for segment"):
-                    # raise FrankEnergieException("Request failed: %s", error["message"])
-                    return
-                elif message.startswith("No connections found for user"):
-                    raise FrankEnergieException(
-                        "Request failed: %s", message)
-                elif message == "user-error:smart-trading-not-enabled":
-                    raise SmartTradingNotEnabledException(
-                        "Smart trading is not enabled for this user.")
-                elif message == "user-error:smart-charging-not-enabled":
-                    raise SmartChargingNotEnabledException(
-                        "Smart charging is not enabled for this user.")
-                else:
-                    print(message)
-                    _LOGGER.error("Unhandled error: %s", message)
-                    # raise AuthException("Authorization error")
+        if not errors:
+            return
+
+        for error in errors:
+            message = error["message"]
+            path = error["path"] if "path" in error else None
+            if message == "user-error:password-invalid":
+                raise AuthException("Invalid password")
+            elif message == "user-error:auth-not-authorised":
+                raise AuthException("Not authorized")
+            elif message == "user-error:auth-required":
+                raise AuthRequiredException("Authentication required")
+            elif message == "Graphql validation error":
+                raise FrankEnergieException(
+                    "Request failed: Graphql validation error")
+            elif message.startswith("No marketprices found for segment"):
+                # raise FrankEnergieException("Request failed: %s", error["message"])
+                return
+            elif message.startswith("No connections found for user"):
+                raise FrankEnergieException(
+                    "Request failed: %s", message)
+            elif message == "user-error:smart-trading-not-enabled":
+                _LOGGER.debug("Smart trading is not enabled for this user.")
+                # raise SmartTradingNotEnabledException(
+                #     "Smart trading is not enabled for this user.")
+            elif message == "user-error:smart-charging-not-enabled":
+                _LOGGER.debug("Smart charging is not enabled for this user.")
+                # raise SmartChargingNotEnabledException(
+                #     "Smart charging is not enabled for this user.")
+            elif message == "'Base' niet aanwezig in prijzen verzameling":
+                _LOGGER.debug("'Base' niet aanwezig in prijzen verzameling %s.", path)
+            else:
+                print(message)
+                _LOGGER.error("Unhandled error: %s", message)
+                # raise AuthException("Authorization error")
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
@@ -436,8 +459,21 @@ class FrankEnergie:
             response = await self._query(query)
             # Response data for testing purposes
             # response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
-            # response = {"data": {"enodeChargers": [{"canSmartCharge": True, "chargeSettings": {"calculatedDeadline": "2025-03-24T06:00:00.000Z", "capacity": 75, "deadline": None, "hourFriday": 420, "hourMonday": 420, "hourSaturday": 420, "hourSunday": 420, "hourThursday": 420, "hourTuesday": 420, "hourWednesday": 420, "id": "cm3rogazq06pz13p8eucfutnx", "initialCharge": 0, "initialChargeTimestamp": "2024-11-21T19:00:15.396Z", "isSmartChargingEnabled": True, "isSolarChargingEnabled": False, "maxChargeLimit": 80, "minChargeLimit": 20}, "chargeState": {"batteryCapacity": None, "batteryLevel": None, "chargeLimit": None, "chargeRate": None, "chargeTimeRemaining": None, "isCharging": False, "isFullyCharged": None, "isPluggedIn": False, "lastUpdated": "2025-03-23T16:06:57.000Z", "powerDeliveryState": "UNPLUGGED", "range": None}, "id": "cm3rogazq06pz13p8eucfutnx", "information": {"brand": "Wallbox", "model": "Pulsar Plus", "year": None}, "interventions": [], "isReachable": True, "lastSeen": "2025-03-23T16:24:51.913Z"}, {"canSmartCharge": True, "chargeSettings": {"calculatedDeadline": "2025-03-24T06:00:00.000Z", "capacity": 75, "deadline": None, "hourFriday": 420, "hourMonday": 420, "hourSaturday": 420, "hourSunday": 420, "hourThursday": 420, "hourTuesday": 420, "hourWednesday": 420, "id": "cm3rogap606pu13p8w08epzjx", "initialCharge": 0, "initialChargeTimestamp": "2024-11-21T19:00:15.016Z", "isSmartChargingEnabled": True, "isSolarChargingEnabled": False, "maxChargeLimit": 80, "minChargeLimit": 20}, "chargeState": {"batteryCapacity": None, "batteryLevel": None, "chargeLimit": None, "chargeRate": 10.71, "chargeTimeRemaining": None, "isCharging": True, "isFullyCharged": None, "isPluggedIn": True, "lastUpdated": "2025-03-23T16:23:53.000Z", "powerDeliveryState": "PLUGGED_IN:CHARGING", "range": None}, "id": "cm3rogap606pu13p8w08epzjx", "information": {"brand": "Wallbox", "model": "Pulsar Plus", "year": None}, "interventions": [], "isReachable": True, "lastSeen": "2025-03-23T16:24:50.746Z"}]}}
+            if response is None:
+                _LOGGER.debug("No response data for 'enodeChargers'")
+                return {}
+            if 'data' not in response:
+                _LOGGER.debug("No data found in response for chargers: %s", response)
+                return {}
+            if response['data'] is None:
+                _LOGGER.debug("No data for chargers found: %s", response)
+                return {}   
+            if 'enodeChargers' not in response['data']:
+                _LOGGER.debug("No chargers found in data: %s", response)
+                return {}   
             chargers = response.get("data", {}).get("enodeChargers", [])
+            _LOGGER.info("%s Enode Chargers Found", len(chargers))
+            _LOGGER.debug("Enode Chargers: %s", chargers)
             _LOGGER.debug("Format for 'enodeChargers' response: %s", type(response))
             _LOGGER.debug("Format for 'enodeChargers' chargers: %s", type(chargers))
             # if not isinstance(chargers, list):
@@ -1272,8 +1308,9 @@ class FrankEnergie:
             "MarketPrices",
             {"date": str(start_date), "siteReference": site_reference},
         )
-
-        return MarketPrices.from_userprices_dict(await self._query(query))
+        response = await self._query(query)
+        self._handle_errors(response)
+        return MarketPrices.from_userprices_dict(response)
 
     async def period_usage_and_costs(self,
                                      site_reference: str,
@@ -1399,11 +1436,57 @@ class FrankEnergie:
             "SmartBatteries",
         )
 
-        response = await self._query(query)
+        # response = await self._query(query)
+        response = {"data":{"smartBatteries":[{"brand":"Sessy","capacity":5.2,"createdAt":"2024-11-22T14:41:47.853Z","externalReference":"AJM6UPPP","id":"cm3sunryl0000tc3nhygweghn","maxChargePower":2.2,"maxDischargePower":1.7,"provider":"SESSY","updatedAt":"2025-02-07T22:03:21.898Z"}]}}
 
-        self._handle_errors(response)
+        # self._handle_errors(response)
 
         return SmartBatteries.from_dict(response["data"])
+
+    def smart_battery_details(self, device_id: str) -> dict[str, Any]:
+        """Retrieve smart battery details and summary."""
+        if not self.auth:
+            raise Exception("Authentication required")
+
+        query = {
+            "query": """
+                query SmartBattery($deviceId: String!) {
+                    smartBattery(deviceId: $deviceId) {
+                        brand
+                        capacity
+                        id
+                        settings {
+                            batteryMode
+                            imbalanceTradingStrategy
+                            selfConsumptionTradingAllowed
+                        }
+                    }
+                    smartBatterySummary(deviceId: $deviceId) {
+                        lastKnownStateOfCharge
+                        lastKnownStatus
+                        lastUpdate
+                        totalResult
+                    }
+                }
+            """,
+            "operationName": "SmartBattery",
+            "variables": {"deviceId": device_id}
+        }
+        # response = self.query(query)
+        response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "123456", 'settings': {
+            "batteryMode": "IMBALANCE_TRADING",
+            "imbalanceTradingStrategy": "AGGRESSIVE",
+            "selfConsumptionTradingAllowed": True
+        }}, "smartBatterySummary": {
+            'lastKnownStateOfCharge': 72,
+            'lastKnownStatus': 'CHARGE_IMBALANCE',
+            'lastUpdate': '2025-04-20T11:30:00.000Z',
+            'totalResult': 225.01642490011401
+        }}}
+        return {
+            "smartBattery": SmartBattery.from_dict(response["data"]["smartBattery"]),
+            "smartBatterySummary": SmartBatterySummary.from_dict(response["data"]["smartBatterySummary"]),
+        }
 
     async def smart_battery_sessions(
         self, device_id: str, start_date: date, end_date: date
@@ -1475,11 +1558,14 @@ class FrankEnergie:
         }
 
         # Assuming _query handles the HTTP request
-        response = await self._query(query)
-        # Ensure you handle any errors returned in the response
-        self._handle_errors(response)
+        # response = await self._query(query)
+        # self._handle_errors(response)
 
-        return SmartBatterySessions.from_dict(response.get("data"))
+        response = {'data': {'smartBatterySessions': {'deviceId': 'cm3sunryl0000tc3nhygweghn', 'periodEndDate': '2025-03-05', 'periodEpexResult': -2.942766199999732, 'periodFrankSlim': 1.20423240187929, 'periodImbalanceResult': 1.7713489102796198, 'periodStartDate': '2025-02-26', 'periodTotalResult': 0.03281511215917776, 'periodTradeIndex': 15, 'periodTradingResult': 2.97558131215891, 'sessions': [{'cumulativeTradingResult': 0.28038336264503827, 'date': '2025-02-26', 'tradingResult': 0.28038336264503827}, {'cumulativeTradingResult': 0.4106682080427912, 'date': '2025-02-27', 'tradingResult': 0.13028484539775292}, {'cumulativeTradingResult': 0.9406592591022027, 'date': '2025-02-28', 'tradingResult': 0.5299910510594116}, {'cumulativeTradingResult': 1.11818115465891, 'date': '2025-03-01', 'tradingResult': 0.17752189555670733}, {'cumulativeTradingResult': 1.8727723946589099, 'date': '2025-03-02', 'tradingResult': 0.7545912399999999}, {'cumulativeTradingResult': 2.38716782965891, 'date': '2025-03-03', 'tradingResult': 0.5143954350000001}, {'cumulativeTradingResult': 2.5980938146589097, 'date': '2025-03-04', 'tradingResult': 0.21092598499999982}, {'cumulativeTradingResult': 2.97558131215891, 'date': '2025-03-05', 'tradingResult': 0.3774874975}], 'totalTradingResult': 55.14711599931087}}}
+
+        if response:
+            return SmartBatterySessions.from_dict(response)
+        return None
 
     @property
     def is_authenticated(self) -> bool:

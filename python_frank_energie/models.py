@@ -420,8 +420,6 @@ class EnergyCategory:
             if data is None:
                 return EnergyCategory(usage_total=0.00, costs_total=0.00, unit="", items=[])
 
-            # usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else 0.00
-            # costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else 0.00
             usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else 0.00
             costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else 0.00
 
@@ -638,7 +636,6 @@ class Address:
     def from_dict(data: dict[str, Any]) -> "Address":
         # address_formatted = data.get("addressFormatted", ["", ""])
         address_formatted = data.get("addressFormatted")
-        print("address_formatted:", address_formatted)
         if not address_formatted or len(address_formatted) < 2:
         # Handle lege of ontbrekende waarde
             # raise ValueError("Invalid address: address is missing or too short")
@@ -1583,8 +1580,8 @@ class Price:
         self.per_unit = data['perUnit']
 
         # Check if the "energy_type" key is present in the data dictionary
-        print("DATA:", self)
-        print("TESTDATA:", data)
+        # print("DATA:", self)
+        # print("TESTDATA:", data)
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
@@ -2610,11 +2607,12 @@ class MarketPrices:
         if errors := data.get("errors"):
             if errors[0]["message"].startswith("No marketprices found for segment"):
                 return MarketPrices(PriceData(), PriceData())
-            raise RequestException(errors[0]["message"])
+            # raise RequestException(errors[0]["message"])
 
         payload = data.get("data")
         if payload is None:
-            raise RequestException("Unexpected response")
+            # raise RequestException("Unexpected response")
+            return None
 
         # Get market prices from the payload
         market_prices_electricity = payload.get("marketPricesElectricity", {})
@@ -2701,6 +2699,11 @@ class SmartBatteries:
                 updated_at=datetime.fromisoformat(payload.get("updatedAt")),
             )
 
+        @classmethod
+        def from_dict_list(cls, items: list[Any]) -> list["SmartBatteries.SmartBattery"]:
+            """Convert a list of dictionaries to a list of SmartBattery instances."""
+            return [cls(**item) if isinstance(item, dict) else item for item in items]
+
     smart_batteries: list[SmartBattery]
 
     @staticmethod
@@ -2733,61 +2736,253 @@ class SmartBatteries:
             ],
         )
 
+@dataclass
+class SmartBattery:
+    """SmartBattery model."""
+    brand: str
+    capacity: float
+    external_reference: str
+    id: str
+    max_charge_power: float
+    max_discharge_power: float
+    provider: str
+    created_at: datetime
+    updated_at: datetime
+    @dataclass
+    class Session:
+        """A trading session for a battery."""
+        date: datetime
+        trading_result: float
+        cumulative_trading_result: float
+
+    sessions: list['Session'] = field(default_factory=list)
+
+    def __init__(self, brand: str, capacity: float, external_reference: str, id: str, max_charge_power: float, max_discharge_power: float, provider: str, created_at: datetime, updated_at: datetime) -> None:
+        self.brand = brand
+        self.capacity = capacity
+        self.external_reference = external_reference
+        self.id = id
+        self.max_charge_power = max_charge_power
+        self.max_discharge_power = max_discharge_power
+        self.provider = provider
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.sessions = []
 
 @dataclass
 class SmartBatterySessions:
-    """Collection of battery sessions, for a given battery."""
+    """Collection of smart battery trading sessions."""
+
+    device_id: str
+    period_start_date: datetime
+    period_end_date: datetime
+    period_trade_index: int
+    period_trading_result: float
+    period_total_result: float
+    period_imbalance_result: float
+    period_epex_result: float
+    period_frank_slim: float
+    sessions: list['Session']
 
     @staticmethod
-    def from_dict(data: dict[str, str]) -> 'SmartBatterySessions':
+    def from_dict(data: dict[str, Any]) -> 'SmartBatterySessions':
         """Parse the response from the SmartBatterySessions query."""
-        _LOGGER.debug("SmartBatterySessions %s", data)
+        _LOGGER.debug("🔁 Parsing SmartBatterySessions response: %s", data)
 
         if errors := data.get("errors"):
             raise RequestException(errors[0]["message"])
 
         payload = data.get("data")
         if not payload:
-            return None
-           # raise RequestException("Unexpected response")
+            # return None
+            raise RequestException("Unexpected response")
 
         smart_battery_session_data = payload.get("smartBatterySessions")
+        
         return SmartBatterySessions(
-            deviceId=smart_battery_session_data.get("deviceId"),
-            periodEndDate=smart_battery_session_data.get("periodEndDate"),
-            periodStartDate=smart_battery_session_data.get("periodStartDate"),
-            periodTradingResult=smart_battery_session_data.get(
-                "periodTradingResult"),
-            totalTradingResult=smart_battery_session_data.get(
-                "totalTradingResult"),
+            device_id=smart_battery_session_data.get("deviceId"),
+            period_start_date=smart_battery_session_data.get("periodStartDate"),
+            period_end_date=smart_battery_session_data.get("periodEndDate"),
+            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
+            period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
+            period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
+            period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult")),
+            period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
+            period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim")),
             sessions=[
                 SmartBatterySessions.Session.from_dict(session)
-                for session in smart_battery_session_data.get("sessions")
+                for session in smart_battery_session_data.get("sessions", [])
             ],
         )
 
     @dataclass
     class Session:
-        """A battery session."""
+        """A trading session for a battery."""
 
         date: datetime
-        tradingResult: float
-        cumulativeTradingResult: float
+        trading_result: float
+        cumulative_trading_result: float
 
         @staticmethod
-        def from_dict(payload: dict[str, str]) -> 'SmartBatterySessions.Session':
+        def from_dict(payload: dict[str, Any]) -> 'SmartBatterySessions.Session':
             """Parse the sessions payload from the SmartBatterySessions query result."""
-            _LOGGER.debug("DeliverySites %s", payload)
+            _LOGGER.debug("🔁 Parsing SmartBatterySessions.Session response: %s", payload)
 
-            return SmartBatterySessions.Session(
-                date=payload.get("date"),
-                tradingResult=payload.get("tradingResult"),
-                cumulativeTradingResult=payload.get("cumulativeTradingResult"),
+            try:
+                return SmartBatterySessions.Session(
+                    date=datetime.fromisoformat(payload["date"]),
+                    trading_result=float(payload["tradingResult"]),
+                    cumulative_trading_result=float(payload["cumulativeTradingResult"]),
+                )
+            except KeyError as exc:
+                raise RequestException(f"Missing expected field in session: %s" % exc) from exc
+            except ValueError as exc:
+                raise RequestException("Invalid data format in session payload: %s" % exc) from exc
+
+@dataclass
+class SmartBatterySummary:
+    """Data representation of a smart battery session summary."""
+    
+    last_known_state_of_charge: int
+    last_known_status: str
+    last_update: datetime
+    total_result: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "SmartBatterySummary":
+        """
+        Create a SmartBatterySummary from a dictionary.
+
+        Args:
+            data: Dictionary containing smart battery summary fields.
+
+        Returns:
+            SmartBatterySummary: Parsed dataclass instance.
+
+        Raises:
+            ValueError: If 'lastUpdate' is missing or invalid.
+        """
+        try:
+            last_update = datetime.fromisoformat(data["lastUpdate"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        except (KeyError, ValueError) as e:
+            raise ValueError("Invalid or missing 'lastUpdate' in smartBatterySummary") from e
+
+        return cls(
+            last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
+            last_known_status=data.get("lastKnownStatus", ""),
+            last_update=last_update,
+            total_result=data.get("totalResult", 0.0),
+        )
+
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+
+@dataclass
+class BatteryEntityGroup:
+    """
+    Data representation of a battery entity group.
+
+    Attributes:
+        id: Unique identifier of the battery group.
+        name: Human-readable name of the battery group.
+        battery_ids: List of associated battery device IDs.
+        created_at: Datetime when this group was created.
+        updated_at: Datetime when this group was last updated.
+        mode_sensor: Entity representing the battery mode.
+        soc_sensor: Entity representing the state of charge.
+        result_sensors: List of result sensor data.
+    """
+
+    id: str
+    name: str
+    battery_ids: list[str]
+    created_at: datetime
+    updated_at: datetime
+    mode_sensor: Any
+    soc_sensor: Any
+    result_sensors: list[Any]
+
+    @dataclass
+    class ResultSensor:
+        """
+        Representation of an individual result sensor within a battery entity group.
+
+        Attributes:
+            type: Type of result (e.g., 'nettoresultaat').
+            entity: Home Assistant entity representing the result.
+        """
+        type: str
+        entity: Any
+
+        @classmethod
+        def from_dict(cls, data: dict[str, Any]) -> "BatteryEntityGroup.ResultSensor":
+            """
+            Create a ResultSensor from a dictionary.
+
+            Args:
+                data: Dictionary with result sensor data.
+
+            Returns:
+                ResultSensor instance.
+            """
+            return cls(
+                type=data["type"],
+                entity=data["entity"],
             )
 
-    deviceId: str
-    periodEndDate: str
-    periodStartDate: str
-    periodTradingResult: float
-    totalTradingResult: float
-    sessions: list[Session]
+        def to_dict(self) -> dict[str, Any]:
+            """
+            Serialize ResultSensor to a dictionary.
+
+            Returns:
+                Dictionary representation of the result sensor.
+            """
+            return {
+                "type": self.type,
+                "entity": self.entity,
+            }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "BatteryEntityGroup":
+        """
+        Create a BatteryEntityGroup from a dictionary.
+
+        Args:
+            data: Dictionary containing battery entity group fields.
+
+        Returns:
+            BatteryEntityGroup instance.
+        """
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            battery_ids=data["batteryIds"],
+            created_at=datetime.fromisoformat(data["createdAt"]),
+            updated_at=datetime.fromisoformat(data["updatedAt"]),
+            mode_sensor=data.get("modeSensor"),
+            soc_sensor=data.get("socSensor"),
+            result_sensors=[
+                cls.ResultSensor.from_dict(sensor)
+                for sensor in data.get("resultSensors", [])
+            ],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Serialize BatteryEntityGroup to a dictionary.
+
+        Returns:
+            Dictionary representation of the battery entity group.
+        """
+        return {
+            "id": self.id,
+            "name": self.name,
+            "batteryIds": self.battery_ids,
+            "createdAt": self.created_at.isoformat(),
+            "updatedAt": self.updated_at.isoformat(),
+            "modeSensor": self.mode_sensor,
+            "socSensor": self.soc_sensor,
+            "resultSensors": [sensor.to_dict() for sensor in self.result_sensors],
+        }
