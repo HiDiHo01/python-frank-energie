@@ -6,7 +6,6 @@ from datetime import date, timedelta
 from http import HTTPStatus
 from typing import Any, Optional
 import logging
-from homeassistant.const import __version__ as ha_version
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ from .models import (Authentication, EnergyConsumption, EnodeChargers, Invoice, 
                      MarketPrices, Me, MonthInsights, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatterySummary, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.4.28"
+VERSION = "2025.4.30"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -78,10 +77,9 @@ class FrankEnergie:
         system = platform.system()  # e.g., 'Darwin' for macOS, 'Windows' for Windows
         system_platform = sys.platform  # e.g., 'win32', 'linux', 'darwin'
         release = platform.release()  # OS version (e.g., '10.15.7')
-        home_assistant_version = ha_version  # Home Assistant version
         version = VERSION  # App version
 
-        user_agent = f"FrankEnergie/{version} {system}/{release} {system_platform} HomeAssistant/{home_assistant_version}"
+        user_agent = f"FrankEnergie/{version} {system}/{release} {system_platform}"
         return user_agent
 
     async def _query(self, query: FrankEnergieQuery) -> dict[str, Any]:
@@ -104,7 +102,7 @@ class FrankEnergie:
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": self.generate_system_user_agent(),
+            # "User-Agent": self.generate_system_user_agent(), # not working properly
             "Authorization": f"Bearer {self._auth.authToken}"
         } if self._auth is not None else None
 
