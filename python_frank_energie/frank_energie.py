@@ -2,7 +2,7 @@
 # python_frank_energie/frank_energie.py
 
 import asyncio
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any, Optional
 import logging
@@ -13,8 +13,7 @@ import aiohttp
 import requests
 import sys
 import platform
-from aiohttp.client import ClientResponse, ClientSession
-from aiohttp.client_exceptions import ClientError
+from aiohttp import ClientResponse, ClientSession, ClientError
 
 from .authentication import Authentication
 from .exceptions import (AuthException, AuthRequiredException,
@@ -23,21 +22,26 @@ from .exceptions import (AuthException, AuthRequiredException,
                          RequestException, SmartTradingNotEnabledException, SmartChargingNotEnabledException)
 from .models import (Authentication, EnergyConsumption, EnodeChargers, Invoice, Invoices,
                      MarketPrices, Me, MonthInsights, MonthSummary,
-                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatterySummary, SmartBatterySessions, User, UserSites)
+                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.4.30"
+VERSION = "2025.5.4"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 class FrankEnergieQuery:
     """Represents a GraphQL query for the FrankEnergie API."""
-    def __init__(self, query: str, operation_name: str, variables: Optional[dict[str, Any]] = None):
+
+    def __init__(self, query: str, operation_name: str, variables: Optional[dict[str, Any]] = None) -> None:
+        if variables is not None and not isinstance(variables, dict):
+            raise TypeError("The 'variables' argument must be a dictionary if provided.")
+
         self.query = query
         self.operation_name = operation_name
         self.variables = variables if variables is not None else {}
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert the query to a dictionary suitable for GraphQL API calls."""
         return {
             "query": self.query,
             "operationName": self.operation_name,
@@ -55,21 +59,40 @@ def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
 class FrankEnergie:
     """FrankEnergie API client."""
 
-    DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
+    # DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
+    DATA_URL = "https://graphql.frankenergie.nl/"
 
     def __init__(
         self,
         clientsession: Optional[ClientSession] = None,
-        auth_token: Optional[str] | None = None,
-        refresh_token: Optional[str] | None = None,
+        auth_token: Optional[str] = None,
+        refresh_token: Optional[str] = None,
     ) -> None:
         """Initialize the FrankEnergie client."""
-        self._close_session: bool = False
-        self._auth: Optional[Authentication] | None = None
-        self._session = clientsession
+        self._session: Optional[ClientSession] = clientsession
+        self._close_session: bool = clientsession is None
+        self._auth: Optional[Authentication] = None
 
-        if auth_token is not None or refresh_token is not None:
+        if auth_token or refresh_token:
             self._auth = Authentication(auth_token, refresh_token)
+
+    is_smart_charging = False
+
+    async def close(self) -> None:
+        """Close the client session if it was created internally."""
+        if self._close_session and self._session is not None:
+            await self._session.close()
+
+    @property
+    def auth(self) -> Optional[Authentication]:
+        """Backwards compatibility for integrations accessing .auth directly."""
+        _LOGGER.error("Using .auth directly is deprecated. Use .is_authenticated instead.")
+        return self._auth
+
+    @property
+    def is_authenticated(self) -> bool:
+        """Check if the client is authenticated."""
+        return self._auth is not None and self._auth.authToken is not None
 
     @staticmethod
     def generate_system_user_agent() -> str:
@@ -81,6 +104,12 @@ class FrankEnergie:
 
         user_agent = f"FrankEnergie/{version} {system}/{release} {system_platform}"
         return user_agent
+
+    async def _ensure_session(self) -> None:
+        """Ensure that a ClientSession is available."""
+        if self._session is None:
+            self._session = ClientSession()
+            self._close_session = True
 
     async def _query(self, query: FrankEnergieQuery) -> dict[str, Any]:
         """Send a query to the FrankEnergie API.
@@ -96,40 +125,65 @@ class FrankEnergie:
             FrankEnergieException: If the request fails.
         """
 
-        if not isinstance(self._session, ClientSession):
-            self._session = ClientSession()
-            self._close_session = True
-
+            # "User-Agent": self.generate_system_user_agent(), # not working properly
         headers = {
             "Content-Type": "application/json",
-            # "User-Agent": self.generate_system_user_agent(), # not working properly
-            "Authorization": f"Bearer {self._auth.authToken}"
-        } if self._auth is not None else None
+            "Accept": "application/json"
+        }
+
+        # headers["x-country"] = "BE"
+
+        # use this in async_setup_entry OR Coordinator
+        # country_code = self.hass.config.country
+        # if country_code:
+        #     _LOGGER.debug("Detected country from HA config: %s", country_code)
+        #     headers["x-country"] = country_code
+        # else:
+        #     _LOGGER.warning("No country configured in Home Assistant general settings.")
+
+        if self._auth is not None and self._auth.authToken is not None:
+            headers["Authorization"] = f"Bearer {self._auth.authToken}"
+            # headers["x-frank-auth"] = f"Bearer {self._auth.authToken}"
+        else:
+            headers["x-country"] = "NL"
 
         # print(f"Request: POST {self.DATA_URL}")
         # print(f"Request headers: {headers}")
-        logging.debug("Request headers: %s", headers)
+        _LOGGER.debug("Request headers: %s", headers)
         # print(f"Request payload: {query}")
         # print(f"Request payload: {query.to_dict()}")
         if isinstance(query, dict):
-            logging.debug("Request payload: %s", query)
+            _LOGGER.debug("Request payload: %s", query)
         else:
-            logging.debug("Request payload: %s", query.to_dict())
+            _LOGGER.debug("Request payload: %s", query.to_dict())
+
+        await self._ensure_session()
 
         try:
+            if hasattr(query, "to_dict") and callable(query.to_dict):
+                payload = query.to_dict()
+            else:
+                _LOGGER.error("Query object does not implement to_dict() method: %s", query)
+                # print(f"Query object does not implement to_dict() method: {query}")
+                raise TypeError("Query object must implement a to_dict() method to be JSON serializable.", query)
             async with self._session.post(
                 self.DATA_URL,
-                json=query.to_dict(),
-                headers=headers
+                json=payload,
+                headers=headers,
+                timeout=30
             ) as resp:
                 resp.raise_for_status()
                 response: dict[str, Any] = await resp.json()
 
             # self._process_diagnostic_data(response)
+            if not response:
+                _LOGGER.debug("No response data.")
+                return {}
+
             self._handle_errors(response)
 
-            # print(f"Response status code: {resp.status}")
-            # print(f"Response headers: {resp.headers}")
+            # print(f"Response status code: {response.status}")
+            # print(f"Response headers: {response.headers}")
             # print(f"Response body: {response}")
             logging.debug("Response body: %s", response)
 
@@ -150,13 +204,13 @@ class FrankEnergie:
                 raise FrankEnergieException("Internal server error.") from error
             else:
                 raise FrankEnergieException(f"Unexpected response: {error}") from error
+        # except Exception as error:
+        #     _LOGGER.exception("Unexpected error during query: %s", error)
+#            raise FrankEnergieException("Unexpected error occurred.") from error
         except Exception as error:
-            _LOGGER.exception("Unexpected error during query: %s", error)
-            raise FrankEnergieException("Unexpected error occurred.") from error
-#         except Exception as error:
-#             import traceback
-#             traceback.print_exc()
-#             raise error
+            import traceback
+            traceback.print_exc()
+            raise error
 
     def _process_diagnostic_data(self, response: dict[str, Any]) -> None:
         """Process the diagnostic data and update the sensor state.
@@ -175,6 +229,11 @@ class FrankEnergie:
         Args:
             response: The API response as a dictionary.
         """
+        # _LOGGER.debug("Handling errors in response: %s", response)
+
+        if not response:
+            _LOGGER.debug("No response data.")
+            return
 
         errors = response.get("errors")
         if not errors:
@@ -202,14 +261,19 @@ class FrankEnergie:
                 _LOGGER.debug("Smart trading is not enabled for this user.")
                 # raise SmartTradingNotEnabledException(
                 #     "Smart trading is not enabled for this user.")
+                return None
             elif message == "user-error:smart-charging-not-enabled":
                 _LOGGER.debug("Smart charging is not enabled for this user.")
                 # raise SmartChargingNotEnabledException(
                 #     "Smart charging is not enabled for this user.")
+                return None
             elif message == "'Base' niet aanwezig in prijzen verzameling":
                 _LOGGER.debug("'Base' niet aanwezig in prijzen verzameling %s.", path)
+            elif message == "request-error:request-not-supported-in-country":
+                _LOGGER.error("Request not supported in the user's country: %s", error)
+                return None
             else:
-                print(message)
+                # print(message)
                 _LOGGER.error("Unhandled error: %s", message)
                 # raise AuthException("Authorization error")
 
@@ -255,7 +319,7 @@ class FrankEnergie:
                     # auth_data = data["login"]
                     self._auth = Authentication.from_dict(response)
 
-            self._handle_errors(response)
+            # self._handle_errors(response)
 
             return self._auth
 
@@ -293,7 +357,8 @@ class FrankEnergie:
             },
         )
 
-        self._auth = Authentication.from_dict(await self._query(query))
+        response = await self._query(query)
+        self._auth = Authentication.from_dict(response)
         return self._auth
 
     async def meter_readings(self, site_reference: str) -> EnergyConsumption:
@@ -330,7 +395,8 @@ class FrankEnergie:
             {"siteReference": site_reference},
         )
 
-        return EnergyConsumption.from_dict(await self._query(query))
+        response = await self._query(query)
+        return EnergyConsumption.from_dict(response)
 
     async def month_summary(self, site_reference: str) -> MonthSummary:
         """Retrieve the month summary for the specified month.
@@ -454,9 +520,10 @@ class FrankEnergie:
 
         try:
 
-            response = await self._query(query)
+            # response = await self._query(query)
+            response: dict[str, Any] = await self._query(query)
             # Response data for testing purposes
-            response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
+            # response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 1', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 100, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 2', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
             if response is None:
                 _LOGGER.debug("No response data for 'enodeChargers'")
                 return {}
@@ -469,15 +536,17 @@ class FrankEnergie:
             if 'enodeChargers' not in response['data']:
                 _LOGGER.debug("No chargers found in data: %s", response)
                 return {}   
-            chargers = response.get("data", {}).get("enodeChargers", [])
-            _LOGGER.info("%s Enode Chargers Found", len(chargers))
-            _LOGGER.debug("Enode Chargers: %s", chargers)
-            _LOGGER.debug("Format for 'enodeChargers' response: %s", type(response))
-            _LOGGER.debug("Format for 'enodeChargers' chargers: %s", type(chargers))
+            chargers_data = response.get("data", {}).get("enodeChargers", [])
+            _LOGGER.info("%s Enode Chargers Found", len(chargers_data))
+            _LOGGER.debug("Enode Chargers data: %s", chargers_data)
+            # _LOGGER.debug("Format for 'enodeChargers' response: %s", type(response))
+            # _LOGGER.debug("Format for 'enodeChargers' chargers: %s", type(chargers))
+            # response is a disctionary, but the data is a list of dictionaries
+            # chargers is a list of dictionaries, but the data is a dictionary
             # if not isinstance(chargers, list):
             #     _LOGGER.debug("Unexpected format for 'enodeChargers': %s", chargers)
             #     return []
-            return EnodeChargers.from_dict(response['data']['enodeChargers'])
+            return EnodeChargers.from_dict(chargers_data)
         except Exception as error:
             _LOGGER.debug("Error in enode_chargers: %s", error)
             _LOGGER.exception("Unexpected error during query: %s", error)
@@ -488,32 +557,6 @@ class FrankEnergie:
 #              f"Failed to fetch Enode Chargers: {e}"
 #              ) from e
 
-
-    async def UserEnergyConsumption(self) -> EnergyConsumption:
-        if self._auth is None:
-            raise AuthRequiredException
-        if not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            query GetUserEnergyConsumption {
-            user {
-                id
-                energyConsumption {
-                daily {
-                    date
-                    consumptionKwh
-                }
-                }
-            }
-            }
-            """,
-            "GetUserEnergyConsumption",
-            {},
-        )
-
-        return EnergyConsumption.from_dict(await self._query(query))
 
     async def invoices(self, site_reference: str) -> Invoices:
         """Retrieve the invoices data.
@@ -560,316 +603,9 @@ class FrankEnergie:
             {"siteReference": site_reference},
         )
 
-        return Invoices.from_dict(await self._query(query))
+        response = await self._query(query)
+        return Invoices.from_dict(response)
 
-    async def fail_user(self) -> User:
-        """Retrieve the user information.
-
-        Returns:
-            The user information.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            FrankEnergieException: If the request fails.
-        """
-        if self._auth is None:
-            raise AuthRequiredException
-        if not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            query Me {
-                me {
-                    ...UserFields
-                }
-            }
-            fragment UserFields on User {
-                InviteLinkUser{
-                    awardRewardType
-                    backendOnly
-                    createdAt
-                    description
-                    discountPerConnection
-                    fromName
-                    id
-                    imageUrl
-                    slug
-                    status
-                    tintColor
-                    treesAmountPerConnection
-                    type
-                    updatedAt
-                    usedCount
-                }
-                Organization{
-                    Email
-                }
-                OrganizationId
-                PushNotificationPriceAlerts{
-                    isEnabled
-                }
-                Signup{
-                    User{
-                        email
-                    }
-                }
-                UserSettings{
-                    rewardPayoutPreference
-                }
-                PaymentAuthorizations{
-                    status
-                }
-                activePaymentAuthorization{
-                    status
-                }
-                adminRights
-                createdAt
-                deliverySites{
-                    address{
-                        street
-                        houseNumber
-                        zipCode
-                        city
-                    }
-                }
-                email
-                connectionsStatus
-                connections{
-                    status
-                }
-                firstMeterReadingDate
-                firstName
-                friendsCount
-                hasInviteLink
-                id
-                lastLogin
-                lastMeterReadingDate
-                advancedPaymentAmount
-                hasCO2Compensation
-                meterReadingExportPeriods{
-                    EAN
-                    User{
-                        email
-                        firstName
-                        lastName
-                    }
-                    cluster
-                    createdAt
-                    from
-                    till
-                    period
-                    segment
-                    type
-                    updatedAt
-                }
-                notification
-                reference
-                role
-                status
-                treesCount
-                updatedAt
-            }
-            """,
-            "Me",
-            {},
-        )
-
-        return User.from_dict(await self._query(query))
-
-    async def ouser(self, site_reference: str | None = None) -> User:
-        """Retrieve the user information.
-
-        Returns:
-            The user information.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            FrankEnergieException: If the request fails.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            query Me($siteReference: String) {
-                me {
-                    ...UserFields
-                }
-            }
-            fragment UserFields on User {
-                InviteLinkUser{
-                    awardRewardType
-                    createdAt
-                    description
-                    discountPerConnection
-                    fromName
-                    id
-                    imageUrl
-                    slug
-                    status
-                    tintColor
-                    treesAmountPerConnection
-                    type
-                    updatedAt
-                    usedCount
-                }
-                Organization{
-                    Email
-                }
-                OrganizationId
-                PushNotificationPriceAlerts{
-                    id
-                    isEnabled
-                    type
-                    weekdays
-                }
-                Signup{
-                    id
-                    User{
-                        id
-                        email
-                    }
-                }
-                UserSettings{
-                    id
-                    disabledHapticFeedback
-                    jedlixUserId
-                    jedlixPushNotifications
-                    smartPushNotifications
-                    rewardPayoutPreference
-                }
-                PaymentAuthorizations{
-                    status
-                }
-                activePaymentAuthorization{
-                    id
-                    mandateId
-                    signedAt
-                    bankAccountNumber
-                    status
-                }
-                adminRights
-                createdAt
-                deliverySites{
-                    reference
-                    segments
-                    address{
-                        street
-                        houseNumber
-                        houseNumberAddition
-                        zipCode
-                        city
-                    }
-                    addressHasMultipleSites
-                    status
-                    propositionType
-                    deliveryStartDate
-                    deliveryEndDate
-                    firstMeterReadingDate
-                    lastMeterReadingDate
-                }
-                smartCharging {
-                    isActivated
-                    provider
-                    userCreatedAt
-                    userId
-                    isAvailableInCountry
-                    needsSubscription
-                    subscription {
-                        startDate
-                        endDate
-                        id
-                        proposition {
-                            product
-                            countryCode
-                        }
-                    }
-                }
-                websiteUrl
-                customerSupportEmail
-                email
-                connections(siteReference: $siteReference) {
-                    id
-                    connectionId
-                    EAN
-                    segment
-                    status
-                    contractStatus
-                    estimatedFeedIn
-                    firstMeterReadingDate
-                    lastMeterReadingDate
-                    meterType
-                    externalDetails {
-                        gridOperator
-                        address {
-                            street
-                            houseNumber
-                            houseNumberAddition
-                            zipCode
-                            city
-                        }
-                    }
-                }
-                externalDetails {
-                    reference
-                    person {
-                        firstName
-                        lastName
-                    }
-                    contact {
-                        emailAddress
-                        phoneNumber
-                        mobileNumber
-                    }
-                    address {
-                        street
-                        houseNumber
-                        houseNumberAddition
-                        zipCode
-                        city
-                    }
-                    debtor {
-                        bankAccountNumber
-                        preferredAutomaticCollectionDay
-                    }
-                }
-                firstName
-                hasInviteLink
-                id
-                email
-                countryCode
-                lastLogin
-                advancedPaymentAmount(siteReference: $siteReference)
-                hasCO2Compensation
-                meterReadingExportPeriods{
-                    EAN
-                    User{
-                        email
-                    }
-                    cluster
-                    createdAt
-                    from
-                    till
-                    period
-                    segment
-                    type
-                    updatedAt
-                }
-                notification
-                reference
-                role
-                status
-                treesCount
-                updatedAt
-                __typename
-            }
-            """,
-            "Me",
-            {"siteReference": site_reference},
-        )
-
-        return User.from_dict(await self._query(query))
 
     async def me(self, site_reference: str | None = None) -> Me:
         if self._auth is None:
@@ -1009,7 +745,8 @@ class FrankEnergie:
             {"siteReference": site_reference},
         )
 
-        return Me.from_dict(await self._query(query))
+        response = await self._query(query)
+        return Me.from_dict(response)
 
     async def UserSites(self, site_reference: str | None = None) -> UserSites:
         if self._auth is None:
@@ -1038,7 +775,8 @@ class FrankEnergie:
             {},
         )
 
-        return UserSites.from_dict(await self._query(query))
+        response = await self._query(query)
+        return UserSites.from_dict(response)
 
     # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
     # query UserSmartCharging {\\n  userSmartCharging {\\n    isActivated\\n    provider\\n    userCreatedAt\\n    userId\\n    isAvailableInCountry\\n    needsSubscription\\n    subscription {\\n      startDate\\n      endDate\\n      id\\n      proposition {\\n        product\\n        countryCode\\n      }\\n    }\\n  }\\n}\\n\",\"operationName\":\"UserSmartCharging\"}
@@ -1046,6 +784,25 @@ class FrankEnergie:
     # \"query UserRewardsData {\\n  me {\\n    id\\n    UserSettings {\\n      id\\n      rewardPayoutPreference\\n    }\\n  }\\n  userRewardsData {\\n    activeConnectionsCount\\n    activeFriendsCount\\n    acceptedRewards {\\n      ...UserRewardV2Fields\\n    }\\n    upcomingRewards {\\n      ...UserRewardV2Fields\\n    }\\n  }\\n}\\n\\nfragment UserRewardV2Fields on UserRewardV2 {\\n  id\\n  awardedDiscount\\n  awardedTreesAmount\\n  availableForAcceptanceOn\\n  treesAmountPerConnection\\n  discountPerConnection\\n  acceptedOn\\n  isRewardForOwnSignup\\n  hasPossibleSmartChargingBonus\\n  coolingDownPeriod\\n  InviteLink {\\n    id\\n    type\\n    fromName\\n    templateType\\n    awardRewardType\\n    treesAmountPerConnection\\n    discountPerConnection\\n  }\\n  AdditionalBonuses {\\n    discountAmountPerConnection\\n    treesAmountPerConnection\\n    type\\n  }\\n}\\n\",\"operationName\":\"UserRewardsData\"}"
     # \"query TreeCertificates {\\n  treeCertificates {\\n    id\\n    imageUrl\\n    imagePath\\n    createdAt\\n    treesAmount\\n  }\\n}\\n\",\"operationName\":\"TreeCertificates\"}"
     # \"query AppNotice {\\n  appNotice {\\n    active\\n    message\\n    title\\n  }\\n}\\n\",\"operationName\":\"AppNotice\"}"
+
+    async def user_country(self) -> Me:
+        if self._auth is None:
+            raise AuthRequiredException
+
+        query = FrankEnergieQuery(
+            """
+            query UserCountry {
+                me {
+                    countryCode
+                    }
+            }
+            """,
+            "UserCountry",
+            {}
+        )
+
+        response = await self._query(query)
+        return Me.from_dict(response)
 
     async def user(self, site_reference: str | None = None) -> User:
         if self._auth is None:
@@ -1184,8 +941,49 @@ class FrankEnergie:
             "Me",
             {"siteReference": site_reference},
         )
+        
+        response = await self._query(query)
+        return User.from_dict(response)
 
-        return User.from_dict(await self._query(query))
+    async def be_prices(
+        self, start_date: Optional[date] | None = None
+    ) -> MarketPrices:
+        """Get market prices."""
+        if not start_date:
+            start_date = date.today()
+
+        query = FrankEnergieQuery(
+            """
+            query MarketPrices ($date: String!) {
+                marketPrices(date: $date) {
+                    electricityPrices {
+                        from
+                        till
+                        marketPrice
+                        marketPriceTax
+                        sourcingMarkupPrice
+                        energyTaxPrice
+                        perUnit
+                    }
+                    gasPrices {
+                        from
+                        till
+                        marketPrice
+                        marketPriceTax
+                        sourcingMarkupPrice
+                        energyTaxPrice
+                        perUnit
+                    }
+                }
+            }
+            """,
+            "MarketPrices",
+            {"date": str(start_date)},  
+        )
+        response = await self._query(query)
+        # print(response)
+        #return MarketPrices.from_dict(response)
+        return response
 
     async def prices(
         self, start_date: Optional[date] | None = None, end_date: Optional[date] | None = None
@@ -1307,7 +1105,6 @@ class FrankEnergie:
             {"date": str(start_date), "siteReference": site_reference},
         )
         response = await self._query(query)
-        self._handle_errors(response)
         return MarketPrices.from_userprices_dict(response)
 
     async def period_usage_and_costs(self,
@@ -1320,7 +1117,7 @@ class FrankEnergie:
         Args:
             site_reference (str): De referentie van de locatie.
             start_date (date): De startdatum van de periode waarvoor de gegevens moeten worden opgehaald.
-            ebd_date (date): De einddatum van de periode waarvoor de gegevens moeten worden opgehaald.
+            end_date (date): De einddatum van de periode waarvoor de gegevens moeten worden opgehaald.
 
         Returns:
             PeriodUsageAndCosts: Het verbruik en de kosten van gas, elektriciteit en teruglevering.
@@ -1386,38 +1183,21 @@ class FrankEnergie:
 
         response = await self._query(query)
 
-        self._handle_errors(response)
-
         return PeriodUsageAndCosts.from_dict(response["data"])
+
 
     async def smart_batteries(self) -> SmartBatteries:
         """Get the users smart batteries.
 
         Returns a list of all smart batteries.
-
-        Full query:
-        query SmartBatteries {
-            smartBatteries {
-                brand
-                capacity
-                createdAt
-                externalReference
-                id
-                maxChargePower
-                maxDischargePower
-                provider
-                updatedAt
-                __typename
-            }
-        }
         """
         if self._auth is None:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
             """
-            query SmartBatteries{
-                smartBatteries{
+            query SmartBatteries {
+                smartBatteries {
                     brand
                     capacity
                     createdAt
@@ -1434,20 +1214,99 @@ class FrankEnergie:
             "SmartBatteries",
         )
 
-        # response = await self._query(query)
-        response = {"data":{"smartBatteries":[{"brand":"Sessy","capacity":5.2,"createdAt":"2024-11-22T14:41:47.853Z","externalReference":"AJM6UPPP","id":"cm3sunryl0000tc3nhygweghn","maxChargePower":2.2,"maxDischargePower":1.7,"provider":"SESSY","updatedAt":"2025-02-07T22:03:21.898Z"}]}}
+        response = await self._query(query)
+        response = {
+            "data": {
+                "smartBatteries": [
+                    {
+                        "brand": "Sessy 1",
+                        "capacity": 5.2,
+                        "createdAt": "2024-11-22T14:41:47.853Z",
+                        "externalReference": "AJM6UPPP",
+                        "id": "cm3sunryl0000tc3nhygweghn",
+                        "maxChargePower": 2.2,
+                        "maxDischargePower": 1.7,
+                        "provider": "SESSY",
+                        "updatedAt": "2025-02-07T22:03:21.898Z",
+                    },
+                    {
+                        "brand": "Sessy 2",
+                        "capacity": 5.4,
+                        "createdAt": "2024-11-24T14:41:47.853Z",
+                        "externalReference": "AJM6UPPP",
+                        "id": "cm3moonyl0000tc3nhygweghn",
+                        "maxChargePower": 2.4,
+                        "maxDischargePower": 1.9,
+                        "provider": "SESSYY",
+                        "updatedAt": "2025-02-09T22:03:21.898Z",
+                    }
+                ]
+            }
+        }
+    
+        # Handle empty or missing response data
+        if response is None or "data" not in response or response["data"] is None:
+            _LOGGER.debug("No response data for 'smartBatteries'")
+            return {}
 
-        # self._handle_errors(response)
+        _LOGGER.debug("Response data for 'smartBatteries': %s", response)
+        batteries_data = response.get("data", {}).get("smartBatteries")
 
-        return SmartBatteries.from_dict(response["data"])
+        if not batteries_data:
+            _LOGGER.debug("No smart batteries found")
+            return SmartBatteries([])
 
-    def smart_battery_details(self, device_id: str) -> dict[str, Any]:
+        # Process the list of smart batteries
+        smart_batteries = []
+        # for battery_data in response["data"]["smartBatteries"]:
+        for battery_data in batteries_data:
+            # Handle datetime fields
+            created_at = None
+            updated_at = None
+
+            print(battery_data)
+
+            """
+            # Convert createdAt and updatedAt to datetime objects
+            if 'createdAt' in battery_data:
+                created_at = datetime.fromisoformat(battery_data['createdAt'].replace("Z", "+00:00"))
+            if 'updatedAt' in battery_data:
+                updated_at = datetime.fromisoformat(battery_data['updatedAt'].replace("Z", "+00:00"))
+            if 'created_at' in battery_data:
+                created_at = datetime.fromisoformat(battery_data['created_at'].replace("Z", "+00:00"))
+            if 'updated_at' in battery_data:
+                updated_at = datetime.fromisoformat(battery_data['updated_at'].replace("Z", "+00:00"))
+
+            # Convert the battery data to SmartBattery object
+            smart_batteries.append(SmartBattery(
+                brand=battery_data["brand"],
+                capacity=battery_data["capacity"],
+                created_at=created_at,
+                external_reference=battery_data["externalReference"],
+                id=battery_data["id"],
+                max_charge_power=battery_data["maxChargePower"],
+                max_discharge_power=battery_data["maxDischargePower"],
+                provider=battery_data["provider"],
+                updated_at=updated_at
+            ))
+            """
+
+        try:
+            smart_batteries = [SmartBattery.from_dict(b) for b in batteries_data]
+        except (KeyError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to parse smart batteries: %s", err)
+            return SmartBatteries([])
+
+        return SmartBatteries(smart_batteries)
+
+
+    async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails:
         """Retrieve smart battery details and summary."""
-        if not self.auth:
-            raise Exception("Authentication required")
+        if self._auth is None:
+            raise AuthRequiredException
 
-        query = {
-            "query": """
+        query = FrankEnergieQuery(
+            """
                 query SmartBattery($deviceId: String!) {
                     smartBattery(deviceId: $deviceId) {
                         brand
@@ -1467,10 +1326,11 @@ class FrankEnergie:
                     }
                 }
             """,
-            "operationName": "SmartBattery",
-            "variables": {"deviceId": device_id}
-        }
-        # response = self.query(query)
+            "SmartBattery",
+            {"deviceId": device_id}
+        )
+
+        response = await self._query(query)
         response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "123456", 'settings': {
             "batteryMode": "IMBALANCE_TRADING",
             "imbalanceTradingStrategy": "AGGRESSIVE",
@@ -1481,6 +1341,13 @@ class FrankEnergie:
             'lastUpdate': '2025-04-20T11:30:00.000Z',
             'totalResult': 225.01642490011401
         }}}
+
+        if response is None:
+            _LOGGER.debug("No response data for 'smartBatteries'")
+            return {}
+        if "smartBattery" not in response["data"] or "smartBatterySummary" not in response["data"]:
+            _LOGGER.debug("Incomplete response data for 'smartBattery' or 'smartBatterySummary'")
+            return {}
         return {
             "smartBattery": SmartBattery.from_dict(response["data"]["smartBattery"]),
             "smartBatterySummary": SmartBatterySummary.from_dict(response["data"]["smartBatterySummary"]),
@@ -1555,15 +1422,11 @@ class FrankEnergie:
             },
         }
 
-        # Assuming _query handles the HTTP request
         # response = await self._query(query)
-        # self._handle_errors(response)
 
         response = {'data': {'smartBatterySessions': {'deviceId': 'cm3sunryl0000tc3nhygweghn', 'periodEndDate': '2025-03-05', 'periodEpexResult': -2.942766199999732, 'periodFrankSlim': 1.20423240187929, 'periodImbalanceResult': 1.7713489102796198, 'periodStartDate': '2025-02-26', 'periodTotalResult': 0.03281511215917776, 'periodTradeIndex': 15, 'periodTradingResult': 2.97558131215891, 'sessions': [{'cumulativeTradingResult': 0.28038336264503827, 'date': '2025-02-26', 'tradingResult': 0.28038336264503827}, {'cumulativeTradingResult': 0.4106682080427912, 'date': '2025-02-27', 'tradingResult': 0.13028484539775292}, {'cumulativeTradingResult': 0.9406592591022027, 'date': '2025-02-28', 'tradingResult': 0.5299910510594116}, {'cumulativeTradingResult': 1.11818115465891, 'date': '2025-03-01', 'tradingResult': 0.17752189555670733}, {'cumulativeTradingResult': 1.8727723946589099, 'date': '2025-03-02', 'tradingResult': 0.7545912399999999}, {'cumulativeTradingResult': 2.38716782965891, 'date': '2025-03-03', 'tradingResult': 0.5143954350000001}, {'cumulativeTradingResult': 2.5980938146589097, 'date': '2025-03-04', 'tradingResult': 0.21092598499999982}, {'cumulativeTradingResult': 2.97558131215891, 'date': '2025-03-05', 'tradingResult': 0.3774874975}], 'totalTradingResult': 55.14711599931087}}}
 
-        if response:
-            return SmartBatterySessions.from_dict(response)
-        return None
+        return SmartBatterySessions.from_dict(response)
 
     @property
     def is_authenticated(self) -> bool:

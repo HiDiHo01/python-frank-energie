@@ -7,11 +7,11 @@ from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from statistics import mean
-from typing import Any, Optional, Set, Union
+from typing import Any, Iterator, Optional, Set, Union
 
 import jwt
 import pytz
-from dateutil import parser
+from dateutil.parser import parse
 from pydantic import BaseModel, EmailStr
 
 from .exceptions import AuthException, RequestException
@@ -115,7 +115,7 @@ class Invoice:
             return [Invoice.from_dict(item) for item in data]
 
         return Invoice(
-            StartDate=parser.parse(data.get("StartDate")).astimezone(
+            StartDate=parse(data.get("StartDate")).astimezone(
                 pytz.timezone('Europe/Amsterdam')),
             PeriodDescription=data.get("PeriodDescription"),
             TotalAmount=float(data.get("TotalAmount")),
@@ -637,18 +637,21 @@ class Address:
         # address_formatted = data.get("addressFormatted", ["", ""])
         address_formatted = data.get("addressFormatted")
         if not address_formatted or len(address_formatted) < 2:
-        # Handle lege of ontbrekende waarde
-            # raise ValueError("Invalid address: address is missing or too short")
+            # Handle lege of ontbrekende waarde
+            # print("Invalid address: address is missing or too short")
             return None
+            # raise ValueError("Invalid address: address is missing or too short")
         # Eerste deel bevat straat en huisnummer (bijv. "Straat 123")
-        street_parts = address_formatted[0].rsplit(" ", 1)
+        street_and_number = address_formatted[0]
+        postcode_and_city = address_formatted[1]
+        street_parts = street_and_number.rsplit(" ", 1)
         street = street_parts[0]
         # Tweede deel bevat postcode en stad (bijv. "1000 AA AMSTERDAM")
-        zip_city_parts = address_formatted[1].split(" ", 2)
+        zip_city_parts = postcode_and_city.split(" ", 2)
         zip_code = " ".join(zip_city_parts[:2])
         city = zip_city_parts[2] if len(zip_city_parts) > 2 else ""
         house_number_addition = None
-        house_number=street_parts[1] if len(street_parts) > 1 else ""
+        house_number = street_parts[1] if len(street_parts) > 1 else ""
         if not house_number.isdigit():  # Als er letters in staan, splitsen
             for i, char in enumerate(house_number):
                 if char.isalpha():
@@ -701,7 +704,6 @@ class DeliverySite(BaseModel):
     deliveryEndDate: Optional[date] = None
     firstMeterReadingDate: Optional[date]
     lastMeterReadingDate: Optional[date]
-    deliverySites: list[dict[str, Any]] = []
 
     @staticmethod
     def from_dict(payload: dict[str, str]) -> 'DeliverySite':
@@ -1497,10 +1499,6 @@ class Price:
     unit: Optional[str] = None      
     tax_rate: float = 0.0
     tax: float = 0.0
-    # start_time: datetime = None
-    # timestamp: datetime = None
-    # start_time: datetime = field(default_factory=datetime.now)
-    # timestamp: datetime = field(default_factory=datetime.now)
     start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     for_now: bool = False
@@ -1582,6 +1580,12 @@ class Price:
         # Check if the "energy_type" key is present in the data dictionary
         # print("DATA:", self)
         # print("TESTDATA:", data)
+
+    def per_unit(self) -> str:
+        """Return the unit of the price."""
+        if self.per_unit:
+            return self.per_unit
+        return None
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
@@ -2087,46 +2091,77 @@ class PriceData:
         """ Prices for tomorrow. """
         return [hour for hour in self.price_data if hour.for_tomorrow]
 
-    def asdict(self, attr, upcoming_only=False, today_only=False, tomorrow_only=False, timezone=None):
-        """ Return a dict that can be used as entity attribute data. """
+    def asdict(
+        self,
+        attr: str,
+        upcoming_only: bool = False,
+        today_only: bool = False,
+        tomorrow_only: bool = False,
+        timezone: str | None = None
+    ) -> list[dict]:
+        """
+        Return a list of dictionaries suitable for use as entity attribute data.
+
+        Args:
+            attr (str): The attribute name (e.g., 'marketPrice') to extract from each price object.
+            upcoming_only (bool): If True, include only upcoming prices.
+            today_only (bool): If True, include only today's prices.
+            tomorrow_only (bool): If True, include only tomorrow's prices.
+            timezone (str | None): The timezone to localize the 'from' and 'till' datetimes. Defaults to UTC.
+
+        Returns:
+            list[dict]: A list of dicts with keys 'from', 'till', and the selected 'price'.
+        """
         try:
-            if timezone is None:
-                timezone = pytz.timezone('UTC')
+            tz = pytz.timezone(timezone) if timezone else pytz.UTC
+
+            # self.price_data is altijd een list
+            if isinstance(self.price_data, list):
+                if upcoming_only:
+                    prices = self.upcoming_prices
+                elif today_only:
+                    prices = self.today_prices
+                elif tomorrow_only:
+                    prices = self.tomorrow_prices
+                    if not prices:
+                        return [{'message': 'No prices for tomorrow.'}]
+                else:
+                    prices = self.price_data
             else:
-                timezone = pytz.timezone(timezone)
+                if upcoming_only:
+                    prices = [self]
+                elif today_only:
+                    prices = [p for p in self.price_data if p.for_today]
+                elif tomorrow_only:
+                    prices = [p for p in self.price_data if p.for_tomorrow]
+                    if not prices:
+                        return [{'message': 'No prices for tomorrow.'}]
+                else:
+                    prices = [self.price_data]
 
-            prices = self.price_data if isinstance(
-                self.price_data, list) else [self.price_data]
+            # DEBUG: If the attribute is not found, return a list of dictionaries with the error message
+            # return [{'type': type(self.price_data).__name__, 'price': price} for price in prices]
 
-            if upcoming_only:
-                prices = self.upcoming_prices if isinstance(
-                    self.price_data, list) else [self]
+            return [
+                {
+                    'from': price.date_from.astimezone(tz),
+                    'till': price.date_till.astimezone(tz),
+                    'price': round(getattr(price, attr), 3),
+                }
+                for price in prices
+            ]
 
-            if today_only:
-                prices = self.today_prices if isinstance(self.price_data, list) else [
-                    price for price in self.price_data if price.for_today]
+        except AttributeError as err:
+            _LOGGER.error("Price object has no attribute '%s'", err)
+            return [{'error': f'Price object has no attribute: {err}'}]
 
-            if tomorrow_only:
-                prices = self.tomorrow_prices if isinstance(self.price_data, list) else [
-                    price for price in self.price_data if price.for_tomorrow]
+        except Exception as exc:
+            _LOGGER.exception(
+                "Failed to convert price data to dict (attr=%s, upcoming_only=%s, today_only=%s, tomorrow_only=%s, timezone=%s): %s",
+                attr, upcoming_only, today_only, tomorrow_only, timezone, exc
+            )
+            return [{'error': f'Failed to convert price data: {exc}'}]
 
-                if not prices:
-                    return [{'message': 'No prices for tomorrow.'}]
-
-            return [{
-                'from': price.date_from.astimezone(timezone),
-                'till': price.date_till.astimezone(timezone),
-                'price': round(getattr(price, attr), 3)
-            } for price in prices]
-
-        except AttributeError:
-            # handle the case where the attribute does not exist on the object
-            return []
-
-        except Exception as e:
-            # handle any other unexpected errors
-            print(f"An error occurred: {e}")
-            return []
 
     @staticmethod
     def asdict_to_local(prices_dict, timezone):
@@ -2592,12 +2627,12 @@ class MarketPrices:
 
     electricity: Optional[PriceData] = None
     gas: Optional[PriceData] = None
-    # energy_type: Optional[str] = None
+    energy_type: Optional[str] = None
 
     def __init__(self, electricity: Optional[PriceData] = None, gas: Optional[PriceData] = None, energy_type: Optional[str] = None) -> None:
         self.electricity = electricity
         self.gas = gas
-        # self.energy_type = energy_type
+        self.energy_type = energy_type
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> 'MarketPrices':
@@ -2627,7 +2662,7 @@ class MarketPrices:
     @staticmethod
     def from_userprices_dict(data: dict[str, Any]) -> Optional['MarketPrices']:
         """Parse the response from the marketPrices query."""
-        _LOGGER.debug("Prices %s", data)
+        _LOGGER.debug("User Prices %s", data)
 
         # Return None if the data is empty
         # if not data:
@@ -2663,56 +2698,45 @@ class MarketPrices:
             gas=PriceData(market_prices_gas, energy_type="gas"),
         )
 
+@dataclass
+class Session:
+    """A trading session for a battery."""
+
+    date: datetime
+    trading_result: float
+    cumulative_trading_result: float
+
+    @staticmethod
+    def from_dict(payload: dict[str, Any]) -> 'SmartBatterySessions.Session':
+        """Parse the sessions payload from the SmartBatterySessions query result."""
+        _LOGGER.debug("🔁 Parsing SmartBatterySessions.Session response: %s", payload)
+
+        try:
+            return SmartBatterySessions.Session(
+                date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
+                trading_result=float(payload["tradingResult"]),
+                cumulative_trading_result=float(payload["cumulativeTradingResult"]),
+            )
+        except KeyError as exc:
+            raise RequestException(f"Missing expected field in session: %s" % exc) from exc
+        except ValueError as exc:
+            raise RequestException("Invalid data format in session payload: %s" % exc) from exc
+
 
 @dataclass
 class SmartBatteries:
     """Collection of the users SmartBatteries."""
 
-    @dataclass
-    class SmartBattery:
-        """SmartBattery model."""
-
-        brand: str
-        capacity: float
-        external_reference: str
-        id: str
-        max_charge_power: float
-        max_discharge_power: float
-        provider: str
-        created_at: datetime
-        updated_at: datetime
-
-        @staticmethod
-        def from_dict(payload: dict[str, Any]) -> 'SmartBatteries.SmartBattery':
-            """Parse the response from the SmartBatteries query."""
-            _LOGGER.debug("SmartBattery %s", payload)
-
-            return SmartBatteries.SmartBattery(
-                brand=payload.get("brand"),
-                capacity=payload.get("capacity"),
-                external_reference=payload.get("externalReference"),
-                id=payload.get("id"),
-                max_charge_power=payload.get("maxChargePower"),
-                max_discharge_power=payload.get("maxDischargePower"),
-                provider=payload.get("provider"),
-                created_at=datetime.fromisoformat(payload.get("createdAt")),
-                updated_at=datetime.fromisoformat(payload.get("updatedAt")),
-            )
-
-        @classmethod
-        def from_dict_list(cls, items: list[Any]) -> list["SmartBatteries.SmartBattery"]:
-            """Convert a list of dictionaries to a list of SmartBattery instances."""
-            return [cls(**item) if isinstance(item, dict) else item for item in items]
-
-    smart_batteries: list[SmartBattery]
+    smart_batteries: list["SmartBattery"] = field(default_factory=list)
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> 'SmartBatteries':
         """Parse the response from the smartBatteries query."""
 
         if not data:
-            _LOGGER.debug("No data found")
-            return SmartBatteries(smart_batteries=[])
+            _LOGGER.debug("No data found in smart batteries response.")
+            # return SmartBatteries(smart_batteries=[])
+            return SmartBatteries()
             # raise RequestException("Unexpected response")
 
         _LOGGER.debug("SmartBatteries %s", data)
@@ -2726,19 +2750,41 @@ class SmartBatteries:
         if not isinstance(payload, list):
             raise RequestException("Expected 'smartBatteries' to be a list.")
 
-        print(payload)
-
         return SmartBatteries(
             smart_batteries=[
-                SmartBatteries.SmartBattery.from_dict(smart_battery)
+                SmartBattery.from_dict(smart_battery)
                 for smart_battery in payload
                 # for smart_battery in payload.get("smartBatteries", [])
             ],
         )
 
 @dataclass
+class SmartBatterySettings:
+    """Battery configuration settings."""
+
+    battery_mode: str
+    imbalance_trading_strategy: str
+    self_consumption_trading_allowed: bool
+
+@dataclass
 class SmartBattery:
-    """SmartBattery model."""
+    """
+    Core smart battery device data.
+
+    Attributes:
+        brand: Manufacturer or brand of the battery.
+        capacity: Total storage capacity in kWh.
+        external_reference: External identifier used by the provider or platform.
+        id: Unique identifier of the battery.
+        max_charge_power: Maximum charging power in kW.
+        max_discharge_power: Maximum discharging power in kW.
+        provider: Name of the service provider.
+        created_at: Datetime the battery was registered (must be timezone-aware).
+        updated_at: Datetime the battery was last updated (must be timezone-aware).
+        settings: Optional battery configuration settings.
+        sessions: List of usage sessions or historical interactions.
+    """
+
     brand: str
     capacity: float
     external_reference: str
@@ -2748,26 +2794,81 @@ class SmartBattery:
     provider: str
     created_at: datetime
     updated_at: datetime
-    @dataclass
-    class Session:
-        """A trading session for a battery."""
-        date: datetime
-        trading_result: float
-        cumulative_trading_result: float
+    settings: SmartBatterySettings | None = None
+    sessions: list["SmartBatterySession"] = field(default_factory=list)
 
-    sessions: list['Session'] = field(default_factory=list)
+    @staticmethod
+    def from_dict(payload: dict[str, Any]) -> "SmartBattery":
+        """Parse the response for a single SmartBattery."""
+        _LOGGER.debug("SmartBattery payload: %s", payload)
 
-    def __init__(self, brand: str, capacity: float, external_reference: str, id: str, max_charge_power: float, max_discharge_power: float, provider: str, created_at: datetime, updated_at: datetime) -> None:
-        self.brand = brand
-        self.capacity = capacity
-        self.external_reference = external_reference
-        self.id = id
-        self.max_charge_power = max_charge_power
-        self.max_discharge_power = max_discharge_power
-        self.provider = provider
-        self.created_at = created_at
-        self.updated_at = updated_at
-        self.sessions = []
+        created_at = None
+        updated_at = None
+        try:
+            if 'created_at' in payload:
+                created_at = datetime.fromisoformat(payload["created_at"]).astimezone(timezone.utc)
+            if 'updated_at' in payload:
+                updated_at = datetime.fromisoformat(payload["updated_at"]).astimezone(timezone.utc)
+            if 'createdAt' in payload:
+                created_at = datetime.fromisoformat(payload["createdAt"]).astimezone(timezone.utc)
+            if 'updatedAt' in payload:
+                updated_at = datetime.fromisoformat(payload["updatedAt"]).astimezone(timezone.utc)
+
+        except KeyError as exc:
+            raise ValueError("Missing expected datetime field: %s" % exc) from exc
+
+        settings_data = payload.get("settings")
+        settings = SmartBatterySettings(
+            battery_mode=settings_data.get("batteryMode", ""),
+            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
+            self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
+        ) if settings_data else None
+
+        sessions_data = payload.get("sessions", [])
+        sessions = [SmartBatterySession.from_dict(s) for s in sessions_data]
+
+        return SmartBattery(
+            brand=payload.get("brand", ""),
+            capacity=payload.get("capacity", 0.0),
+            external_reference=payload.get("externalReference", ""),
+            id=payload["id"],
+            max_charge_power=payload.get("maxChargePower", 0.0),
+            max_discharge_power=payload.get("maxDischargePower", 0.0),
+            provider=payload.get("provider", ""),
+            created_at=created_at,
+            updated_at=updated_at,
+            settings=settings,
+            sessions=sessions,
+        )
+
+
+    @classmethod
+    def from_dict_list(cls, items: list[Any]) -> list["SmartBattery"]:
+        """Convert a list of dictionaries to a list of SmartBattery instances."""
+        return [cls(**item) if isinstance(item, dict) else item for item in items]
+
+@dataclass
+class SmartBatterySession:
+    """A trading session for a smart battery."""
+
+    date: datetime
+    trading_result: float
+    cumulative_trading_result: float
+
+    @staticmethod
+    def from_dict(payload: dict[str, Any]) -> "SmartBatterySession":
+        """Parse the session payload from SmartBatterySessions."""
+        _LOGGER.debug("🔁 Parsing SmartBatterySession: %s", payload)
+        try:
+            return SmartBatterySession(
+                date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
+                trading_result=float(payload["tradingResult"]),
+                cumulative_trading_result=float(payload["cumulativeTradingResult"]),
+            )
+        except KeyError as exc:
+            raise ValueError("Missing expected field in session: %s" % exc) from exc
+        except ValueError as exc:
+            raise ValueError("Invalid data format in session payload: %s" % exc) from exc
 
 @dataclass
 class SmartBatterySessions:
@@ -2782,7 +2883,9 @@ class SmartBatterySessions:
     period_imbalance_result: float
     period_epex_result: float
     period_frank_slim: float
-    sessions: list['Session']
+    # sessions: list["SmartBatterySession"] = field(default_factory=list)
+    sessions: list
+    total_trading_result: float
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> 'SmartBatterySessions':
@@ -2801,8 +2904,8 @@ class SmartBatterySessions:
         
         return SmartBatterySessions(
             device_id=smart_battery_session_data.get("deviceId"),
-            period_start_date=smart_battery_session_data.get("periodStartDate"),
-            period_end_date=smart_battery_session_data.get("periodEndDate"),
+            period_start_date=datetime.fromisoformat(smart_battery_session_data.get("periodStartDate")).astimezone(timezone.utc),
+            period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
             period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
             period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
             period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
@@ -2810,35 +2913,22 @@ class SmartBatterySessions:
             period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
             period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim")),
             sessions=[
-                SmartBatterySessions.Session.from_dict(session)
+                SmartBatterySession.from_dict(session)
                 for session in smart_battery_session_data.get("sessions", [])
             ],
+            total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
         )
 
-    @dataclass
-    class Session:
-        """A trading session for a battery."""
+    def __iter__(self) -> Iterator:
+        return iter(self.sessions)
 
-        date: datetime
-        trading_result: float
-        cumulative_trading_result: float
+    def __len__(self) -> int:
+        return len(self.sessions)
 
-        @staticmethod
-        def from_dict(payload: dict[str, Any]) -> 'SmartBatterySessions.Session':
-            """Parse the sessions payload from the SmartBatterySessions query result."""
-            _LOGGER.debug("🔁 Parsing SmartBatterySessions.Session response: %s", payload)
+    def __getitem__(self, index: int) -> SmartBatterySession:
+        return self.sessions[index]
 
-            try:
-                return SmartBatterySessions.Session(
-                    date=datetime.fromisoformat(payload["date"]),
-                    trading_result=float(payload["tradingResult"]),
-                    cumulative_trading_result=float(payload["cumulativeTradingResult"]),
-                )
-            except KeyError as exc:
-                raise RequestException(f"Missing expected field in session: %s" % exc) from exc
-            except ValueError as exc:
-                raise RequestException("Invalid data format in session payload: %s" % exc) from exc
-
+    
 @dataclass
 class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
@@ -2874,9 +2964,110 @@ class SmartBatterySummary:
             total_result=data.get("totalResult", 0.0),
         )
 
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Any
+
+@dataclass
+class SmartBatteryDetails:
+    """Complete smart battery data including configuration and summary."""
+
+    smart_battery: SmartBattery
+    smart_battery_summary: SmartBatterySummary
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> "SmartBatteryDetails":
+        """Parse SmartBatteryDetails from a raw dictionary."""
+
+        sb_data = data.get("smartBattery", {})
+
+        if not sb_data:
+            raise ValueError("No smart battery data found")
+
+        _LOGGER.debug("SmartBatteryDetails %s", sb_data)
+
+        settings_data = sb_data.get("settings", {})
+        _LOGGER.debug("SmartBatterySettings %s", settings_data)
+        if not settings_data:
+            _LOGGER.warning("No settings data found in smart battery data")
+            settings_data = {}
+
+        smart_battery_settings = SmartBatterySettings(
+            battery_mode=settings_data.get("batteryMode", ""),
+            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
+            self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False)
+        )
+
+        created_at_str = sb_data.get("createdAt")
+        updated_at_str = sb_data.get("updatedAt")
+        created_at_str = sb_data.get("created_at")
+        updated_at_str = sb_data.get("updated_at")
+        _LOGGER.debug("createdAttttt: %s, updatedAt: %s", created_at_str, updated_at_str)
+
+        try:
+            created_at = datetime.fromisoformat(created_at_str).astimezone(timezone.utc) if created_at_str else None
+        except Exception as exc:
+            _LOGGER.warning("Invalid or missing 'createdAt' in smart battery data: %s", created_at_str)
+            created_at = None
+
+        try:
+            updated_at = datetime.fromisoformat(updated_at_str).astimezone(timezone.utc) if updated_at_str else None
+        except Exception as exc:
+            _LOGGER.warning("Invalid or missing 'updatedAt' in smart battery data: %s", updated_at_str)
+            updated_at = None
+
+        smart_battery = SmartBattery(
+            brand=sb_data.get("brand", ""),
+            capacity=sb_data.get("capacity", 0.0),
+            external_reference=sb_data.get("externalReference", ""),
+            id=sb_data.get("id", ""),
+            settings=smart_battery_settings,
+            max_charge_power=sb_data.get("maxChargePower", 0.0),
+            max_discharge_power=sb_data.get("maxDischargePower", 0.0),
+            provider=sb_data.get("provider", ""),
+            updated_at=updated_at,
+            created_at=created_at,
+            sessions=[
+                SmartBatterySession.from_dict(session)
+                for session in sb_data.get("sessions", [])
+            ],
+        )
+
+        summary_data = data.get("smartBatterySummary", {})
+        last_update = datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
+
+        smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
+
+        return SmartBatteryDetails(
+            smart_battery=smart_battery,
+            smart_battery_summary=smart_battery_summary
+        )
+
+def parse_utc_isoformat(value: str) -> datetime:
+    """Convert ISO8601 datetime string to UTC-aware datetime."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+def parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return parse_utc_isoformat(value)
+        except (ValueError, TypeError):
+            _LOGGER.warning("Invalid datetime string: %s", value)
+    return None
+
+@dataclass
+class BatterySessionSummary:
+    active: bool
+    charge_energy: float
+    discharge_energy: float
+    updated_at: str | datetime | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.updated_at, str):
+            try:
+                self.updated_at = parse_datetime(self.updated_at)
+            except ValueError:
+                _LOGGER.warning("Invalid updated_at format: %s", self.updated_at)
+                self.updated_at = None
 
 
 @dataclass
@@ -2902,7 +3093,7 @@ class BatteryEntityGroup:
     updated_at: datetime
     mode_sensor: Any
     soc_sensor: Any
-    result_sensors: list[Any]
+    result_sensors: list["BatteryEntityGroup.ResultSensor"] = field(default_factory=list)
 
     @dataclass
     class ResultSensor:
@@ -2955,12 +3146,18 @@ class BatteryEntityGroup:
         Returns:
             BatteryEntityGroup instance.
         """
+        try:
+            created_at = datetime.fromisoformat(data["createdAt"]).astimezone(timezone.utc)
+            updated_at = datetime.fromisoformat(data["updatedAt"]).astimezone(timezone.utc)
+        except Exception as exc:
+            raise ValueError("Invalid datetime format in 'createdAt' or 'updatedAt'") from exc
+
         return cls(
             id=data["id"],
             name=data["name"],
             battery_ids=data["batteryIds"],
-            created_at=datetime.fromisoformat(data["createdAt"]),
-            updated_at=datetime.fromisoformat(data["updatedAt"]),
+            created_at=created_at,
+            updated_at=updated_at,
             mode_sensor=data.get("modeSensor"),
             soc_sensor=data.get("socSensor"),
             result_sensors=[
@@ -2986,3 +3183,31 @@ class BatteryEntityGroup:
             "socSensor": self.soc_sensor,
             "resultSensors": [sensor.to_dict() for sensor in self.result_sensors],
         }
+
+def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[str, Any]:
+    """
+    Convert a BatteryEntityGroup instance into a dictionary suitable for use
+    in Home Assistant's extra_state_attributes.
+
+    Args:
+        group: The BatteryEntityGroup instance.
+
+    Returns:
+        A dictionary representing extra state attributes.
+    """
+    return {
+        "battery_group_id": group.id,
+        "battery_group_name": group.name,
+        "battery_ids": group.battery_ids,
+        "created_at": group.created_at.isoformat(),
+        "updated_at": group.updated_at.isoformat(),
+        "mode_sensor": group.mode_sensor,
+        "soc_sensor": group.soc_sensor,
+        "result_sensors": [
+            {
+                "type": sensor.type,
+                "entity": sensor.entity,
+            }
+            for sensor in group.result_sensors
+        ],
+    }
