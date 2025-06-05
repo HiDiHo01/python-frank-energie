@@ -1256,41 +1256,6 @@ class FrankEnergie:
             _LOGGER.debug("No smart batteries found")
             return SmartBatteries([])
 
-        # Process the list of smart batteries
-        smart_batteries = []
-        # for battery_data in response["data"]["smartBatteries"]:
-        for battery_data in batteries_data:
-            # Handle datetime fields
-            created_at = None
-            updated_at = None
-
-            print(battery_data)
-
-            """
-            # Convert createdAt and updatedAt to datetime objects
-            if 'createdAt' in battery_data:
-                created_at = datetime.fromisoformat(battery_data['createdAt'].replace("Z", "+00:00"))
-            if 'updatedAt' in battery_data:
-                updated_at = datetime.fromisoformat(battery_data['updatedAt'].replace("Z", "+00:00"))
-            if 'created_at' in battery_data:
-                created_at = datetime.fromisoformat(battery_data['created_at'].replace("Z", "+00:00"))
-            if 'updated_at' in battery_data:
-                updated_at = datetime.fromisoformat(battery_data['updated_at'].replace("Z", "+00:00"))
-
-            # Convert the battery data to SmartBattery object
-            smart_batteries.append(SmartBattery(
-                brand=battery_data["brand"],
-                capacity=battery_data["capacity"],
-                created_at=created_at,
-                external_reference=battery_data["externalReference"],
-                id=battery_data["id"],
-                max_charge_power=battery_data["maxChargePower"],
-                max_discharge_power=battery_data["maxDischargePower"],
-                provider=battery_data["provider"],
-                updated_at=updated_at
-            ))
-            """
-
         try:
             smart_batteries = [SmartBattery.from_dict(b) for b in batteries_data]
         except (KeyError, ValueError, TypeError) as err:
@@ -1331,7 +1296,7 @@ class FrankEnergie:
         )
 
         response = await self._query(query)
-        response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "123456", 'settings': {
+        response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "cm3sunryl0000tc3nhygweghn", 'settings': {
             "batteryMode": "IMBALANCE_TRADING",
             "imbalanceTradingStrategy": "AGGRESSIVE",
             "selfConsumptionTradingAllowed": True

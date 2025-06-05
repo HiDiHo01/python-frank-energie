@@ -5,12 +5,14 @@ import logging
 import statistics
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from statistics import mean
 from typing import Any, Iterator, Optional, Set, Union
 
 import jwt
 import pytz
+
+from jwt.exceptions import InvalidTokenError
 from dateutil.parser import parse
 from pydantic import BaseModel, EmailStr
 
@@ -21,7 +23,7 @@ DEFAULT_ROUND = 6
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-VERSION = "2025.4.11"
+VERSION = "2025.5.23"
 
 
 @dataclass
@@ -76,6 +78,34 @@ class Authentication:
             authTokenDecoded["exp"], tz=timezone.utc
         ) > datetime.now(tz=tz)
 
+    def auth_token_valid(self, tz: tzinfo = timezone.utc) -> bool:
+        """
+        Check if the authToken is still valid based on its expiration timestamp.
+
+        Args:
+            tz (tzinfo): The timezone to compare the expiration against. Defaults to UTC.
+
+        Returns:
+            bool: True if the token is still valid, False otherwise.
+
+        Raises:
+            ValueError: If the authToken is missing or malformed.
+        """
+        if not self.authToken:
+            raise ValueError("authToken is missing or not set.")
+
+        try:
+            auth_token_decoded = jwt.decode(
+                self.authToken,
+                options={"verify_signature": False},
+                algorithms=["HS256"],
+            )
+        except InvalidTokenError as err:
+            _LOGGER.warning("Failed to decode authToken: %s", err)
+            raise ValueError("Malformed authToken.") from err
+
+        expiration = datetime.fromtimestamp(auth_token_decoded.get("exp", 0), tz=timezone.utc)
+        return expiration > datetime.now(tz=tz)
 
 @dataclass
 class Invoice:
@@ -2766,6 +2796,21 @@ class SmartBatterySettings:
     imbalance_trading_strategy: str
     self_consumption_trading_allowed: bool
 
+    @classmethod
+    def from_dict(cls, data: dict) -> 'SmartBatterySettings':
+        return cls(
+            battery_mode=data["batteryMode"],
+            imbalance_trading_strategy=data["imbalanceTradingStrategy"],
+            self_consumption_trading_allowed=data["selfConsumptionTradingAllowed"]
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"BatteryMode={self.battery_mode}, "
+            f"Strategy={self.imbalance_trading_strategy}, "
+            f"SelfConsumptionAllowed={self.self_consumption_trading_allowed}"
+        )
+
 @dataclass
 class SmartBattery:
     """
@@ -2787,15 +2832,17 @@ class SmartBattery:
 
     brand: str
     capacity: float
-    external_reference: str
     id: str
-    max_charge_power: float
-    max_discharge_power: float
-    provider: str
-    created_at: datetime
-    updated_at: datetime
+    external_reference: str = ""
+    max_charge_power: float = 0.0
+    max_discharge_power: float = 0.0
+    provider: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # settings: SmartBatterySettings = field(default_factory=SmartBatterySettings)
     settings: SmartBatterySettings | None = None
-    sessions: list["SmartBatterySession"] = field(default_factory=list)
+    # sessions: list["SmartBatterySession"] = field(default_factory=list)
+    sessions: list[Any] = field(default_factory=list)
 
     @staticmethod
     def from_dict(payload: dict[str, Any]) -> "SmartBattery":
@@ -2971,6 +3018,7 @@ class SmartBatteryDetails:
 
     smart_battery: SmartBattery
     smart_battery_summary: SmartBatterySummary
+    smart_battery_settings: SmartBatterySettings | None = None
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> "SmartBatteryDetails":
