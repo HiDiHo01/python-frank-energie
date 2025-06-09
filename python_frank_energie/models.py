@@ -2898,7 +2898,7 @@ class SmartBattery:
 class SmartBatterySession:
     """A trading session for a smart battery."""
 
-    date: datetime
+    date: date
     trading_result: float
     cumulative_trading_result: float
 
@@ -2922,8 +2922,8 @@ class SmartBatterySessions:
     """Collection of smart battery trading sessions."""
 
     device_id: str
-    period_start_date: datetime
-    period_end_date: datetime
+    period_start_date: date
+    period_end_date: date
     period_trade_index: int
     period_trading_result: float
     period_total_result: float
@@ -2931,7 +2931,8 @@ class SmartBatterySessions:
     period_epex_result: float
     period_frank_slim: float
     # sessions: list["SmartBatterySession"] = field(default_factory=list)
-    sessions: list
+    sessions: list[SmartBatterySession]
+    # sessions: list
     total_trading_result: float
 
     @staticmethod
@@ -2975,6 +2976,8 @@ class SmartBatterySessions:
     def __getitem__(self, index: int) -> SmartBatterySession:
         return self.sessions[index]
 
+    def __str__(self) -> str:
+        return f"SmartBatterySessions({self.device_id}, {len(self.sessions)} sessions, total_result={self.total_trading_result})"
     
 @dataclass
 class SmartBatterySummary:
