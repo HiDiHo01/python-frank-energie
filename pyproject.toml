@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2025.5.17"
+version = "2025.6.9"
 description = "Asynchronous Python client for the Frank Energie"
 authors = ["HiDiHo01"]
 maintainers = ["HiDiHo01"]
@@ -22,7 +22,7 @@ packages = [
 python = "^3.12"
 
 # Core dependencies
-aiohttp = ">=3.8.4,<4.0.0"
+aiohttp = ">=3.8.4,<6.0.0"
 propcache = ">=0.3.0,<0.4.0"
 requests = "^2.32.3"
 
