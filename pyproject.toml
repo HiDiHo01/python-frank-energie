@@ -19,35 +19,35 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.12"
+python = "^3.13"
 
 # Core dependencies
-aiohttp = ">=3.8.4,<6.0.0"
-propcache = ">=0.3.0,<0.4.0"
-requests = "^2.32.3"
+# aiohttp = ">=3.8.4,<6.0.0"
+# propcache = ">=0.3.0,<0.4.0"
+# requests = "^2.32.3"
 
 # Time/date handling
-python-dateutil = "^2.9.0"
-pytz = "^2025.2"
+# python-dateutil = "^2.9.0"
+# pytz = "^2025.2"
 
 # JWT-related
-PyJWT = "^2.10.1"
+# PyJWT = "^2.10.1"
 
 # Crypto
-cryptography = ">=44.0.1,<46.0.0"
-cffi = "^1.17.1"
+# cryptography = ">=44.0.1,<46.0.0"
+# cffi = "^1.17.1"
 
 # Testing
-syrupy = "^4.9.1"
+# syrupy = "^4.9.1"
 
 # Compatibility
-six = "^1.17.0"
+# six = "^1.17.0"
 
 [tool.poetry.group.dev.dependencies]
 colorama = "^0.4.6"
 iniconfig = "^2.1.0"
 packaging = ">=24.2,<26.0"
-pluggy = "^1.5.0"
+pluggy = "^1.6.0"
 aresponses = "^3.0.0"
 black = ">=24.8,<26.0"
 blacken-docs = "^1.19.1"
@@ -57,7 +57,7 @@ pre-commit = ">=3.8,<5.0"
 isort = ">=5.13.2,<7.0.0"
 pre-commit-hooks = "^5.0.0"
 pylint = "^3.3.3"
-pytest = "^8.3.3"
+pytest = "^8.4.0"
 pytest-asyncio = ">=0.24,<0.27"
 pytest-cov = "^6.0.0"
 pyupgrade = "^3.19.0"
