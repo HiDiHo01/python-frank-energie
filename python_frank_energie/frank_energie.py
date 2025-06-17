@@ -24,7 +24,7 @@ from .models import (Authentication, EnergyConsumption, EnodeChargers, Invoice, 
                      MarketPrices, Me, MonthInsights, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.6.9"
+VERSION = "2025.6.17"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -59,8 +59,8 @@ def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
 class FrankEnergie:
     """FrankEnergie API client."""
 
-    # DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
-    DATA_URL = "https://graphql.frankenergie.nl/"
+    DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
+    # DATA_URL = "https://graphql.frankenergie.nl/"
 
     def __init__(
         self,
@@ -143,7 +143,6 @@ class FrankEnergie:
 
         if self._auth is not None and self._auth.authToken is not None:
             headers["Authorization"] = f"Bearer {self._auth.authToken}"
-            # headers["x-frank-auth"] = f"Bearer {self._auth.authToken}"
         # else:
         #     headers["x-country"] = "NL"
 
@@ -317,9 +316,6 @@ class FrankEnergie:
                 if data is not None:
                     # auth_data = data["login"]
                     self._auth = Authentication.from_dict(response)
-
-            # self._handle_errors(response)
-
             return self._auth
 
         except Exception as error:
@@ -947,7 +943,7 @@ class FrankEnergie:
     async def be_prices(
         self, start_date: Optional[date] | None = None
     ) -> MarketPrices:
-        """Get market prices."""
+        """Get belgium market prices."""
         if not start_date:
             start_date = date.today()
 
@@ -1244,8 +1240,8 @@ class FrankEnergie:
         }
     
         # Handle empty or missing response data
-        if response is None or "data" not in response or response["data"] is None:
-            _LOGGER.debug("No response data for 'smartBatteries'")
+        if not response or not response.get("data"):
+            _LOGGER.warning("Empty or missing GraphQL response for 'smartBatteries'")
             return {}
 
         _LOGGER.debug("Response data for 'smartBatteries': %s", response)
@@ -1268,6 +1264,9 @@ class FrankEnergie:
         """Retrieve smart battery details and summary."""
         if self._auth is None:
             raise AuthRequiredException
+
+        if not device_id:
+            raise ValueError("Missing required device_id for smart_battery_sessions")
 
         query = FrankEnergieQuery(
             """
@@ -1352,8 +1351,11 @@ class FrankEnergie:
         if self._auth is None:
             raise AuthRequiredException
 
-        query = {
-            "query": """
+        if not device_id:
+            raise ValueError("Missing required device_id for smart_battery_sessions")
+
+        query = FrankEnergieQuery(
+            """
                 query SmartBatterySessions($startDate: String!, $endDate: String!, $deviceId: String!) {
                     smartBatterySessions(
                         startDate: $startDate
@@ -1378,13 +1380,13 @@ class FrankEnergie:
                     }
                     }
                 """,
-            "operationName": "SmartBatterySessions",
-            "variables": {
+            "SmartBatterySessions",
+            {
                 "deviceId": device_id,
                 "startDate": start_date.isoformat(),  # Ensures proper ISO 8601 format
                 "endDate": end_date.isoformat(),      # Ensures proper ISO 8601 format
             },
-        }
+        )
 
         response = await self._query(query)
 
@@ -1403,7 +1405,7 @@ class FrankEnergie:
         """
         return self._auth is not None and self._auth.authToken is not None
 
-    def authentication_valid(self) -> bool:
+    def old_authentication_valid(self) -> bool:
         """Return if client is authenticated.
         Does not actually check if the token is valid.
         """
@@ -1411,7 +1413,7 @@ class FrankEnergie:
             return False
         return self._auth.authTokenValid()
 
-    def _check_authentication(self) -> None:
+    def old__check_authentication(self) -> None:
         """Check if client is authenticated and raise exception if not."""
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")

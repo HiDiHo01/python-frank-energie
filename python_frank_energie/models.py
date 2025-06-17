@@ -38,6 +38,7 @@ class Authentication:
 
     authToken: str
     refreshToken: str
+    expires_at: datetime | None = None
 
     @staticmethod
     def from_dict(data: dict[str, str]) -> 'Authentication':
@@ -56,9 +57,33 @@ class Authentication:
         if not payload:
             raise AuthException("Unexpected response")
 
+        _LOGGER.debug("Authentication payload: %s", payload)
+        auth_token = payload.get("authToken")
+        refresh_token = payload.get("refreshToken")
+
+        expires_at = None
+        if auth_token:
+            try:
+                decoded = jwt.decode(
+                    auth_token,
+                    options={"verify_signature": False},
+                    algorithms=["HS256"],
+                )
+                _LOGGER.debug("authToken decoded claims: %s", decoded)
+                exp_ts = decoded.get("exp")
+                if exp_ts:
+                    expires_at = datetime.fromtimestamp(exp_ts, tz=timezone.utc)
+                else:
+                    _LOGGER.warning("authToken missing 'exp' claim; treating as expired")
+                    expires_at = None
+                _LOGGER.debug("authToken expires at: %s", expires_at)
+            except InvalidTokenError as err:
+                _LOGGER.warning("Unable to decode authToken to extract expiration: %s", err)
+
         return Authentication(
-            authToken=payload.get("authToken"),
-            refreshToken=payload.get("refreshToken"),
+            authToken=auth_token,
+            refreshToken=refresh_token,
+            expires_at=expires_at,
         )
 
     @staticmethod
@@ -66,7 +91,7 @@ class Authentication:
         """Extract the login or renewToken payload from the data dictionary."""
         return data.get("data", {}).get("login") or data.get("data", {}).get("renewToken")
 
-    def authTokenValid(self, tz: timezone = timezone.utc) -> bool:
+    def old_authTokenValid(self, tz: timezone = timezone.utc) -> bool:
         """Return that authToken is valid according to expiration time."""
         authTokenDecoded = jwt.decode(
             self.authToken,
@@ -78,7 +103,7 @@ class Authentication:
             authTokenDecoded["exp"], tz=timezone.utc
         ) > datetime.now(tz=tz)
 
-    def auth_token_valid(self, tz: tzinfo = timezone.utc) -> bool:
+    def old_auth_token_valid(self, tz: tzinfo = timezone.utc) -> bool:
         """
         Check if the authToken is still valid based on its expiration timestamp.
 
@@ -106,6 +131,11 @@ class Authentication:
 
         expiration = datetime.fromtimestamp(auth_token_decoded.get("exp", 0), tz=timezone.utc)
         return expiration > datetime.now(tz=tz)
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if the token is expired based on the expires_at field."""
+        return not self.expires_at or datetime.now(timezone.utc) >= self.expires_at
 
 @dataclass
 class Invoice:
