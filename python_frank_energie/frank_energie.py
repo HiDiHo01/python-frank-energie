@@ -727,7 +727,6 @@ class FrankEnergie:
                 smartTrading {
                     isActivated
                     isAvailableInCountry
-                    isEnabledV2Batteries
                     userCreatedAt
                     userId
                 }
@@ -924,7 +923,6 @@ class FrankEnergie:
                 smartTrading {
                     isActivated
                     isAvailableInCountry
-                    isEnabledV2Batteries
                     userCreatedAt
                     userId
                 }
