@@ -2,8 +2,9 @@
 # python_frank_energie/frank_energie.py
 
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
+import re
 from typing import Any, Optional
 import logging
 
@@ -111,7 +112,10 @@ class FrankEnergie:
             self._session = ClientSession()
             self._close_session = True
 
-    async def _query(self, query: FrankEnergieQuery) -> dict[str, Any]:
+    async def _query(self,
+                     query: FrankEnergieQuery,
+                     extra_headers: Optional[dict[str, str]] = None
+    ) -> dict[str, Any]:
         """Send a query to the FrankEnergie API.
 
         Args:
@@ -131,20 +135,11 @@ class FrankEnergie:
             "Accept": "application/json"
         }
 
-        # headers["x-country"] = "BE"
-
-        # use this in async_setup_entry OR Coordinator
-        # country_code = self.hass.config.country
-        # if country_code:
-        #     _LOGGER.debug("Detected country from HA config: %s", country_code)
-        #     headers["x-country"] = country_code
-        # else:
-        #     _LOGGER.warning("No country configured in Home Assistant general settings.")
-
         if self._auth is not None and self._auth.authToken is not None:
             headers["Authorization"] = f"Bearer {self._auth.authToken}"
-        # else:
-        #     headers["x-country"] = "NL"
+
+        if extra_headers:
+            headers.update(extra_headers)
 
         # print(f"Request: POST {self.DATA_URL}")
         # print(f"Request headers: {headers}")
@@ -179,12 +174,12 @@ class FrankEnergie:
                 _LOGGER.debug("No response data.")
                 return {}
 
+            logging.debug("Response body: %s", response)
             self._handle_errors(response)
 
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
             # print(f"Response body: {response}")
-            logging.debug("Response body: %s", response)
 
             # if resp.status == 200: # overbodig
             return response
@@ -639,6 +634,12 @@ class FrankEnergie:
                     treesAmountPerConnection
                     discountPerConnection
                 }
+                PushNotificationPriceAlerts {
+                    id
+                    isEnabled
+                    type
+                    weekdays
+                }
                 UserSettings {
                     id
                     disabledHapticFeedback
@@ -682,6 +683,13 @@ class FrankEnergie:
                             zipCode
                             city
                         }
+                        contract {
+                            startDate
+                            endDate
+                            contractType
+                            productName
+                            tariffChartId
+                        }
                     }
                 }
                 externalDetails {
@@ -696,6 +704,7 @@ class FrankEnergie:
                         mobileNumber
                     }
                     address {
+                        addressFormatted
                         street
                         houseNumber
                         houseNumberAddition
@@ -878,6 +887,13 @@ class FrankEnergie:
                             zipCode
                             city
                         }
+                        contract {
+                            startDate
+                            endDate
+                            contractType
+                            productName
+                            tariffChartId
+                        }
                     }
                 }
                 externalDetails {
@@ -938,7 +954,7 @@ class FrankEnergie:
         response = await self._query(query)
         return User.from_dict(response)
 
-    async def be_prices(
+    async def old_be_prices(
         self, start_date: Optional[date] | None = None
     ) -> MarketPrices:
         """Get belgium market prices."""
@@ -977,6 +993,54 @@ class FrankEnergie:
         # print(response)
         #return MarketPrices.from_dict(response)
         return response
+
+    async def be_prices(
+        self,
+        start_date: Optional[date] | None = None,
+        end_date: Optional[date] | None = None
+    ) -> MarketPrices:
+        """Get belgium market prices."""
+        if start_date is None:
+            start_date = datetime.now(timezone.utc).date()
+        if end_date is None:
+            end_date = start_date + timedelta(days=1)
+
+        headers = {"x-country": "BE"}
+
+        query = FrankEnergieQuery(
+            """
+            query MarketPrices ($date: String!) {
+                marketPrices(date: $date) {
+                    electricityPrices {
+                        from
+                        till
+                        marketPrice
+                        marketPriceTax
+                        sourcingMarkupPrice
+                        energyTaxPrice
+                        perUnit
+                        __typename
+                    }
+                    gasPrices {
+                        from
+                        till
+                        marketPrice
+                        marketPriceTax
+                        sourcingMarkupPrice
+                        energyTaxPrice
+                        perUnit
+                        __typename
+                    }
+                __typename
+                }
+            }
+            """,
+            "MarketPrices",
+            {"date": str(start_date)},  
+        )
+        # response = await self._query(query)
+        response = await self._query(query, extra_headers=headers)
+        return MarketPrices.from_be_dict(response)
 
     async def prices(
         self, start_date: Optional[date] | None = None, end_date: Optional[date] | None = None
@@ -1022,8 +1086,8 @@ class FrankEnergie:
 
     async def user_prices(
         self,
-        start_date: date,
         site_reference: str,
+        start_date: date,
         end_date: Optional[date] | None = None
     ) -> MarketPrices:
         """Get customer market prices."""
@@ -1102,15 +1166,15 @@ class FrankEnergie:
 
     async def period_usage_and_costs(self,
                                      site_reference: str,
-                                     start_date: date,
+                                     start_date: str,
                                      ) -> "PeriodUsageAndCosts":
         """
         Haalt het verbruik en de kosten op voor een specifieke periode en locatie.
+        Dit is net als op de factuur de marktprijs+
 
         Args:
             site_reference (str): De referentie van de locatie.
-            start_date (date): De startdatum van de periode waarvoor de gegevens moeten worden opgehaald.
-            end_date (date): De einddatum van de periode waarvoor de gegevens moeten worden opgehaald.
+            start_date (str | datetime.date): De startdatum van de periode waarvoor de gegevens moeten worden opgehaald.
 
         Returns:
             PeriodUsageAndCosts: Het verbruik en de kosten van gas, elektriciteit en teruglevering.
@@ -1118,9 +1182,13 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: Als de authenticatie ontbreekt.
             FrankEnergieAPIException: Als de API een fout retourneert.
+            ValueError: Als de site_reference leeg is of start_date in de toekomst ligt.
         """
+        if not site_reference:
+            raise ValueError("De 'site_reference' mag niet leeg zijn.")
+
         if self._auth is None:
-            raise AuthRequiredException
+            raise AuthRequiredException("Authenticatie is vereist om deze query uit te voeren.")
 
         query = FrankEnergieQuery(
             """
@@ -1138,7 +1206,9 @@ class FrankEnergie:
                             usage
                             costs
                             unit
+                            __typename
                         }
+                        __typename
                     }
                     electricity{
                         usageTotal
@@ -1151,7 +1221,9 @@ class FrankEnergie:
                             usage
                             costs
                             unit
+                            __typename
                         }
+                        __typename
                     }
                     feedIn {
                         usageTotal
@@ -1164,19 +1236,29 @@ class FrankEnergie:
                             usage
                             costs
                             unit
+                            __typename
                         }
+                        __typename
                     }
                     __typename
                 }
+                __typename
             }
             """,
             "PeriodUsageAndCosts",
-            {"siteReference": site_reference, "date": str(start_date.strftime("%Y-%m-%d"))},
+            {
+                "siteReference": site_reference,
+                "date": str(start_date),
+            },
         )
 
-        response = await self._query(query)
-
-        return PeriodUsageAndCosts.from_dict(response["data"])
+        try:
+            response = await self._query(query)
+            return PeriodUsageAndCosts.from_dict(response)
+        except Exception as err:
+            _LOGGER.exception("Fout bij ophalen van periodUsageAndCosts voor site %s op %s: %s",
+                              site_reference, start_date, err)
+            raise FrankEnergieException("Kon verbruik en kosten niet ophalen voor opgegeven periode.") from err
 
 
     async def smart_batteries(self) -> SmartBatteries:
@@ -1403,18 +1485,24 @@ class FrankEnergie:
         """
         return self._auth is not None and self._auth.authToken is not None
 
-    def old_authentication_valid(self) -> bool:
-        """Return if client is authenticated.
-        Does not actually check if the token is valid.
-        """
-        if self._auth is None:
-            return False
-        return self._auth.authTokenValid()
+    def _validate_not_future_date(self, value: date) -> None:
+        if value > datetime.now(timezone.utc).date():
+            raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
 
-    def old__check_authentication(self) -> None:
-        """Check if client is authenticated and raise exception if not."""
-        if not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
+    def _validate_start_date_format(self, start_date: str | date) -> None:
+        if isinstance(start_date, date):
+            start_date = start_date.isoformat()
+
+        if not re.fullmatch(r"\d{4}(-\d{2}){0,2}", start_date):
+            raise ValueError("De 'start_date' moet een formaat hebben zoals 'YYYY', 'YYYY-MM' of 'YYYY-MM-DD'.")
+
+        if len(start_date) == 10:  # volledige datum
+            try:
+                date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+                if date_obj > datetime.now(timezone.utc).date():
+                    raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
+            except ValueError as e:
+                raise ValueError("De 'start_date' heeft geen geldig datumformaat: %s" % e)
 
     async def close(self) -> None:
         """Close client session."""

@@ -24,7 +24,7 @@ DEFAULT_ROUND = 6
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 VERSION = "2025.5.23"
-
+FETCH_TOMORROW_HOUR_UTC = 12
 
 @dataclass
 class Authentication:
@@ -184,7 +184,7 @@ class Invoice:
 
 @dataclass
 class Invoices:
-    """Represents invoices information, including the previous, current, and upcoming period."""
+    """Represents invoices including historical, current, and upcoming periods."""
 
     def __init__(
         self,
@@ -439,7 +439,7 @@ class Invoices:
 class UsageItem:
     """Representeert een individueel gebruiksitem binnen een periode."""
 
-    date: date
+    date: str
     from_time: str
     till_time: str
     usage: float
@@ -451,7 +451,7 @@ class UsageItem:
         """Maakt een UsageItem-object aan vanuit een dictionary."""
         try:
             return UsageItem(
-                date=date.fromisoformat(data["date"]),
+                date=str(data["date"]),
                 from_time=str(data["from"]),
                 till_time=str(data["till"]),
                 usage=float(data["usage"]),
@@ -472,13 +472,17 @@ class EnergyCategory:
     costs_total: float
     unit: str
     items: list[UsageItem]
+    # costs_this_month: float = 0.0
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> 'EnergyCategory':
         """Creates an EnergyCategory object from a dictionary."""
+        _LOGGER.debug("EnergyCategory.from_dict() called with data: %s", data)
         try:
             if data is None:
-                return EnergyCategory(usage_total=0.00, costs_total=0.00, unit="", items=[])
+                # return EnergyCategory(usage_total=0.00, costs_total=0.00, unit="", items=[])
+                # TODO: Check if this is the correct behavior
+                return None
 
             usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else 0.00
             costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else 0.00
@@ -507,7 +511,8 @@ class PeriodUsageAndCosts:
     def from_dict(data: dict[str, Any]) -> 'PeriodUsageAndCosts':
         """Maakt een PeriodUsageAndCosts-object aan vanuit een dictionary."""
         try:
-            period_data = data.get("periodUsageAndCosts")
+            input_data = data.get("data")
+            period_data = input_data.get("periodUsageAndCosts")
             if not period_data:
                 return None
 
@@ -536,7 +541,6 @@ class PeriodUsageAndCosts:
 class UserSites:
     """UserSites data."""
 
-    # deliverySites: list[str]
     deliverySites: list[Any]
     addressFormatted: str
     addressHasMultipleSites: bool
@@ -641,7 +645,7 @@ class Me:
     hasCO2Compensation: bool
     updatedAt: str
     addressHasMultipleSites: bool
-    meterReadingExportPeriods: list
+    meterReadingExportPeriods: list['MeterReadingExportPeriod']
     smartCharging: dict
 
     @staticmethod
@@ -863,21 +867,25 @@ class Debtor:
 
 
 @dataclass
+class GridOperatorAddress:
+    """Address of the grid operator."""
+    street: Optional[str] = None
+    houseNumber: Optional[str] = None
+    houseNumberAddition: Optional[str] = None
+    zipCode: Optional[str] = None
+    city: Optional[str] = None
+
+
+@dataclass
+class ExternalDetails:
+    """Details about the external grid operator."""
+    gridOperator: Optional[str] = None
+    address: GridOperatorAddress = field(default_factory=GridOperatorAddress)
+
+
+@dataclass
 class Connection:
-    @dataclass
-    class ExternalDetails:
-        @dataclass
-        class GridOperatorAddress:
-            street: Optional[str] = None
-            houseNumber: Optional[str] = None
-            houseNumberAddition: Optional[str] = None
-            zipCode: Optional[str] = None
-            city: Optional[str] = None
-
-        gridOperator: Optional[str] = None
-        address: GridOperatorAddress = field(
-            default_factory=GridOperatorAddress)
-
+    """Represents a connection to the energy grid."""
     id: Optional[str] = None
     connectionId: Optional[str] = None
     EAN: Optional[str] = None
@@ -905,12 +913,13 @@ class MeterReadingExportPeriod:
     updatedAt: str
 
 
+class UserDetails:
+    id: Optional[str] = None
+    email: Optional[str] = None
+
+
 @dataclass
 class Signup:
-    class UserDetails:
-        id: Optional[str] = None
-        email: Optional[str] = None
-
     user: UserDetails
 
 
@@ -923,6 +932,25 @@ class UserSettings:
     smartPushNotifications: bool
     rewardPayoutPreference: str
 
+
+@dataclass
+class activePaymentAuthorization:
+    """Represents an active payment authorization record."""
+    id: str
+    mandateId: str
+    signedAt: str
+    bankAccountNumber: str
+    status: str
+
+    @staticmethod
+    def from_dict(data: dict) -> 'activePaymentAuthorization':
+        return activePaymentAuthorization(
+            id=data.get("id"),
+            mandateId=data.get("mandateId"),
+            signedAt=data.get("signedAt"),
+            bankAccountNumber=data.get("bankAccountNumber"),
+            status=data.get("status")
+        )
 
 @dataclass
 class InviteLinkUser:
@@ -1149,16 +1177,6 @@ class User:
             except ValueError:
                 _LOGGER.warning("Invalid lastLogin format: %s", last_login_str)
 
-        # delivery_sites_data = payload.get("deliverySites", [])
-        # if not delivery_sites_data:
-        #     raise RequestException("No delivery sites found in the payload")
-
-        # first_site = delivery_sites_data[0]
-        # todo select only site with the chosen deliverySite reference
-        # selected_delivery_sites = [site for site in delivery_sites_data if site.reference == "IN_DELIVERY"]
-
-        # delivery_sites = [DeliverySite(Address(**site['address'])) for site in payload.get("deliverySites")]
-
         return User(
             id=payload.get("id"),
             InviteLinkUser=payload.get("InviteLinkUser"),
@@ -1262,26 +1280,14 @@ class User:
             site_dict[site_name] = site_info
         return site_dict
 
-    class SmartCharging:
-        isActivated: Optional[bool] = None
-        provider: Optional[str] = None
-        userCreatedAt: Optional[str] = None
-        userId: Optional[str] = None
-        isAvailableInCountry: Optional[bool] = None
-        needsSubscription: Optional[bool] = None
-        subscription: Optional[str] = None
-
-    class Signup:
-        class UserDetails:
-            id: Optional[str] = None
-            email: Optional[str] = None
-
-        user: UserDetails
-
-
-@dataclass
-class Signup:
-    user: User
+class SmartCharging:
+    isActivated: Optional[bool] = None
+    provider: Optional[str] = None
+    userCreatedAt: Optional[str] = None
+    userId: Optional[str] = None
+    isAvailableInCountry: Optional[bool] = None
+    needsSubscription: Optional[bool] = None
+    subscription: Optional[str] = None
 
 
 @dataclass
@@ -1569,16 +1575,28 @@ class Price:
     market_price_including_tax_and_markup: float = 0.0
 
     def __post_init__(self):
-        """Initialize energy_type if provided in data."""
+        """Initialize energy_type if provided in data.
+        This method sets the energy tax price based on the energy type.
+        This tax is for The Netherlands and may change yearly.
+        The values are based on the energy tax for electricity and gas in 2025.
+        €0,10154×1,21=€0,12286 per kWh (<10.000 kWh)
+        Iedere aansluiting krijgt in 2025 een vermindering van € 635,19 (inclusief btw) (tot ~4.700 kWh) via de belastingvermindering/regeling basisbehoefte
+
+        Onderdeel	Tarief 2025
+        Energiebelasting stroom (<10.000 kWh)	€ 0,10154/kWh excl. btw → € 0,12286/kWh incl. btw
+        Energiebelasting stroom (>10.000 kWh)	€ 0,06937/kWh excl. btw → € 0,08400/kWh incl. btw
+        Vermindering energiebelasting	€ 635,19 per jaar (incl. btw)
+        """
         if self.energy_type:
             if self.energy_type == "electricity":
                 # self.energy_tax_price = 0.15239 # electricity tax 2023
                 # self.energy_tax_price = 0.13165  # electricity tax 2024
-                self.energy_tax_price = 0.1228634  # electricity tax 2025
+                self.energy_tax_price = 0.1228634  # electricity tax 2025 incl. BTW
             if self.energy_type == "gas":
                 # self.energy_tax_price = 0.5927 # gas tax 2023
                 # self.energy_tax_price = 0.70544  # gas tax 2024
                 self.energy_tax_price = 0.6995736  # gas tax 2025
+        # not in use anymore, get energy_tax_price from API response
 
     def __init__(self, data: dict, energy_type: Optional[str] = None) -> None:
         """Parse the response from the prices query."""
@@ -1618,9 +1636,6 @@ class Price:
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_till_str)
 
-        # self.date_from = datetime.fromisoformat(data.get('from', ''))
-        # self.date_till = datetime.fromisoformat(data.get('till', ''))
-
         """ The market price of the product or service. """
         self.market_price = data["marketPrice"]
         """ The amount of tax added to the market price. """
@@ -1649,7 +1664,6 @@ class Price:
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
-        # return f"{self.date_from} -> {self.date_till}: {self.total} {self.per_unit}"
         return "%s -> %s: %.4f %s" % (
             self.date_from.isoformat() if self.date_from else "N/A",
             self.date_till.isoformat() if self.date_till else "N/A",
@@ -1658,7 +1672,7 @@ class Price:
         )
 
     @property
-    def ET(self, data) -> str:
+    def ET(self, data) -> str: # not in use anymore
         """Returns energy type 'electricity' or 'gas'."""
         if "energy_type" in data:
             self.energy_type = data["energy_type"]
@@ -1846,9 +1860,20 @@ class Price:
         }
 
 
+@dataclass
+class PriceDataAvg:
+    """Dataclass representing average price data for a time period."""
+    values: list[Price]
+    total: float
+    market_price_with_tax_and_markup: float
+    market_markup_price: float
+    market_price_with_tax: float
+    market_price_tax: float
+    market_price: float
+
+
 class PriceData:
     """Price data for a period of time."""
-
     price_data: list[Price] = []
     energy_type: Optional[str] = None
     current_hour: Price = None
@@ -1856,18 +1881,20 @@ class PriceData:
     next_hour: Price = None
     upcoming_min: Price = None
     upcoming_max: Price = None
-    upcoming_avg: Price = None
+    upcoming_avg: PriceDataAvg = None
     upcoming_prices: list[Price] = None
     elec_previoushour: float = None
     elec_nexthour: float = None
     gas_unit: str = None
     elec_unit: str = None
 
+    """" 
     PriceDataAvg = namedtuple('PriceDataAvg', [
         'values', 'total', 'market_price_with_tax_and_markup',
         'market_markup_price', 'market_price_with_tax',
         'market_price_tax', 'market_price'
     ])
+    """
 
     def __init__(self, prices: Optional[list['Price']] = None, energy_type: Optional[str] = None):
         self.price_data = [Price({**price, "energy_type": energy_type})
@@ -2420,7 +2447,7 @@ class PriceData:
         return type('PriceDataAvg', (object,), {'values': all_prices, 'total': avg, 'market_price_with_tax_and_markup': market_price_with_tax_and_markup_avg, 'market_markup_price': market_price_markup_avg, 'market_price_with_tax': market_price_with_tax_avg, 'market_price_tax': market_price_tax_avg, 'market_price': market_price_avg})
 
     @property
-    def upcoming_avg(self):
+    def upcoming_avg(self) -> Optional[PriceDataAvg]:
         """Get the average of upcoming prices."""
         upcoming_prices = self.get_prices_for_time_period(TimePeriod.UPCOMING)
 
@@ -2440,11 +2467,13 @@ class PriceData:
         market_price_avg = round(
             mean(price.market_price for price in upcoming_prices), DEFAULT_ROUND)
 
+        """
         PriceDataAvg = namedtuple('PriceDataAvg', [
             'values', 'total', 'market_price_with_tax_and_markup',
             'market_markup_price', 'market_price_with_tax',
             'market_price_tax', 'market_price'
         ])
+        """
 
         return PriceDataAvg(
             values=upcoming_prices,
@@ -2487,11 +2516,13 @@ class PriceData:
         market_price_avg = round(
             mean(price.market_price for price in tomorrow_prices), DEFAULT_ROUND)
 
+        """
         PriceDataAvg = namedtuple('PriceDataAvg', [
             'values', 'total', 'market_price_with_tax_and_markup',
             'market_markup_price', 'market_price_with_tax',
             'market_price_tax', 'market_price'
         ])
+        """
 
         return PriceDataAvg(
             values=tomorrow_prices,
@@ -2507,7 +2538,7 @@ class PriceData:
     def tomorrow_prices_market(self) -> list:
         """ Get the market prices for tomorrow"""
         current_hour_utc = datetime.now(timezone.utc).hour
-        if not self.price_data or current_hour_utc > 21 or current_hour_utc < 13:
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
             return None
         # if -1 < datetime.now().hour < 15:
         #    return None
@@ -2526,10 +2557,14 @@ class PriceData:
     @property
     def tomorrow_prices_market_tax(self) -> list:
         """ Get the market prices incl tax for tomorrow"""
-        if not self.price_data:
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
             return None
-        if -1 < datetime.now().hour < 15:
-            return None
+
+#        if not self.price_data:
+#            return None
+#        if -1 < datetime.now().hour < 15:
+#            return None
 
         today_prices = []
         tomorrow_prices = []
@@ -2545,10 +2580,14 @@ class PriceData:
     @property
     def tomorrow_prices_market_tax_markup(self) -> list:
         """ Get the market prices incl tax and markup for tomorrow"""
-        if not self.price_data:
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
             return None
-        if -1 < datetime.now().hour < 15:
-            return None
+
+#        if not self.price_data:
+#            return None
+#        if -1 < datetime.now().hour < 15:
+#            return None
 
         today_prices = []
         tomorrow_prices = []
@@ -2580,10 +2619,14 @@ class PriceData:
     @property
     def tomorrow_prices_total(self) -> list:
         """ Get the market prices for tomorrow"""
-        if not self.price_data:
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
             return None
-        if -1 < datetime.now().hour < 15:
-            return None
+
+#        if not self.price_data:
+#            return None
+#        if -1 < datetime.now().hour < 15:
+#            return None
 
         tomorrow_prices = []
         for price in self.price_data:
@@ -2683,16 +2726,29 @@ class PriceData:
 
 @dataclass
 class MarketPrices:
-    """Market prices for electricity and gas."""
+    """ Market prices for electricity and gas.
+
+        Attributes:
+        electricity (PriceData): The electricity price data.
+        gas (PriceData): The gas price data.
+        energy_type (Optional[str]): The type of energy (e.g., 'electricity' or 'gas').
+        energy_country (str): The country code ('NL' or 'BE') for which the prices apply.
+        today (list): Prices for today.
+        tomorrow (list): Prices for tomorrow.
+    """
+    # note: zet velden zonder default altijd voor velden met default
 
     electricity: Optional[PriceData] = None
     gas: Optional[PriceData] = None
     energy_type: Optional[str] = None
+    energy_country: str = "NL"  # Default to NL, can be overridden
+    today: list = field(default_factory=list)
+    tomorrow: list = field(default_factory=list)
 
-    def __init__(self, electricity: Optional[PriceData] = None, gas: Optional[PriceData] = None, energy_type: Optional[str] = None) -> None:
-        self.electricity = electricity
-        self.gas = gas
-        self.energy_type = energy_type
+#    def __init__(self, electricity: Optional[PriceData] = None, gas: Optional[PriceData] = None, energy_type: Optional[str] = None) -> None:
+#         self.electricity = electricity
+#         self.gas = gas
+#         self.energy_type = energy_type
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> 'MarketPrices':
@@ -2717,6 +2773,43 @@ class MarketPrices:
             electricity=PriceData(market_prices_electricity,
                                   energy_type="electricity"),
             gas=PriceData(market_prices_gas, energy_type="gas"),
+        )
+
+    @classmethod
+    def from_be_dict(cls, data: dict[str, Any]) -> 'MarketPrices':
+        """
+        Create MarketPrices instance from BE market prices dict.
+
+        Args:
+            data: Dictionary with market prices data in BE format.
+
+        Returns:
+            MarketPrices instance populated from the provided dict.
+        """
+        _LOGGER.debug("BE Market Prices %s", data)
+
+        # Defensive: if empty data, return empty PriceData
+        if not data:
+            return cls(PriceData(), PriceData())
+
+        try:
+            payload = data.get("data").get("marketPrices", {})
+        except KeyError as err:
+                    raise ValueError(f"Invalid response format: %s" % err) from err
+
+        # electricity_data = data.get("electricityPrices", {})
+        # gas_data = data.get("gasPrices", {})
+        electricity_data = payload.get("electricityPrices", {})
+        gas_data = payload.get("gasPrices", {})
+
+        # Construct PriceData for electricity and gas similarly to other methods
+        electricity_price_data = PriceData(electricity_data, energy_type="electricity")
+        gas_price_data = PriceData(gas_data, energy_type="gas")
+
+        return cls(
+            electricity=electricity_price_data,
+            gas=gas_price_data,
+            energy_country="BE"
         )
 
     @staticmethod
