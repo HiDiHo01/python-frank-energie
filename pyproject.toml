@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2025.6.19"
+version = "2025.7.2"
 description = "Asynchronous Python client for the Frank Energie"
 authors = ["HiDiHo01"]
 maintainers = ["HiDiHo01"]
@@ -10,7 +10,7 @@ homepage = "https://github.com/HiDiHo01/python-frank-energie"
 repository = "https://github.com/HiDiHo01/python-frank-energie"
 documentation = "https://github.com/HiDiHo01/python-frank-energie"
 classifiers = [
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
@@ -24,7 +24,7 @@ python = "^3.12"
 # Core dependencies
 aiohttp = ">=3.8.4,<6.0.0"
 propcache = ">=0.3.0,<0.4.0"
-requests = "^2.32.3"
+requests = "^2.32.4"
 
 # Time/date handling
 python-dateutil = "^2.9.0"
