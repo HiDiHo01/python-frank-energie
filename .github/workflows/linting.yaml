@@ -98,7 +98,7 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run pre-commit for ${{ matrix.id }}
-        run: poetry run pre-commit run ${{ matrix.id }} --all-files --hook-stage manual --exclude '^codespell$'
+        run: poetry run pre-commit run ${{ matrix.id }} --all-files --hook-stage manual
 
       - name: Regenerate poetry.lock if needed
         run: |
