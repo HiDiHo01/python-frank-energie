@@ -69,8 +69,10 @@ repos:
       - id: codespell
         name: Check code for common misspellings
         language: system
-        types: [text]
-        exclude: ^poetry\.lock$
+        # types: [text]
+        types_or: [text, python]
+        exclude: '.*' # skip codespell
+        # exclude: ^poetry\.lock$
         entry: poetry run codespell
       - id: debug-statements
         name: Debug Statements and imports (Python)
