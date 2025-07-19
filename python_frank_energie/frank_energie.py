@@ -7,6 +7,7 @@ from http import HTTPStatus
 import re
 from typing import Any, Optional
 import logging
+from urllib import response
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -180,8 +181,6 @@ class FrankEnergie:
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
             # print(f"Response body: {response}")
-
-            # if resp.status == 200: # overbodig
             return response
 
         except (asyncio.TimeoutError, ClientError, KeyError) as error:
@@ -954,46 +953,6 @@ class FrankEnergie:
         response = await self._query(query)
         return User.from_dict(response)
 
-    async def old_be_prices(
-        self, start_date: Optional[date] | None = None
-    ) -> MarketPrices:
-        """Get belgium market prices."""
-        if not start_date:
-            start_date = date.today()
-
-        query = FrankEnergieQuery(
-            """
-            query MarketPrices ($date: String!) {
-                marketPrices(date: $date) {
-                    electricityPrices {
-                        from
-                        till
-                        marketPrice
-                        marketPriceTax
-                        sourcingMarkupPrice
-                        energyTaxPrice
-                        perUnit
-                    }
-                    gasPrices {
-                        from
-                        till
-                        marketPrice
-                        marketPriceTax
-                        sourcingMarkupPrice
-                        energyTaxPrice
-                        perUnit
-                    }
-                }
-            }
-            """,
-            "MarketPrices",
-            {"date": str(start_date)},  
-        )
-        response = await self._query(query)
-        # print(response)
-        #return MarketPrices.from_dict(response)
-        return response
-
     async def be_prices(
         self,
         start_date: Optional[date] | None = None,
@@ -1038,7 +997,6 @@ class FrankEnergie:
             "MarketPrices",
             {"date": str(start_date)},  
         )
-        # response = await self._query(query)
         response = await self._query(query, extra_headers=headers)
         return MarketPrices.from_be_dict(response)
 
@@ -1263,6 +1221,7 @@ class FrankEnergie:
 
     async def smart_batteries(self) -> SmartBatteries:
         """Get the users smart batteries.
+        For this to work, the user must have a smart battery connected to their account and smart-trading must be enabled.
 
         Returns a list of all smart batteries.
         """
@@ -1320,9 +1279,17 @@ class FrankEnergie:
         }
     
         # Handle empty or missing response data
-        if not response or not response.get("data"):
+        if not response:
             _LOGGER.warning("Empty or missing GraphQL response for 'smartBatteries'")
-            return {}
+            return None
+
+        if response.get("errors"):
+            _LOGGER.error("Error response for 'smartBatteries': %s", response)
+
+        if not response.get("data"):
+            _LOGGER.warning("Empty or missing GraphQL response for 'smartBatteries'")
+            #return {}
+            return None
 
         _LOGGER.debug("Response data for 'smartBatteries': %s", response)
         batteries_data = response.get("data", {}).get("smartBatteries")
@@ -1411,6 +1378,7 @@ class FrankEnergie:
                 deviceId: $deviceId
             ) {
                 deviceId
+                fairUsePolicyVerified
                 periodEndDate
                 periodEpexResult
                 periodFrankSlim
@@ -1421,8 +1389,12 @@ class FrankEnergie:
                 periodTradingResult
                 sessions {
                     cumulativeTradingResult
+                    cumulativeResult
                     date
                     tradingResult
+                    result
+                    status
+                    tradeIndex
                 }
                 totalTradingResult
             }
@@ -1443,6 +1415,7 @@ class FrankEnergie:
                         deviceId: $deviceId
                     ) {
                         deviceId
+                        fairUsePolicyVerified
                         periodEndDate
                         periodEpexResult
                         periodFrankSlim
@@ -1453,8 +1426,12 @@ class FrankEnergie:
                         periodTradingResult
                         sessions {
                             cumulativeTradingResult
+                            cumulativeResult
                             date
                             tradingResult
+                            result
+                            status
+                            tradeIndex
                         }
                         totalTradingResult
                     }
@@ -1471,6 +1448,121 @@ class FrankEnergie:
         response = await self._query(query)
 
         mock_response = {'data': {'smartBatterySessions': {'deviceId': 'cm3mockyl0000tc3nhygweghn', 'periodEndDate': '2025-03-05', 'periodEpexResult': -2.942766199999732, 'periodFrankSlim': 1.20423240187929, 'periodImbalanceResult': 1.7713489102796198, 'periodStartDate': '2025-02-26', 'periodTotalResult': 0.03281511215917776, 'periodTradeIndex': 15, 'periodTradingResult': 2.97558131215891, 'sessions': [{'cumulativeTradingResult': 0.28038336264503827, 'date': '2025-02-26', 'tradingResult': 0.28038336264503827}, {'cumulativeTradingResult': 0.4106682080427912, 'date': '2025-02-27', 'tradingResult': 0.13028484539775292}, {'cumulativeTradingResult': 0.9406592591022027, 'date': '2025-02-28', 'tradingResult': 0.5299910510594116}, {'cumulativeTradingResult': 1.11818115465891, 'date': '2025-03-01', 'tradingResult': 0.17752189555670733}, {'cumulativeTradingResult': 1.8727723946589099, 'date': '2025-03-02', 'tradingResult': 0.7545912399999999}, {'cumulativeTradingResult': 2.38716782965891, 'date': '2025-03-03', 'tradingResult': 0.5143954350000001}, {'cumulativeTradingResult': 2.5980938146589097, 'date': '2025-03-04', 'tradingResult': 0.21092598499999982}, {'cumulativeTradingResult': 2.97558131215891, 'date': '2025-03-05', 'tradingResult': 0.3774874975}], 'totalTradingResult': 55.14711599931087}}}
+        mock_response = {"data": {
+                        "smartBatterySessions": {
+                        "deviceId": "cm3mockyl0000tc3nhygweghn",
+                        "fairUsePolicyVerified": False,
+                        "periodEndDate": "2025-07-14",
+                        "periodEpexResult": -27.08788163827556,
+                        "periodFrankSlim": 9.829589864560651,
+                        "periodImbalanceResult": 82.051806755679,
+                        "periodStartDate": "2025-07-01",
+                        "periodTotalResult": 64.79351498196408,
+                        "periodTradeIndex": 72,
+                        "periodTradingResult": 91.88139662023964,
+                        "sessions": [
+                            {
+                            "cumulativeResult": 642.6859216849974,
+                            "date": "2025-07-01",
+                            "result": 5.530381924,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 11
+                            },
+                            {
+                            "cumulativeResult": 650.4153791904641,
+                            "date": "2025-07-02",
+                            "result": 7.72945750546675,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 125
+                            },
+                            {
+                            "cumulativeResult": 656.4380804304641,
+                            "date": "2025-07-03",
+                            "result": 6.022701240000001,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 6
+                            },
+                            {
+                            "cumulativeResult": 660.2747142008642,
+                            "date": "2025-07-04",
+                            "result": 3.836633770399999,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 37
+                            },
+                            {
+                            "cumulativeResult": 664.5093663068641,
+                            "date": "2025-07-05",
+                            "result": 4.2346521059999995,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 16
+                            },
+                            {
+                            "cumulativeResult": 674.5431836355311,
+                            "date": "2025-07-06",
+                            "result": 10.033817328667,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 361
+                            },
+                            {
+                            "cumulativeResult": 683.6324345535311,
+                            "date": "2025-07-07",
+                            "result": 9.089250918000001,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": -6
+                            },
+                            {
+                            "cumulativeResult": 692.9073872853883,
+                            "date": "2025-07-08",
+                            "result": 9.274952731857148,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 86
+                            },
+                            {
+                            "cumulativeResult": 700.9413248353883,
+                            "date": "2025-07-09",
+                            "result": 8.03393755,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 1
+                            },
+                            {
+                            "cumulativeResult": 709.570350711077,
+                            "date": "2025-07-10",
+                            "result": 8.62902587568875,
+                            "status": "COMPLETE_PRELIMINARY",
+                            "tradeIndex": None
+                            },
+                            {
+                            "cumulativeResult": 719.058522523077,
+                            "date": "2025-07-11",
+                            "result": 9.488171812000003,
+                            "status": "COMPLETE_PRELIMINARY",
+                            "tradeIndex": None
+                            },
+                            {
+                            "cumulativeResult": 723.3513938190771,
+                            "date": "2025-07-12",
+                            "result": 4.292871296,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 32
+                            },
+                            {
+                            "cumulativeResult": 726.802228441237,
+                            "date": "2025-07-13",
+                            "result": 3.4508346221600004,
+                            "status": "COMPLETE_FINAL",
+                            "tradeIndex": 122
+                            },
+                            {
+                            "cumulativeResult": 729.0369363812371,
+                            "date": "2025-07-14",
+                            "result": 2.23470794,
+                            "status": "ACTIVE",
+                            "tradeIndex": None
+                            }
+                        ]
+                        }
+                    }
+                    }
 
         return SmartBatterySessions.from_dict(response)
 

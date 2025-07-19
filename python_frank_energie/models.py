@@ -952,6 +952,7 @@ class activePaymentAuthorization:
             status=data.get("status")
         )
 
+
 @dataclass
 class InviteLinkUser:
     awardRewardType: str
@@ -985,13 +986,21 @@ class PushNotificationPriceAlert:
 
 @dataclass
 class SmartCharging:
-    isActivated: bool
-    provider: str
-    userCreatedAt: Optional[str]
-    userId: Optional[str]
-    isAvailableInCountry: bool
-    needsSubscription: bool
-    subscription: Optional[str]
+    isActivated: Optional[bool] = None
+    provider: Optional[str] = None
+    userCreatedAt: Optional[str] = None
+    userId: Optional[str] = None
+    isAvailableInCountry: Optional[bool] = None
+    needsSubscription: Optional[bool] = None
+    subscription: Optional[str] = None
+
+
+@dataclass
+class SmartTrading:
+    isActivated: Optional[bool] = None
+    userCreatedAt: Optional[str] = None
+    userId: Optional[str] = None
+    isAvailableInCountry: Optional[bool] = None
 
 
 @dataclass
@@ -1152,6 +1161,7 @@ class User:
     treesCount: Optional[int] = 0
     friendsCount: Optional[int] = 0
     smartCharging: Optional[SmartCharging] = None
+    smartTrading: Optional[SmartTrading] = None
     externalDetails: Optional[dict] = None
     deliveryEndDate: Optional[date] = None
 
@@ -1221,6 +1231,7 @@ class User:
             #     0].get("smartCharging"),
             # propositionType=first_site.get("propositionType"),
             smartCharging=payload.get("smartCharging", {}),
+            smartTrading=payload.get("smartTrading", {}),
             connections=payload.get("connections", {}),
             externalDetails=ExternalDetails.from_dict(
                 payload.get("externalDetails", {}))
@@ -1279,15 +1290,6 @@ class User:
             }
             site_dict[site_name] = site_info
         return site_dict
-
-class SmartCharging:
-    isActivated: Optional[bool] = None
-    provider: Optional[str] = None
-    userCreatedAt: Optional[str] = None
-    userId: Optional[str] = None
-    isAvailableInCountry: Optional[bool] = None
-    needsSubscription: Optional[bool] = None
-    subscription: Optional[str] = None
 
 
 @dataclass
@@ -3024,6 +3026,10 @@ class SmartBatterySession:
     date: date
     trading_result: float
     cumulative_trading_result: float
+    cumulative_result: float
+    result: float
+    status: str
+    tradeIndex: int | None
 
     @staticmethod
     def from_dict(payload: dict[str, Any]) -> "SmartBatterySession":
@@ -3032,8 +3038,12 @@ class SmartBatterySession:
         try:
             return SmartBatterySession(
                 date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
-                trading_result=float(payload["tradingResult"]),
-                cumulative_trading_result=float(payload["cumulativeTradingResult"]),
+                trading_result=payload["tradingResult"],
+                cumulative_trading_result=payload["cumulativeTradingResult"],
+                cumulative_result=payload["cumulativeResult"],
+                result=payload["result"],
+                status=payload["status"],
+                tradeIndex=payload["tradeIndex"],
             )
         except KeyError as exc:
             raise ValueError("Missing expected field in session: %s" % exc) from exc
@@ -3045,17 +3055,17 @@ class SmartBatterySessions:
     """Collection of smart battery trading sessions."""
 
     device_id: str
+    fairuse_policy_verified: bool
     period_start_date: date
     period_end_date: date
     period_trade_index: int
     period_trading_result: float
+    trading_result: float
     period_total_result: float
     period_imbalance_result: float
     period_epex_result: float
     period_frank_slim: float
-    # sessions: list["SmartBatterySession"] = field(default_factory=list)
     sessions: list[SmartBatterySession]
-    # sessions: list
     total_trading_result: float
 
     @staticmethod
@@ -3075,10 +3085,12 @@ class SmartBatterySessions:
         
         return SmartBatterySessions(
             device_id=smart_battery_session_data.get("deviceId"),
+            fairuse_policy_verified=smart_battery_session_data.get("fairusePolicyVerified", False),
             period_start_date=datetime.fromisoformat(smart_battery_session_data.get("periodStartDate")).astimezone(timezone.utc),
             period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
             period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
             period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
+            trading_result=smart_battery_session_data.get("tradingResult"),
             period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
             period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult")),
             period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
