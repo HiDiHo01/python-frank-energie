@@ -6,7 +6,7 @@ import asyncio
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 import re
-from typing import Any
+from typing import Optional
 import logging
 import traceback
 
@@ -57,7 +57,7 @@ class FrankEnergieQuery:
         self,
         query: str,
         operation_name: str,
-        variables: dict[str, Any] | None = None,
+        variables: Optional[dict[str, object]] = None,
     ) -> None:
         if variables is not None and not isinstance(variables, dict):
             raise TypeError(
@@ -68,7 +68,7 @@ class FrankEnergieQuery:
         self.operation_name = operation_name
         self.variables = variables if variables is not None else {}
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert the query to a dictionary suitable for GraphQL API calls."""
         return {
             "query": self.query,
@@ -77,7 +77,7 @@ class FrankEnergieQuery:
         }
 
 
-def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
+def sanitize_query(query: FrankEnergieQuery) -> dict[str, object]:
     sanitized_query = query.to_dict()
     if "password" in sanitized_query["variables"]:
         sanitized_query["variables"]["password"] = "****"
@@ -92,14 +92,14 @@ class FrankEnergie:
 
     def __init__(
         self,
-        clientsession: ClientSession | None = None,
-        auth_token: str | None = None,
-        refresh_token: str | None = None,
+        clientsession: Optional[ClientSession] = None,
+        auth_token: Optional[str] = None,
+        refresh_token: Optional[str] = None,
     ) -> None:
         """Initialize the FrankEnergie client."""
-        self._session: ClientSession | None = clientsession
+        self._session: Optional[ClientSession] = clientsession
         self._close_session: bool = clientsession is None
-        self._auth: Authentication | None = None
+        self._auth: Optional[Authentication] = None
 
         if auth_token or refresh_token:
             self._auth = Authentication(auth_token, refresh_token)
@@ -112,7 +112,7 @@ class FrankEnergie:
             await self._session.close()
 
     @property
-    def auth(self) -> Authentication | None:
+    def auth(self) -> Optional[Authentication]:
         """Backwards compatibility for integrations accessing .auth directly."""
         _LOGGER.error(
             "Using .auth directly is deprecated. Use .is_authenticated instead."
@@ -142,8 +142,8 @@ class FrankEnergie:
             self._close_session = True
 
     async def _query(
-        self, query: FrankEnergieQuery, extra_headers: dict[str, str] | None = None
-    ) -> dict[str, Any]:
+        self, query: FrankEnergieQuery, extra_headers: Optional[dict[str, str]] = None
+    ) -> dict[str, object]:
         """Send a query to the FrankEnergie API.
 
         Args:
@@ -194,7 +194,7 @@ class FrankEnergie:
                 self.DATA_URL, json=payload, headers=headers, timeout=30
             ) as resp:
                 resp.raise_for_status()
-                api_response: dict[str, Any] = await resp.json()
+                api_response: dict[str, object] = await resp.json()
 
             # self._process_diagnostic_data(api_response)
             if not api_response:
@@ -230,7 +230,7 @@ class FrankEnergie:
             traceback.print_exc()
             raise error
 
-    def _process_diagnostic_data(self, api_response: dict[str, Any]) -> None:
+    def _process_diagnostic_data(self, api_response: dict[str, object]) -> None:
         """Process the diagnostic data and update the sensor state.
 
         Args:
@@ -242,7 +242,7 @@ class FrankEnergie:
                 diagnostic_data
             )
 
-    def _handle_errors(self, api_response: dict[str, Any]) -> None:
+    def _handle_errors(self, api_response: dict[str, object]) -> None:
         """Catch common error messages and raise a more specific exception.
 
         Args:
@@ -533,7 +533,7 @@ class FrankEnergie:
         try:
 
             # chargers_response = await self._query(query)
-            chargers_response: dict[str, Any] = await self._query(query)
+            chargers_response: dict[str, object] = await self._query(query)
             # Response data for testing purposes
             # mock_response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 1', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 100, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 2', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
             if chargers_response is None:
@@ -977,8 +977,8 @@ class FrankEnergie:
 
     async def be_prices(
         self,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: Optional[date] | None = None,
+        end_date: Optional[date] | None = None,
     ) -> MarketPrices:
         """Get belgium market prices."""
         if start_date is None:
@@ -1024,8 +1024,8 @@ class FrankEnergie:
 
     async def prices(
         self,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: Optional[date] | None = None,
+        end_date: Optional[date] | None = None,
     ) -> MarketPrices:
         """Get market prices."""
         if not start_date:
@@ -1070,7 +1070,7 @@ class FrankEnergie:
         self,
         site_reference: str,
         start_date: date,
-        end_date: date | None = None,
+        end_date: Optional[date] | None = None,
     ) -> MarketPrices:
         """Get customer market prices."""
         if self._auth is None:
@@ -1476,13 +1476,6 @@ class FrankEnergie:
                     "De 'start_date' heeft geen geldig datumformaat: %s" % e
                 ) from None
 
-    async def close_session(self) -> None:
-        """Close client session."""
-        if self._close_session and self._session is not None:
-            await self._session.close()
-            self._session = None
-            self._close_session = False
-
     async def __aenter__(self):
         """Async enter.
 
@@ -1491,13 +1484,13 @@ class FrankEnergie:
         """
         return self
 
-    async def __aexit__(self, *_exc_info: Any) -> None:
+    async def __aexit__(self, *_exc_info: object) -> None:
         """Async exit.
 
         Args:
             _exc_info: Exec type.
         """
-        await self.close_session()
+        await self.close()
 
     def introspect_schema(self):
         query = """
