@@ -3088,18 +3088,18 @@ class SmartBatterySessions:
             fairuse_policy_verified=smart_battery_session_data.get("fairusePolicyVerified", False),
             period_start_date=datetime.fromisoformat(smart_battery_session_data.get("periodStartDate")).astimezone(timezone.utc),
             period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
-            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
-            period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
-            trading_result=smart_battery_session_data.get("tradingResult"),
-            period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
-            period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult")),
-            period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
-            period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim")),
+            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex") or 0),
+            period_trading_result=float(smart_battery_session_data.get("periodTradingResult") or 0.0),
+            trading_result=smart_battery_session_data.get("tradingResult") or 0.0,
+            period_total_result=float(smart_battery_session_data.get("periodTotalResult") or 0.0),
+            period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult") or 0.0),
+            period_epex_result=float(smart_battery_session_data.get("periodEpexResult") or 0.0),
+            period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim") or 0.0),
             sessions=[
                 SmartBatterySession.from_dict(session)
                 for session in smart_battery_session_data.get("sessions", [])
             ],
-            total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
+            total_trading_result=float(smart_battery_session_data.get("totalTradingResult") or 0.0),
         )
 
     def __iter__(self) -> Iterator:
