@@ -83,7 +83,6 @@ Changelog = "https://github.com/HiDiHo01/python-frank-energie/releases"
 [tool.black]
 target-version = ['py310']
 line-length = 120
-max-line-length = 120
 
 [tool.coverage.paths]
 source = ["python_frank_energie"]
