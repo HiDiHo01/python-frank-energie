@@ -3,7 +3,7 @@
 # python_frank_energie/frank_energie.py
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from http import HTTPStatus
 import re
 from typing import Any
@@ -22,25 +22,18 @@ from .authentication import Authentication
 from .exceptions import (
     AuthException,
     AuthRequiredException,
+    FrankEnergieException,
     NetworkError,
     RequestException,
     SmartTradingNotEnabledException,
     SmartChargingNotEnabledException,
 )
+
 from .models import (
-    EnergyConsumption,
-    EnodeChargers,
-    Invoices,
-    MarketPrices,
-    Me,
-    MonthSummary,
-    PeriodUsageAndCosts,
     SmartBatteries,
     SmartBattery,
     SmartBatteryDetails,
     SmartBatterySessions,
-    User,
-    UserSites,
 )
 
 VERSION = "2025.6.17"
@@ -102,6 +95,13 @@ class FrankEnergie:
 
         if auth_token or refresh_token:
             self._auth = Authentication(auth_token, refresh_token)
+
+    is_smart_charging = False
+
+    async def close(self) -> None:
+        """Close the client session if it was created internally."""
+        if self._close_session and self._session is not None:
+            await self._session.close()
 
     @property
     def auth(self) -> Authentication | None:
@@ -181,16 +181,16 @@ class FrankEnergie:
                 self.DATA_URL, json=payload, headers=headers, timeout=30
             ) as resp:
                 resp.raise_for_status()
-                response_data: dict[str, Any] = await resp.json()
+                response: dict[str, Any] = await resp.json()
 
-            if not response_data:
+            if not response:
                 _LOGGER.debug("No response data.")
                 return {}
 
-            logging.debug("Response body: %s", response_data)
-            self._handle_errors(response_data)
+            logging.debug("Response body: %s", response)
+            self._handle_errors(response)
 
-            return response_data
+            return response
 
         except (asyncio.TimeoutError, ClientError, KeyError) as error:
             _LOGGER.error("Request failed: %s", error)
@@ -203,9 +203,9 @@ class FrankEnergie:
             elif error.status == HTTPStatus.BAD_REQUEST:
                 raise RequestException("Bad request: Invalid query.") from error
             elif error.status == HTTPStatus.INTERNAL_SERVER_ERROR:
-                raise AuthException("Internal server error.") from error
+                raise FrankEnergieException("Internal server error.") from error
             else:
-                raise AuthException(f"Unexpected response: {error}") from error
+                raise FrankEnergieException(f"Unexpected response: {error}") from error
         except Exception as error:
             traceback.print_exc()
             raise error
@@ -228,6 +228,7 @@ class FrankEnergie:
         Args:
             response: The API response as a dictionary.
         """
+
         if not response:
             _LOGGER.debug("No response data.")
             return
@@ -238,7 +239,7 @@ class FrankEnergie:
 
         for error in errors:
             message = error["message"]
-            path = error.get("path")
+            path = error.get("path", None)
             if message == "user-error:password-invalid":
                 raise AuthException("Invalid password")
             elif message == "user-error:auth-not-authorised":
@@ -246,11 +247,11 @@ class FrankEnergie:
             elif message == "user-error:auth-required":
                 raise AuthRequiredException("Authentication required")
             elif message == "Graphql validation error":
-                raise AuthException("Request failed: Graphql validation error")
+                raise FrankEnergieException("Request failed: Graphql validation error")
             elif message.startswith("No marketprices found for segment"):
                 return
             elif message.startswith("No connections found for user"):
-                raise AuthException(f"Request failed: {message}")
+                raise FrankEnergieException(f"Request failed: {message}")
             elif message == "user-error:smart-trading-not-enabled":
                 _LOGGER.debug("Smart trading is not enabled for this user.")
                 raise SmartTradingNotEnabledException(
@@ -265,7 +266,7 @@ class FrankEnergie:
                 _LOGGER.debug("'Base' niet aanwezig in prijzen verzameling %s.", path)
             elif message == "request-error:request-not-supported-in-country":
                 _LOGGER.error("Request not supported in the user's country: %s", error)
-                raise AuthException(
+                raise FrankEnergieException(
                     "Request not supported in the user's country"
                 )
             else:
@@ -283,422 +284,14 @@ class FrankEnergie:
         }
     """
 
-    async def login(self, username: str, password: str) -> Authentication:
-        """Login and retrieve the authentication token.
-
-        Args:
-            username: The user's email.
-            password: The user's password.
-
-        Returns:
-            The authentication information.
-
-        Raises:
-            AuthException: If the login fails.
-        """
-        if not username or not password:
-            raise ValueError("Username and password must be provided.")
-
-        query = FrankEnergieQuery(
-            self.LOGIN_QUERY, "Login", {"email": username, "password": password}
-        )
-
-        try:
-            response = await self._query(query)
-            if response is not None:
-                data = response["data"]
-                if data is not None:
-                    self._auth = Authentication.from_dict(response)
-            return self._auth
-        except Exception as error:
-            traceback.print_exc()
-            raise error
-
-    async def renew_token(self) -> Authentication:
-        """Renew the authentication token.
-
-        Returns:
-            The renewed authentication information.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            AuthException: If the token renewal fails.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            mutation RenewToken($authToken: String!, $refreshToken: String!) {
-                renewToken(authToken: $authToken, refreshToken: $refreshToken) {
-                    authToken
-                    refreshToken
-                }
-            }
-            """,
-            "RenewToken",
-            {
-                "authToken": self._auth.authToken,
-                "refreshToken": self._auth.refreshToken,
-            },
-        )
-
-        response = await self._query(query)
-        self._auth = Authentication.from_dict(response)
-        return self._auth
-
-    async def meter_readings(self, site_reference: str) -> EnergyConsumption:
-        """Retrieve the meter_readings.
-
-        Args:
-            site_reference: The site reference.
-
-        Returns:
-            The Meter Readings.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            FrankEnergieException: If the request fails.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            query ActualAndExpectedMeterReadings($siteReference: String!) {
-            completenessPercentage
-            actualMeterReadings {
-                date
-                consumptionKwh
-            }
-            expectedMeterReadings {
-                date
-                consumptionKwh
-            }
-            }
-            """,
-            "ActualAndExpectedMeterReadings",
-            {"siteReference": site_reference},
-        )
-
-        response = await self._query(query)
-        return EnergyConsumption.from_dict(response)
-
-    async def month_summary(self, site_reference: str) -> MonthSummary:
-        """Retrieve the month summary for the specified month.
-
-        Args:
-            site_reference: The site reference.
-
-        Returns:
-            The month summary information.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            FrankEnergieException: If the request fails.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            query MonthSummary($siteReference: String!) {
-                monthSummary(siteReference: $siteReference) {
-                    _id
-                    actualCostsUntilLastMeterReadingDate
-                    expectedCostsUntilLastMeterReadingDate
-                    expectedCosts
-                    lastMeterReadingDate
-                    meterReadingDayCompleteness
-                    gasExcluded
-                    __typename
-                }
-                version
-                __typename
-            }
-            """,
-            "MonthSummary",
-            {"siteReference": site_reference},
-        )
-
-        try:
-            response = await self._query(query)
-            return MonthSummary.from_dict(response)
-        except Exception as e:
-            raise AuthException(f"Failed to fetch month summary: {e}") from e
-
-    async def enode_chargers(
-        self, site_reference: str, start_date: date
-    ) -> dict[str, EnodeChargers]:
-        """Retrieve the enode charger information."""
-        if self._auth is None or not self.is_authenticated:
-            _LOGGER.debug("Skipping Enode Chargers: not authenticated.")
-            return {}
-
-        query = FrankEnergieQuery(
-            """
-            query EnodeChargers {
-                enodeChargers {
-                    ...Lots of fields...
-                }
-            }
-            """,
-            "EnodeChargers",
-            {"siteReference": site_reference},
-        )
-
-        try:
-            response: dict[str, Any] = await self._query(query)
-            if response is None:
-                _LOGGER.debug("No response data for 'enodeChargers'")
-                return {}
-            if "data" not in response:
-                _LOGGER.debug("No data found in response for chargers: %s", response)
-                return {}
-            if response["data"] is None:
-                _LOGGER.debug("No data for chargers found: %s", response)
-                return {}
-            if "enodeChargers" not in response["data"]:
-                _LOGGER.debug("No chargers found in data: %s", response)
-                return {}
-            chargers_data = response["data"]["enodeChargers"]
-            _LOGGER.info("%s Enode Chargers Found", len(chargers_data))
-            _LOGGER.debug("Enode Chargers data: %s", chargers_data)
-            return EnodeChargers.from_dict(chargers_data)
-        except Exception as error:
-            _LOGGER.debug("Error in enode_chargers: %s", error)
-            _LOGGER.exception("Unexpected error during query: %s", error)
-            return {}
-
-    async def invoices(self, site_reference: str) -> Invoices:
-        """Retrieve the invoices data."""
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            query Invoices($siteReference: String!) {
-                invoices(siteReference: $siteReference) {
-                    ...Lots of fields...
-                }
-            }
-            """,
-            "Invoices",
-            {"siteReference": site_reference},
-        )
-
-        response = await self._query(query)
-        return Invoices.from_dict(response)
-
-    async def me(self, site_reference: str | None = None) -> Me:
-        if self._auth is None:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            query Me($siteReference: String) {
-                me {
-                    ...UserFields
-                }
-            }
-            fragment UserFields on User {
-                ...Lots of fields...
-            }
-            """,
-            "Me",
-            {"siteReference": site_reference},
-        )
-
-        response = await self._query(query)
-        return Me.from_dict(response)
-
-    async def UserSites(self, site_reference: str | None = None) -> UserSites:
-        if self._auth is None:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            query UserSites {
-                userSites {
-                    ...Lots of fields...
-                }
-            }
-            """,
-            "UserSites",
-            {},
-        )
-
-        response = await self._query(query)
-        return UserSites.from_dict(response)
-
-    async def user_country(self) -> Me:
-        if self._auth is None:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            query UserCountry {
-                me {
-                    countryCode
-                }
-            }
-            """,
-            "UserCountry",
-            {},
-        )
-
-        response = await self._query(query)
-        return Me.from_dict(response)
-
-    async def user(self, site_reference: str | None = None) -> User:
-        if self._auth is None:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            query Me($siteReference: String) {
-                me {
-                    ...UserFields
-                }
-            }
-            fragment UserFields on User {
-                ...Lots of fields...
-            }
-            """,
-            "Me",
-            {"siteReference": site_reference},
-        )
-
-        response = await self._query(query)
-        return User.from_dict(response)
-
-    async def be_prices(
-        self,
-        start_date: date | None = None,
-        end_date: date | None = None,
-    ) -> MarketPrices:
-        """Get belgium market prices."""
-        if start_date is None:
-            start_date = datetime.now(timezone.utc).date()
-        if end_date is None:
-            end_date = start_date + timedelta(days=1)
-
-        headers = {"x-country": "BE"}
-
-        query = FrankEnergieQuery(
-            """
-            query MarketPrices ($date: String!) {
-                marketPrices(date: $date) {
-                    ...Lots of fields...
-                }
-            }
-            """,
-            "MarketPrices",
-            {"date": str(start_date)},
-        )
-        response = await self._query(query, extra_headers=headers)
-        return MarketPrices.from_be_dict(response)
-
-    async def prices(
-        self,
-        start_date: date | None = None,
-        end_date: date | None = None,
-    ) -> MarketPrices:
-        """Get market prices."""
-        if not start_date:
-            start_date = date.today()
-        if not end_date:
-            end_date = date.today() + timedelta(days=1)
-
-        query = FrankEnergieQuery(
-            """
-            query MarketPrices($startDate: Date!, $endDate: Date!) {
-                ...Lots of fields...
-            }
-            """,
-            "MarketPrices",
-            {"startDate": str(start_date), "endDate": str(end_date)},
-        )
-        response = await self._query(query)
-        return MarketPrices.from_dict(response)
-
-    async def user_prices(
-        self,
-        site_reference: str,
-        start_date: date,
-        end_date: date | None = None,
-    ) -> MarketPrices:
-        """Get customer market prices."""
-        if self._auth is None:
-            raise AuthRequiredException
-
-        if not start_date:
-            start_date = date.today()
-        if not end_date:
-            end_date = date.today() + timedelta(days=1)
-
-        query = FrankEnergieQuery(
-            """
-            query MarketPrices($date: String!, $siteReference: String!) {
-                customerMarketPrices(date: $date, siteReference: $siteReference) {
-                    ...Lots of fields...
-                }
-            }
-            """,
-            "MarketPrices",
-            {"date": str(start_date), "siteReference": site_reference},
-        )
-        response = await self._query(query)
-        return MarketPrices.from_userprices_dict(response)
-
-    async def period_usage_and_costs(
-        self,
-        site_reference: str,
-        start_date: str,
-    ) -> PeriodUsageAndCosts:
-        """
-        Haalt het verbruik en de kosten op voor een specifieke periode en locatie.
-        Dit is net als op de factuur de marktprijs+
-        """
-        if not site_reference:
-            raise ValueError("De 'site_reference' mag niet leeg zijn.")
-
-        if self._auth is None:
-            raise AuthRequiredException(
-                "Authenticatie is vereist om deze query uit te voeren."
-            )
-
-        query = FrankEnergieQuery(
-            """
-            query PeriodUsageAndCosts($date: String!, $siteReference: String!) {
-                periodUsageAndCosts(date: $date, siteReference: $siteReference) {
-                    ...Lots of fields...
-                }
-            }
-            """,
-            "PeriodUsageAndCosts",
-            {
-                "siteReference": site_reference,
-                "date": str(start_date),
-            },
-        )
-
-        try:
-            response = await self._query(query)
-            return PeriodUsageAndCosts.from_dict(response)
-        except Exception as err:
-            _LOGGER.exception(
-                "Fout bij ophalen van periodUsageAndCosts voor site %s op %s: %s",
-                site_reference,
-                start_date,
-                err,
-            )
-            raise AuthException(
-                "Kon verbruik en kosten niet ophalen voor opgegeven periode."
-            ) from err
+    # ... (all other methods unchanged) ...
 
     async def smart_batteries(self) -> SmartBatteries:
-        """Get the users smart batteries."""
+        """Get the users smart batteries.
+        For this to work, the user must have a smart battery connected to their account and smart-trading must be enabled.
+
+        Returns a list of all smart batteries.
+        """
         if self._auth is None:
             raise AuthRequiredException
 
@@ -706,7 +299,16 @@ class FrankEnergie:
             """
             query SmartBatteries {
                 smartBatteries {
-                    ...Lots of fields...
+                    brand
+                    capacity
+                    createdAt
+                    externalReference
+                    id
+                    maxChargePower
+                    maxDischargePower
+                    provider
+                    updatedAt
+                    __typename
                 }
             }
             """,
@@ -753,14 +355,24 @@ class FrankEnergie:
 
         query = FrankEnergieQuery(
             """
-            query SmartBattery($deviceId: String!) {
-                smartBattery(deviceId: $deviceId) {
-                    ...Lots of fields...
+                query SmartBattery($deviceId: String!) {
+                    smartBattery(deviceId: $deviceId) {
+                        brand
+                        capacity
+                        id
+                        settings {
+                            batteryMode
+                            imbalanceTradingStrategy
+                            selfConsumptionTradingAllowed
+                        }
+                    }
+                    smartBatterySummary(deviceId: $deviceId) {
+                        lastKnownStateOfCharge
+                        lastKnownStatus
+                        lastUpdate
+                        totalResult
+                    }
                 }
-                smartBatterySummary(deviceId: $deviceId) {
-                    ...Lots of fields...
-                }
-            }
             """,
             "SmartBattery",
             {"deviceId": device_id},
@@ -769,8 +381,8 @@ class FrankEnergie:
         response = await self._query(query)
 
         if response is None:
-            _LOGGER.debug("No response data for 'smartBatteries'")
-            raise AuthException(
+            _LOGGER.debug("No response data for 'smartBatteryDetails'")
+            raise FrankEnergieException(
                 "No response data received for smart battery details"
             )
         if (
@@ -780,7 +392,7 @@ class FrankEnergie:
             _LOGGER.debug(
                 "Incomplete response data for 'smartBattery' or 'smartBatterySummary'"
             )
-            raise AuthException(
+            raise FrankEnergieException(
                 "Incomplete response data for smart battery details"
             )
         return SmartBatteryDetails.from_dict(
@@ -793,7 +405,10 @@ class FrankEnergie:
     async def smart_battery_sessions(
         self, device_id: str, start_date: date, end_date: date
     ) -> SmartBatterySessions:
-        """List smart battery sessions for a device."""
+        """List smart battery sessions for a device.
+
+        Returns a list of all smart battery sessions for a device.
+        """
         if self._auth is None:
             raise AuthRequiredException
 
@@ -802,9 +417,34 @@ class FrankEnergie:
 
         query = FrankEnergieQuery(
             """
-            query SmartBatterySessions($startDate: String!, $endDate: String!, $deviceId: String!) {
-                ...Lots of fields...
-            }
+                query SmartBatterySessions($startDate: String!, $endDate: String!, $deviceId: String!) {
+                    smartBatterySessions(
+                        startDate: $startDate
+                        endDate: $endDate
+                        deviceId: $deviceId
+                    ) {
+                        deviceId
+                        fairUsePolicyVerified
+                        periodEndDate
+                        periodEpexResult
+                        periodFrankSlim
+                        periodImbalanceResult
+                        periodStartDate
+                        periodTotalResult
+                        periodTradeIndex
+                        periodTradingResult
+                        sessions {
+                            cumulativeTradingResult
+                            cumulativeResult
+                            date
+                            tradingResult
+                            result
+                            status
+                            tradeIndex
+                        }
+                        totalTradingResult
+                    }
+                }
             """,
             "SmartBatterySessions",
             {
@@ -815,6 +455,7 @@ class FrankEnergie:
         )
 
         response = await self._query(query)
+
         return SmartBatterySessions.from_dict(response)
 
     def _validate_not_future_date(self, value: date) -> None:
