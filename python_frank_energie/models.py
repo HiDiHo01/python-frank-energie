@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from statistics import mean
 from typing import Any, Iterator, Optional, Set, Union
+from zoneinfo import ZoneInfo
 
 import jwt
 import pytz
@@ -1417,39 +1418,104 @@ class MonthSummary:
 @dataclass
 class ChargeSettings:
     """Represents the charge settings for an enode charger."""
-    calculated_deadline: datetime
-    capacity: float
-    deadline: Optional[datetime]
-    hour_friday: int
+    id: str
+    calculated_deadline: datetime | None
+    deadline: datetime | None
     hour_monday: int
-    hour_saturday: int
-    hour_sunday: int
-    hour_thursday: int
     hour_tuesday: int
     hour_wednesday: int
-    id: str
-    initial_charge: float
-    initial_charge_timestamp: datetime
+    hour_thursday: int
+    hour_friday: int
+    hour_saturday: int
+    hour_sunday: int
+    initial_charge: float # ???
+    initial_charge_timestamp: datetime # ???
     is_smart_charging_enabled: bool
     is_solar_charging_enabled: bool
-    max_charge_limit: float
-    min_charge_limit: float
+    max_charge_limit: int
+    min_charge_limit: int
 
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ChargeSettings':
+        return cls(
+            id=data["id"],
+            calculated_deadline=_parse_datetime(data.get("calculatedDeadline")),
+            initial_charge=data.get("initialCharge"),
+            initial_charge_timestamp=_parse_datetime(data.get("initialChargeTimestamp")),
+            deadline=_parse_datetime(data.get("deadline")),
+            hour_monday=data["hourMonday"],
+            hour_tuesday=data["hourTuesday"],
+            hour_wednesday=data["hourWednesday"],
+            hour_thursday=data["hourThursday"],
+            hour_friday=data["hourFriday"],
+            hour_saturday=data["hourSaturday"],
+            hour_sunday=data["hourSunday"],
+            is_smart_charging_enabled=data["isSmartChargingEnabled"],
+            is_solar_charging_enabled=data["isSolarChargingEnabled"],
+            max_charge_limit=data["maxChargeLimit"],
+            min_charge_limit=data["minChargeLimit"],
+        )
 
 @dataclass
 class ChargeState:
     """Represents the charge state for an enode charger."""
-    battery_capacity: Optional[float]
-    battery_level: Optional[float]
-    charge_limit: Optional[float]
-    charge_rate: Optional[float]
-    charge_time_remaining: Optional[float]
+    battery_capacity: float | None
+    battery_level: int | None
+    charge_limit: int | None
+    charge_rate: float | None
+    charge_time_remaining: int | None
     is_charging: bool
-    is_fully_charged: Optional[bool]
+    is_fully_charged: bool | None
     is_plugged_in: bool
     last_updated: datetime
     power_delivery_state: str
-    range: Optional[float]
+    range: int | None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ChargeState':
+        return cls(
+            battery_capacity=data["batteryCapacity"],
+            battery_level=data["batteryLevel"],
+            charge_limit=data["chargeLimit"],
+            charge_rate=data["chargeRate"],
+            charge_time_remaining=data["chargeTimeRemaining"],
+            is_charging=data["isCharging"],
+            is_fully_charged=data["isFullyCharged"],
+            is_plugged_in=data["isPluggedIn"],
+            last_updated=_parse_datetime(data["lastUpdated"]),
+            power_delivery_state=data["powerDeliveryState"],
+            range=data["range"],
+        )
+
+
+@dataclass
+class VehicleInformation:
+    brand: str
+    model: str
+    vin: str
+    year: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'VehicleInformation':
+        return cls(
+            brand=data["brand"],
+            model=data["model"],
+            vin=data["vin"],
+            year=data["year"],
+        )
+
+
+@dataclass
+class VehicleIntervention:
+    title: str
+    description: str
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'VehicleIntervention':
+        return cls(
+            title=data["title"],
+            description=data["description"],
+        )
 
 
 @dataclass
@@ -1457,6 +1523,55 @@ class Intervention:
     """Represents an intervention for an enode charger."""
     description: str
     title: str
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Intervention':
+        return cls(
+            title=data["title"],
+            description=data["description"],
+        )
+
+
+@dataclass
+class EnodeVehicle:
+    """Represents a single enode vehicle."""
+    id: str
+    can_smart_charge: bool
+    charge_settings: ChargeSettings
+    charge_state: ChargeState
+    information: VehicleInformation
+    interventions: list[VehicleIntervention]
+    is_reachable: bool
+    last_seen: datetime | None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> 'EnodeVehicle':
+        return cls(
+            id=data["id"],
+            can_smart_charge=data["canSmartCharge"],
+            charge_settings=ChargeSettings.from_dict(data["chargeSettings"]),
+            charge_state=ChargeState.from_dict(data["chargeState"]),
+            information=VehicleInformation.from_dict(data["information"]),
+            interventions=[
+                VehicleIntervention.from_dict(i)
+                for i in data.get("interventions", [])
+            ],
+            is_reachable=data["isReachable"],
+            last_seen=_parse_datetime(data.get("lastSeen")),
+        )
+
+
+@dataclass
+class EnodeVehicles:
+    """Represents a collection of enode vehicles."""
+    """This class holds a list of EnodeVehicle instances."""
+    vehicles: list[EnodeVehicle]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> 'EnodeVehicles':
+        vehicle_dicts = data.get("data", {}).get("enodeVehicles", [])
+        vehicles = [EnodeVehicle.from_dict(v) for v in vehicle_dicts]
+        return cls(vehicles=vehicles)
 
 
 @dataclass
@@ -1537,10 +1652,6 @@ class EnodeChargers:
         """Create an instance of EnodeChargers from a list of dictionaries."""
         chargers = [EnodeCharger.from_dict(item) for item in data]
         return cls(chargers=chargers)
-
-    def old_as_dict(self) -> dict[str, EnodeCharger]:
-        """Convert the charger list to a dictionary keyed by charger ID."""
-        return {charger.id: charger for charger in self.chargers}
 
     def as_dict(self) -> dict[str, EnodeCharger]:
         """Return only chargers with smart charging enabled as a dict keyed by charger ID."""
@@ -2859,18 +2970,21 @@ class Session:
 
     date: datetime
     trading_result: float
-    cumulative_trading_result: float
+    cumulative_result: float
+    result: float = field(init=False)
+    status: str = field(default="")
 
     @staticmethod
-    def from_dict(payload: dict[str, Any]) -> 'SmartBatterySessions.Session':
+    def from_dict(payload: dict[str, object]) -> 'SmartBatterySessions.Session':
         """Parse the sessions payload from the SmartBatterySessions query result."""
         _LOGGER.debug("🔁 Parsing SmartBatterySessions.Session response: %s", payload)
 
         try:
             return SmartBatterySessions.Session(
                 date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
-                trading_result=float(payload["tradingResult"]),
-                cumulative_trading_result=float(payload["cumulativeTradingResult"]),
+                cumulative_result=float(payload["cumulativeResult"]),
+                result=float(payload["result"]),
+                status=str(payload["status"])
             )
         except KeyError as exc:
             raise RequestException(f"Missing expected field in session: %s" % exc) from exc
@@ -3024,8 +3138,6 @@ class SmartBatterySession:
     """A trading session for a smart battery."""
 
     date: date
-    trading_result: float
-    cumulative_trading_result: float
     cumulative_result: float
     result: float
     status: str
@@ -3038,8 +3150,6 @@ class SmartBatterySession:
         try:
             return SmartBatterySession(
                 date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
-                trading_result=payload["tradingResult"],
-                cumulative_trading_result=payload["cumulativeTradingResult"],
                 cumulative_result=payload["cumulativeResult"],
                 result=payload["result"],
                 status=payload["status"],
@@ -3088,18 +3198,18 @@ class SmartBatterySessions:
             fairuse_policy_verified=smart_battery_session_data.get("fairusePolicyVerified", False),
             period_start_date=datetime.fromisoformat(smart_battery_session_data.get("periodStartDate")).astimezone(timezone.utc),
             period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
-            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex") or 0),
-            period_trading_result=float(smart_battery_session_data.get("periodTradingResult") or 0.0),
-            trading_result=smart_battery_session_data.get("tradingResult") or 0.0,
-            period_total_result=float(smart_battery_session_data.get("periodTotalResult") or 0.0),
-            period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult") or 0.0),
-            period_epex_result=float(smart_battery_session_data.get("periodEpexResult") or 0.0),
-            period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim") or 0.0),
+            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
+            period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
+            trading_result=smart_battery_session_data.get("tradingResult"),
+            period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
+            period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult")),
+            period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
+            period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim")),
             sessions=[
                 SmartBatterySession.from_dict(session)
                 for session in smart_battery_session_data.get("sessions", [])
             ],
-            total_trading_result=float(smart_battery_session_data.get("totalTradingResult") or 0.0),
+            total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
         )
 
     def __iter__(self) -> Iterator:
@@ -3369,6 +3479,43 @@ class BatteryEntityGroup:
             "socSensor": self.soc_sensor,
             "resultSensors": [sensor.to_dict() for sensor in self.result_sensors],
         }
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.rstrip("Z"))
+        return dt.replace(tzinfo=ZoneInfo("UTC"))
+    except ValueError as err:
+        raise ValueError("Invalid datetime string: %s" % value) from err
+
+def test_parse_datetime(value: object) -> datetime | None:
+    """Parse a datetime string into a timezone-aware datetime object (UTC).
+
+    Handles:
+    - ISO 8601 strings
+    - Strings ending with 'Z' as UTC
+    - Timezone-naive input defaulting to UTC
+
+    Returns None if value is None.
+    Raises ValueError on invalid input.
+    """
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        raise ValueError("Expected string for datetime parsing, got: %s" % type(value).__name__)
+
+    try:
+        dt = parse_datetime(value)
+    except (ValueError, TypeError) as err:
+        _LOGGER.debug("Failed to parse datetime string '%s': %s", value, err)
+        raise ValueError("Invalid datetime string: %s" % value) from err
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+    return dt
 
 def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[str, Any]:
     """
