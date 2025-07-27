@@ -125,9 +125,6 @@ disable= [
 [tool.pylint.SIMILARITIES]
 ignore-imports = true
 
-[tool.pylint.FORMAT]
-max-line-length=120
-
 [tool.pylint.DESIGN]
 max-attributes=20
 
