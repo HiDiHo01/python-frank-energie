@@ -2,11 +2,13 @@
 # python_frank_energie/models.py
 
 import logging
-from collections import defaultdict
+import statistics
+from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from statistics import mean
 from typing import Iterator, Optional, Set, Union
+from zoneinfo import ZoneInfo
 
 import jwt
 import pytz
@@ -148,7 +150,7 @@ class Invoice:
     @property
     def for_last_year(self) -> bool:
         """Whether this invoice is for the current year."""
-        last_year = datetime.now(pytz.timezone('Europe/Amsterdam')).year - 1
+        last_year = datetime.now(pytz.timezone('Europe/Amsterdam')).year-1
         invoice_start_date_utc = self.StartDate.replace(tzinfo=pytz.UTC)
         invoice_start_year = invoice_start_date_utc.astimezone(
             pytz.timezone('Europe/Amsterdam')).year
@@ -180,30 +182,24 @@ class Invoice:
             TotalAmount=float(data.get("TotalAmount")),
         )
 
+
 @dataclass
 class Invoices:
     """Represents invoices including historical, current, and upcoming periods."""
 
     def __init__(
         self,
-        allPeriodsInvoices: Optional[list[Invoice]] = None,
+        allPeriodsInvoices: Optional[list[Invoice]
+                                     ] = field(default_factory=list),
         previousPeriodInvoice: Optional[Invoice] = None,
         currentPeriodInvoice: Optional[Invoice] = None,
         upcomingPeriodInvoice: Optional[Invoice] = None,
-        AllInvoicesDictForPreviousYear: dict = None,
-        AllInvoicesDictForThisYear: dict = None,
-        AllInvoicesDict: dict = None,
+        AllInvoicesDictForPreviousYear: dict = field(default_factory=dict),
+        AllInvoicesDictForThisYear: dict = field(default_factory=dict),
+        AllInvoicesDict: dict = field(default_factory=dict),
         TotalCostsPreviousYear: float = 0.0,
         TotalCostsThisYear: float = 0.0,
     ):
-        if allPeriodsInvoices is None:
-            allPeriodsInvoices = []
-        if AllInvoicesDictForPreviousYear is None:
-            AllInvoicesDictForPreviousYear = {}
-        if AllInvoicesDictForThisYear is None:
-            AllInvoicesDictForThisYear = {}
-        if AllInvoicesDict is None:
-            AllInvoicesDict = {}
         self.allPeriodsInvoices = allPeriodsInvoices
         self.previousPeriodInvoice = previousPeriodInvoice
         self.currentPeriodInvoice = currentPeriodInvoice
@@ -216,7 +212,7 @@ class Invoices:
 
     def get_all_invoices_dict_for_previous_year(self) -> dict:
         """Retrieve all invoices for the specified year as a dictionary."""
-        previous_year = datetime.now(timezone.utc).year - 1
+        previous_year = datetime.now(timezone.utc).year-1
         invoices_dict = {}
 
         for invoice in self.get_invoices_for_year(previous_year):
@@ -468,6 +464,7 @@ class UsageItem:
         except (ValueError, TypeError) as e:
             raise ValueError(f"Fout bij conversie van UsageItem data: {e}, data: {data}") from e
 
+
 @dataclass
 class EnergyCategory:
     """Representeert een energiecategorie zoals gas, elektriciteit of teruglevering."""
@@ -476,6 +473,7 @@ class EnergyCategory:
     costs_total: float
     unit: str
     items: list[UsageItem]
+    # costs_this_month: float = 0.0
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> 'EnergyCategory':
@@ -483,6 +481,8 @@ class EnergyCategory:
         _LOGGER.debug("EnergyCategory.from_dict() called with data: %s", data)
         try:
             if data is None:
+                # return EnergyCategory(usage_total=0.00, costs_total=0.00, unit="", items=[])
+                # TODO: Check if this is the correct behavior
                 return None
 
             usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else 0.00
@@ -517,10 +517,16 @@ class PeriodUsageAndCosts:
             if not period_data:
                 return None
 
+            # Handle cases where gas, electricity, or feed_in data is None
             gas_data = period_data.get("gas") if period_data.get("gas") is not None else None
             feed_in_data = period_data.get("feedIn") if period_data.get("feedIn") is not None else None
             electricity_data = period_data.get("electricity") if period_data.get("electricity") is not None else None
 
+            # Return None if gas data is None
+            # if gas_data is None:
+            #    return None
+
+            # If any of the required data is missing, the field will be set to None
             return PeriodUsageAndCosts(
                 _id=str(period_data["_id"]),
                 gas=EnergyCategory.from_dict(gas_data) if gas_data else None,
@@ -581,6 +587,8 @@ class UserSites:
             reference=first_site.get("reference"),
             segments=first_site.get("segments"),
             status=first_site.get("status"),
+            # deliverySites=DeliverySiteList(payload.get("deliverySites")),
+            # deliverySites=DeliverySiteList(delivery_sites_data),
             deliverySites=[
                 DeliverySite.from_dict(site) for site in user_sites
             ] if 'DeliverySite' in globals() else [],
@@ -623,10 +631,1040 @@ class UserSites:
                 )
         return sites_as_dict
 
-# ... rest of the file unchanged ...
+
+@dataclass
+class Me:
+    """Me data, including the current status of the connection."""
+
+    id: str
+    email: str
+    countryCode: str
+    segments: list[str]
+    advancedPaymentAmount: float
+    treesCount: int
+    hasInviteLink: bool
+    hasCO2Compensation: bool
+    updatedAt: str
+    addressHasMultipleSites: bool
+    meterReadingExportPeriods: list['MeterReadingExportPeriod']
+    smartCharging: dict
+
+    @staticmethod
+    def from_dict(data: dict[str, str]) -> 'Me':
+        """Parse the response from the me query."""
+        _LOGGER.debug("User %s", data)
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        if 'errors' in data:
+            raise RequestException(data['errors'][0]['message'])
+
+        payload = data.get("data", {}).get("me")
+        if not payload:
+            raise RequestException("Unexpected response")
+
+        return Me(
+            id=payload.get("id"),
+            email=payload.get("email"),
+            countryCode=payload.get("countryCode"),
+            segments=payload.get("segments"),
+            advancedPaymentAmount=payload.get("advancedPaymentAmount"),
+            treesCount=payload.get("treesCount"),
+            hasInviteLink=payload.get("hasInviteLink"),
+            hasCO2Compensation=payload.get("hasCO2Compensation"),
+            updatedAt=payload.get("updatedAt"),
+            addressHasMultipleSites=payload.get("addressHasMultipleSites"),
+            meterReadingExportPeriods=payload.get("meterReadingExportPeriods"),
+            smartCharging=payload.get("smartCharging"),
+        )
+
+
+def get_segments(data: dict[str, object]) -> Optional[list[str]]:
+    delivery_site_data = data.get("user")
+    if delivery_site_data:
+        delivery_site = DeliverySite(**delivery_site_data)
+        return delivery_site.segments
+    return None
+
+
+@dataclass
+class Address:
+    """Address of the delivery site."""
+    street: str
+    houseNumber: str
+    zipCode: str
+    city: str
+    houseNumberAddition: Optional[str] = field(default=None)
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> "Address":
+        # address_formatted = data.get("addressFormatted", ["", ""])
+        address_formatted = data.get("addressFormatted")
+        if not address_formatted or len(address_formatted) < 2:
+            # Handle lege of ontbrekende waarde
+            # print("Invalid address: address is missing or too short")
+            return None
+            # raise ValueError("Invalid address: address is missing or too short")
+        # Eerste deel bevat straat en huisnummer (bijv. "Straat 123")
+        street_and_number = address_formatted[0]
+        postcode_and_city = address_formatted[1]
+        street_parts = street_and_number.rsplit(" ", 1)
+        street = street_parts[0]
+        # Tweede deel bevat postcode en stad (bijv. "1000 AA AMSTERDAM")
+        zip_city_parts = postcode_and_city.split(" ", 2)
+        zip_code = " ".join(zip_city_parts[:2])
+        city = zip_city_parts[2] if len(zip_city_parts) > 2 else ""
+        house_number_addition = None
+        house_number = street_parts[1] if len(street_parts) > 1 else ""
+        if not house_number.isdigit():  # Als er letters in staan, splitsen
+            for i, char in enumerate(house_number):
+                if char.isalpha():
+                    house_number_addition = house_number[i:]
+                    house_number = house_number[:i]
+                    break
+        return Address(
+            street=street,
+            houseNumber=house_number,
+            zipCode=zip_code,
+            city=city,
+            houseNumberAddition=house_number_addition
+        )
+
+# @dataclass
+
+
+class DeliverySite(BaseModel):
+    """Delivery sites data, including the address and delivery status.
+
+    {
+        "reference": "1082MK 10",
+        "segments": [
+            "ELECTRICITY",
+            "GAS"
+        ],
+        "address": {
+            "street": "Gustav Mahlerlaan",
+            "houseNumber": "1025",
+            "houseNumberAddition": null,
+            "zipCode": "1082 MK",
+            "city": "AMSTERDAM"
+        },
+        "addressHasMultipleSites": false,
+        "status": "DELIVERY_ENDED",
+        "propositionType": null,
+        "deliveryStartDate": "2023-01-05",
+        "deliveryEndDate": "2024-02-09",
+        "firstMeterReadingDate": "2023-01-05",
+        "lastMeterReadingDate": "2024-02-08"
+    },
+    """
+    addressHasMultipleSites: bool
+    propositionType: Optional[str]
+    reference: str
+    segments: list[str]
+    address: Address
+    status: str
+    deliveryStartDate: Optional[date]
+    deliveryEndDate: Optional[date] = None
+    firstMeterReadingDate: Optional[date]
+    lastMeterReadingDate: Optional[date]
+
+    @staticmethod
+    def from_dict(payload: dict[str, str]) -> 'DeliverySite':
+        """Parse the response from the me query."""
+
+        if not payload:
+            return None
+
+        _LOGGER.debug("DeliverySites %s", payload)
+
+        # address_data = payload.get("addressFormatted")
+        # address_data = payload.get("addressFormatted", ["", ""])
+        # address = Address(**address_data) if address_data else None
+        address_data = payload.get("address")
+        address = Address.from_dict(address_data) if address_data else None
+
+        return DeliverySite(
+            reference=payload.get("reference"),
+            segments=payload.get("segments", []),
+            addressHasMultipleSites=payload.get(
+                "addressHasMultipleSites", False),
+            address=address,
+            propositionType=payload.get("propositionType"),
+            status=payload.get("status"),
+            deliveryStartDate=(
+                datetime.strptime(payload.get("deliveryStartDate"), "%Y-%m-%d").date()
+                if payload.get("deliveryStartDate") else None
+            ),
+            deliveryEndDate=(
+                datetime.strptime(payload.get("deliveryEndDate"), "%Y-%m-%d").date()
+                if payload.get("deliveryEndDate") else None
+            ),
+            firstMeterReadingDate=(
+                datetime.strptime(payload.get("firstMeterReadingDate"), "%Y-%m-%d").date()
+                if payload.get("firstMeterReadingDate") else None
+            ),
+            lastMeterReadingDate=(
+                datetime.strptime(payload.get("lastMeterReadingDate"), "%Y-%m-%d").date()
+                if payload.get("lastMeterReadingDate") else None
+            )
+        ) if payload else None
+
+    @property
+    def format_delivery_site_as_dict(self):
+        sites_as_dict = []
+        for site in self.deliverySites:
+            address = site.get('address', {})
+            sites_as_dict.append(
+                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}")
+        return sites_as_dict
+
+@dataclass
+class Person:
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> "Person":
+        return Person(
+            firstName=data.get("firstName"),
+            lastName=data.get("lastName")
+        )
+
+
+@dataclass
+class Contact:
+    emailAddress: Optional[EmailStr] = None
+    phoneNumber: Optional[str] = None
+    mobileNumber: Optional[str] = None
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> "Contact":
+        return Contact(
+            emailAddress=data.get("emailAddress"),
+            phoneNumber=data.get("phoneNumber"),
+            mobileNumber=data.get("mobileNumber")
+        )
+
+
+@dataclass
+class Email:
+    email: str
+
+
+@dataclass
+class Debtor:
+    bankAccountNumber: Optional[str] = None
+    preferredAutomaticCollectionDay: Optional[int] = None
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> "Debtor":
+        return Debtor(
+            bankAccountNumber=data.get("bankAccountNumber"),
+            preferredAutomaticCollectionDay=data.get(
+                "preferredAutomaticCollectionDay")
+        )
+
+
+@dataclass
+class GridOperatorAddress:
+    """Address of the grid operator."""
+    street: Optional[str] = None
+    houseNumber: Optional[str] = None
+    houseNumberAddition: Optional[str] = None
+    zipCode: Optional[str] = None
+    city: Optional[str] = None
+
+
+@dataclass
+class ExternalDetails:
+    """Details about the external grid operator."""
+    gridOperator: Optional[str] = None
+    address: GridOperatorAddress = field(default_factory=GridOperatorAddress)
+
+
+@dataclass
+class Connection:
+    """Represents a connection to the energy grid."""
+    id: Optional[str] = None
+    connectionId: Optional[str] = None
+    EAN: Optional[str] = None
+    segment: Optional[str] = None
+    status: Optional[str] = None
+    contractStatus: Optional[str] = None
+    estimatedFeedIn: Optional[float] = None
+    firstMeterReadingDate: Optional[str] = None
+    lastMeterReadingDate: Optional[str] = None
+    meterType: Optional[str] = None
+    externalDetails: ExternalDetails = field(default_factory=ExternalDetails)
+
+
+@dataclass
+class MeterReadingExportPeriod:
+    EAN: str
+    user: 'User'
+    cluster: str
+    createdAt: str
+    from_date: str
+    till_date: str
+    period: str
+    segment: str
+    type: str
+    updatedAt: str
+
+
+class UserDetails:
+    id: Optional[str] = None
+    email: Optional[str] = None
+
+
+@dataclass
+class Signup:
+    user: UserDetails
+
+
+@dataclass
+class UserSettings:
+    id: str
+    disabledHapticFeedback: bool
+    jedlixUserId: Optional[str]
+    jedlixPushNotifications: bool
+    smartPushNotifications: bool
+    rewardPayoutPreference: str
+
+
+@dataclass
+class activePaymentAuthorization:
+    """Represents an active payment authorization record."""
+    id: str
+    mandateId: str
+    signedAt: str
+    bankAccountNumber: str
+    status: str
+
+    @staticmethod
+    def from_dict(data: dict) -> 'activePaymentAuthorization':
+        return activePaymentAuthorization(
+            id=data.get("id"),
+            mandateId=data.get("mandateId"),
+            signedAt=data.get("signedAt"),
+            bankAccountNumber=data.get("bankAccountNumber"),
+            status=data.get("status")
+        )
+
+
+@dataclass
+class InviteLinkUser:
+    awardRewardType: str
+    createdAt: str
+    description: Optional[str]
+    discountPerConnection: int
+    fromName: str
+    id: str
+    imageUrl: Optional[str]
+    slug: str
+    status: str
+    tintColor: Optional[str]
+    treesAmountPerConnection: int
+    type: str
+    updatedAt: str
+    usedCount: int
+
+
+@dataclass
+class Organization:
+    Email: str
+
+
+@dataclass
+class PushNotificationPriceAlert:
+    id: Optional[str] = None
+    isEnabled: Optional[bool] = None
+    type: Optional[str] = None
+    weekdays: Optional[list[int]] = None
+
+
+@dataclass
+class SmartCharging:
+    isActivated: Optional[bool] = None
+    provider: Optional[str] = None
+    userCreatedAt: Optional[str] = None
+    userId: Optional[str] = None
+    isAvailableInCountry: Optional[bool] = None
+    needsSubscription: Optional[bool] = None
+    subscription: Optional[str] = None
+
+
+@dataclass
+class SmartTrading:
+    isActivated: Optional[bool] = None
+    userCreatedAt: Optional[str] = None
+    userId: Optional[str] = None
+    isAvailableInCountry: Optional[bool] = None
+
+
+@dataclass
+class ExternalDetails:
+    reference: Optional[str] = None
+    person: Optional[Person] = None
+    contact: Optional[Contact] = None
+    address: Optional[Address] = None
+    debtor: Optional[Debtor] = None
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> "ExternalDetails":
+        return ExternalDetails(
+            reference=data.get("reference"),
+            person=Person.from_dict(data.get("person", {})),
+            contact=Contact.from_dict(data.get("contact", {})),
+            address=Address.from_dict(data.get("address", {})),
+            debtor=Debtor.from_dict(data.get("debtor", {}))
+        )
+
+
+@dataclass
+class DeliverySiteFormat:
+    """Formatted address of the delivery site."""
+    address: Address
+
+    def formatted_info(self) -> str:
+        """Formatted address of the delivery site."""
+        return f"{self.address.street} {self.address.houseNumber} {self.address.zipCode} {self.address.city}"
+
+
+@dataclass
+class DeliverySiteList:
+    """List with delivery sites."""
+    delivery_sites: list[DeliverySite]
+
+    def __iter__(self):
+        """Return an iterator over the delivery sites."""
+        return iter(self.delivery_sites)
+
+    def as_list(self) -> list[dict[str, str]]:
+        """Convert the delivery sites to a list of dictionaries.
+
+        Each dictionary represents the formatted information of a delivery site.
+
+        Returns:
+            A list of dictionaries representing the delivery sites.
+        """
+        sites = []
+        for index, site in enumerate(self.delivery_sites, start=1):
+            site_name = f"Delivery site {index}"
+            site_info = {site_name: site.formatted_info()}
+            sites.append(site_info)
+        return sites
+
+    def as_dict(self) -> dict[str, dict]:
+        """Convert the delivery sites to a dictionary of address information.
+
+        Each key-value pair represents the site name and the corresponding address
+        information of a delivery site.
+
+        Returns:
+            A dictionary where keys are site names and values are address information dictionaries.
+        """
+        site_dict = {}
+        for index, site in enumerate(self.delivery_sites, start=1):
+            site_name = f"Delivery site {index}"
+            site_dict[site_name] = site.address.__dict__
+        return site_dict
+
+
+class DailyConsumption:
+    def __init__(self, date: str, consumption_kwh: float):
+        """
+        Initialize a DailyConsumption instance.
+
+        Parameters:
+        - date (str): The date of the daily consumption.
+        - consumption_kwh (float): The energy consumption in kilowatt-hours for the specified date.
+        """
+        self.date = date
+        self.consumption_kwh = consumption_kwh
+
+
+class EnergyConsumption:
+    def __init__(self, user_id: str, daily_consumption: list[DailyConsumption]):
+        """
+        Initialize an EnergyConsumption instance.
+
+        Parameters:
+        - user_id (str): The unique identifier of the user.
+        - daily_consumption (List[DailyConsumption]): A list of DailyConsumption instances representing daily energy consumption.
+        """
+        self.user_id = user_id
+        self.daily_consumption = daily_consumption
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> Optional['EnergyConsumption']:
+        """
+        Create an EnergyConsumption instance from a dictionary.
+
+        Parameters:
+        - data (Dict[str, Any]): The input dictionary containing user and energy consumption data.
+
+        Returns:
+        - EnergyConsumption: An instance of the EnergyConsumption class.
+        """
+        user_data = data.get("user", {})
+        user_id = user_data.get("id")
+        daily_consumption_data = user_data.get(
+            "energyConsumption", {}).get("daily", [])
+
+        daily_consumption = [
+            DailyConsumption(date=item.get("date"),
+                             consumption_kwh=item.get("consumptionKwh"))
+            for item in daily_consumption_data
+        ]
+
+        return cls(user_id, daily_consumption)
+
+
+@dataclass
+class User:
+    """User data, including the current status of the connection."""
+
+    id: str
+    PaymentAuthorizations: list
+    activePaymentAuthorization: Optional[list]
+    InviteLinkUser: InviteLinkUser
+    Organization: Organization
+    # deliverySites: DeliverySiteList
+    connections: Optional[list[Connection]]
+    # deliverySites: list[DeliverySite]
+    createdAt: datetime
+    updatedAt: datetime
+    email: str
+    # firstName: Optional[str]
+    # lastName: Optional[str]
+    countryCode: str
+    # segments: list[str]
+    lastLogin: datetime
+    reference: int
+    connectionsStatus: str
+    # deliveryStartDate: date
+    # firstMeterReadingDate: date
+    # lastMeterReadingDate: date
+    meterReadingExportPeriods: dict[str, object]
+    advancedPaymentAmount: float
+    hasCO2Compensation: bool
+    hasInviteLink: bool
+    status: str
+    UserSettings: dict[str, object]
+    PushNotificationPriceAlerts: list[object]
+    # propositionType: str
+    websiteUrl: str
+    customerSupportEmail: str
+    Signup: Signup
+    treesCount: Optional[int] = 0
+    friendsCount: Optional[int] = 0
+    smartCharging: Optional[SmartCharging] = None
+    smartTrading: Optional[SmartTrading] = None
+    externalDetails: Optional[dict] = None
+    deliveryEndDate: Optional[date] = None
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> Optional["User"]:
+        """Parse the response from the me query."""
+        _LOGGER.debug("User %s", data)
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        payload = data.get("data", {}).get("me")
+        if payload is None:
+            raise RequestException("Unexpected response")
+
+        _LOGGER.debug("deliverySites %s", payload.get("deliverySites"))
+
+        last_login_str = payload.get("lastLogin")
+        last_login = None
+        if last_login_str:
+            try:
+                last_login = datetime.fromisoformat(last_login_str)
+            except ValueError:
+                _LOGGER.warning("Invalid lastLogin format: %s", last_login_str)
+
+        return User(
+            id=payload.get("id"),
+            InviteLinkUser=payload.get("InviteLinkUser"),
+            Signup=payload.get("Signup"),
+            Organization=payload.get("Organization"),
+            PaymentAuthorizations=payload.get("PaymentAuthorizations"),
+            activePaymentAuthorization=payload.get(
+                "activePaymentAuthorization"),
+            countryCode=payload.get("countryCode"),
+            # segments=first_site.get("segments", []),
+            # lastLogin=datetime.fromisoformat(payload.get("lastLogin")),
+            lastLogin=last_login,
+            createdAt=datetime.fromisoformat(payload.get("createdAt")),
+            updatedAt=datetime.fromisoformat(payload.get("updatedAt")),
+            email=payload.get("email"),
+            reference=payload.get("reference"),
+            connectionsStatus=payload.get("connectionsStatus"),
+            # firstMeterReadingDate=payload.get("deliverySites")[
+            #     0].get("firstMeterReadingDate"),
+            # lastMeterReadingDate=payload.get("deliverySites")[
+            #     0].get("lastMeterReadingDate"),
+            # deliveryStartDate=first_site.get("deliveryStartDate"),
+            # deliveryEndDate=first_site.get("deliveryEndDate"),
+            # firstMeterReadingDate=first_site.get("firstMeterReadingDate"),
+            # lastMeterReadingDate=first_site.get("lastMeterReadingDate"),
+            meterReadingExportPeriods=payload.get(
+                "meterReadingExportPeriods", {}),
+            advancedPaymentAmount=payload.get("advancedPaymentAmount"),
+            hasInviteLink=payload.get("hasInviteLink", False),
+            hasCO2Compensation=payload.get("hasCO2Compensation", False),
+            treesCount=payload.get("treesCount", 0),
+            friendsCount=payload.get("friendsCount", 0),
+            status=payload.get("status"),
+            websiteUrl=payload.get("websiteUrl"),
+            customerSupportEmail=payload.get("customerSupportEmail"),
+            UserSettings=payload.get("UserSettings", {}),
+            PushNotificationPriceAlerts=payload.get(
+                "PushNotificationPriceAlerts", []),
+            # propositionType=payload.get("deliverySites")[
+            #     0].get("propositionType"),
+            # smartCharging=payload.get("deliverySites")[
+            #     0].get("smartCharging"),
+            # propositionType=first_site.get("propositionType"),
+            smartCharging=payload.get("smartCharging", {}),
+            smartTrading=payload.get("smartTrading", {}),
+            connections=payload.get("connections", {}),
+            externalDetails=ExternalDetails.from_dict(
+                payload.get("externalDetails", {}))
+        )
+
+    # verwijder dit is verplaatst naar de deliverysite class
+    @property
+    def format_delivery_site_as_dict(self):
+        sites_as_dict = []
+        for site in self.deliverySites:
+            address = site.get('address', {})
+            sites_as_dict.append(
+                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}")
+        return sites_as_dict
+
+    @property
+    def delivery_site_as_list(self):
+        sites = []
+        for index, site in enumerate(self.deliverySites, start=1):
+            address = site.get('address', {})
+            site_name = f"Delivery site {index}"
+            house_number_addition = f"{address.get('houseNumberAddition')}" if address.get(
+                'houseNumberAddition') else ""
+            site_info = {
+                site_name: f"{address.get('street')} {address.get('houseNumber')} {house_number_addition if house_number_addition else ''} {address.get('zipCode')} {address.get('city')}"
+            }
+            sites.append(site_info)
+        return sites
+
+    @property
+    def delivery_site_as_dict(self):
+        site_dict = {}
+        for index, site in enumerate(self.deliverySites, start=1):
+            address = site.get('address', {})
+            site_name = f"Delivery site {index}"
+            site_info = {
+                "street": address.get('street'),
+                "house_number": address.get('houseNumber'),
+                "zip_code": address.get('zipCode'),
+                "city": address.get('city')
+            }
+            if address.get('houseNumberAddition'):
+                site_info["house_number_addition"] = address.get(
+                    'houseNumberAddition', '')
+            site_dict[site_name] = site_info
+        return site_dict
+
+    @property
+    def delivery_sites(self) -> dict[str, dict]:
+        site_dict = {}
+        for index, site in enumerate(self.deliverySites, start=1):
+            address = site.get('address', {})
+            site_name = f"Delivery site {index}"
+            site_info = {
+                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}"
+            }
+            site_dict[site_name] = site_info
+        return site_dict
+
+
+@dataclass
+class MonthInsights:
+    """Month summary data, including the actual and expected costs for this month."""
+
+    actualCostsUntilLastMeterReading: float
+    expectedCostsUntilLastMeterReading: float
+    expectedCosts: float
+    lastMeterReadingDate: datetime
+
+    @staticmethod
+    def from_dict(data: dict[str, str]) -> Union['MonthInsights', None]:
+        """Parse the response from the monthSummary query."""
+        _LOGGER.debug("MonthInsights %s", data)
+
+        if data is None:
+            return None
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        payload = data.get("data", {}).get("monthInsights")
+        if payload is None:
+            raise RequestException("Unexpected response")
+
+        return MonthInsights(
+            actualCostsUntilLastMeterReading=payload.get(
+                "actualCostsUntilLastMeterReading"),
+            expectedCostsUntilLastMeterReading=payload.get(
+                "expectedCostsUntilLastMeterReading"),
+            expectedCosts=payload.get("expectedCosts"),
+            lastMeterReadingDate=payload.get("lastMeterReadingDate"),
+        )
+
+
+@dataclass
+class MonthSummary:
+    """Month summary data, including the actual and expected costs for this month."""
+
+    _id: str
+    actualCostsUntilLastMeterReadingDate: float
+    expectedCostsUntilLastMeterReadingDate: float
+    expectedCosts: float
+    expectedCostsPerDay: float
+    lastMeterReadingDate: datetime
+    CostsPerDayTillNow: float
+    meterReadingDayCompleteness: int
+    gasExcluded: bool
+    typename: str
+
+    @staticmethod
+    def from_dict(data: dict[str, str]) -> Optional['MonthSummary']:
+        """Parse the response from the monthSummary query."""
+        _LOGGER.debug("MonthSummary %s", data)
+
+        if data is None:
+            return None
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        payload = data.get("data", {}).get("monthSummary")
+        if payload is None:
+            raise RequestException("Unexpected response")
+
+        expected_costs_per_day = MonthSummary.calculate_expected_costs_per_day(
+            payload.get("expectedCosts"), payload.get("lastMeterReadingDate"))
+        costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(payload.get(
+            "actualCostsUntilLastMeterReadingDate"), payload.get("lastMeterReadingDate"))
+
+        return MonthSummary(
+            _id=payload.get("_id"),
+            actualCostsUntilLastMeterReadingDate=payload.get(
+                "actualCostsUntilLastMeterReadingDate"),
+            expectedCostsUntilLastMeterReadingDate=payload.get(
+                "expectedCostsUntilLastMeterReadingDate"),
+            expectedCosts=payload.get("expectedCosts"),
+            expectedCostsPerDay=expected_costs_per_day,
+            CostsPerDayTillNow=costs_per_day_till_now,
+            lastMeterReadingDate=payload.get("lastMeterReadingDate"),
+            meterReadingDayCompleteness=payload.get(
+                "meterReadingDayCompleteness"),
+            gasExcluded=payload.get("lastMeterReadingDate"),
+            typename=payload.get("__typename")
+        )
+
+    @staticmethod
+    def calculate_expected_costs_per_day(expected_costs: float, lastMeterReadingDate: datetime) -> float:
+        """Calculate the expected costs per day."""
+        last_meter_reading_date = datetime.strptime(
+            lastMeterReadingDate, '%Y-%m-%d')
+        last_meter_reading_month = last_meter_reading_date.month
+        days_in_month = (last_meter_reading_date.replace(month=last_meter_reading_month % 12 + 1, day=1) -
+                         datetime(year=last_meter_reading_date.year, month=last_meter_reading_month, day=1)).days
+        return expected_costs / days_in_month
+
+    @staticmethod
+    def calculate_costs_per_day_till_now(costs_till_now: float, lastMeterReadingDate: datetime) -> float:
+        """Calculate the costs per day this month till now."""
+        last_meter_reading_date = datetime.strptime(
+            lastMeterReadingDate, '%Y-%m-%d')
+        if last_meter_reading_date.day > 1:  # skip day one
+            days_till_last_reading = last_meter_reading_date.day  # always one day behind
+            # return the cost divided by the days
+            return costs_till_now / days_till_last_reading
+        return costs_till_now  # return the cost on the fist day
+
+    @property
+    def differenceUntilLastMeterReadingDate(self) -> float:
+        """The difference between the expected costs and the actual costs."""
+        return self.actualCostsUntilLastMeterReadingDate - self.expectedCostsUntilLastMeterReadingDate
+
+    @property
+    def differenceUntilLastMeterReadingDateAvg(self) -> float:
+        """The difference between the expected costs and the actual costs per day."""
+        last_meter_reading_date = datetime.strptime(
+            self.lastMeterReadingDate, '%Y-%m-%d')
+        if last_meter_reading_date.day > 1:  # skip day one
+            days_till_last_reading = last_meter_reading_date.day
+            return self.differenceUntilLastMeterReadingDate / days_till_last_reading
+        return self.differenceUntilLastMeterReadingDate
+
+
+@dataclass
+class ChargeSettings:
+    """Represents the charge settings for an enode charger."""
+    id: str
+    calculated_deadline: datetime | None
+    deadline: datetime | None
+    hour_monday: int
+    hour_tuesday: int
+    hour_wednesday: int
+    hour_thursday: int
+    hour_friday: int
+    hour_saturday: int
+    hour_sunday: int
+    initial_charge: float # ???
+    initial_charge_timestamp: datetime # ???
+    is_smart_charging_enabled: bool
+    is_solar_charging_enabled: bool
+    max_charge_limit: int
+    min_charge_limit: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ChargeSettings':
+        return cls(
+            id=data["id"],
+            calculated_deadline=_parse_datetime(data.get("calculatedDeadline")),
+            initial_charge=data.get("initialCharge"),
+            initial_charge_timestamp=_parse_datetime(data.get("initialChargeTimestamp")),
+            deadline=_parse_datetime(data.get("deadline")),
+            hour_monday=data["hourMonday"],
+            hour_tuesday=data["hourTuesday"],
+            hour_wednesday=data["hourWednesday"],
+            hour_thursday=data["hourThursday"],
+            hour_friday=data["hourFriday"],
+            hour_saturday=data["hourSaturday"],
+            hour_sunday=data["hourSunday"],
+            is_smart_charging_enabled=data["isSmartChargingEnabled"],
+            is_solar_charging_enabled=data["isSolarChargingEnabled"],
+            max_charge_limit=data["maxChargeLimit"],
+            min_charge_limit=data["minChargeLimit"],
+        )
+
+@dataclass
+class ChargeState:
+    """Represents the charge state for an enode charger."""
+    battery_capacity: float | None
+    battery_level: int | None
+    charge_limit: int | None
+    charge_rate: float | None
+    charge_time_remaining: int | None
+    is_charging: bool
+    is_fully_charged: bool | None
+    is_plugged_in: bool
+    last_updated: datetime
+    power_delivery_state: str
+    range: int | None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ChargeState':
+        return cls(
+            battery_capacity=data["batteryCapacity"],
+            battery_level=data["batteryLevel"],
+            charge_limit=data["chargeLimit"],
+            charge_rate=data["chargeRate"],
+            charge_time_remaining=data["chargeTimeRemaining"],
+            is_charging=data["isCharging"],
+            is_fully_charged=data["isFullyCharged"],
+            is_plugged_in=data["isPluggedIn"],
+            last_updated=_parse_datetime(data["lastUpdated"]),
+            power_delivery_state=data["powerDeliveryState"],
+            range=data["range"],
+        )
+
+
+@dataclass
+class VehicleInformation:
+    brand: str
+    model: str
+    vin: str
+    year: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'VehicleInformation':
+        return cls(
+            brand=data["brand"],
+            model=data["model"],
+            vin=data["vin"],
+            year=data["year"],
+        )
+
+
+@dataclass
+class VehicleIntervention:
+    title: str
+    description: str
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'VehicleIntervention':
+        return cls(
+            title=data["title"],
+            description=data["description"],
+        )
+
+
+@dataclass
+class Intervention:
+    """Represents an intervention for an enode charger."""
+    description: str
+    title: str
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'Intervention':
+        return cls(
+            title=data["title"],
+            description=data["description"],
+        )
+
+
+@dataclass
+class EnodeVehicle:
+    """Represents a single enode vehicle."""
+    id: str
+    can_smart_charge: bool
+    charge_settings: ChargeSettings
+    charge_state: ChargeState
+    information: VehicleInformation
+    interventions: list[VehicleIntervention]
+    is_reachable: bool
+    last_seen: datetime | None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> 'EnodeVehicle':
+        return cls(
+            id=data["id"],
+            can_smart_charge=data["canSmartCharge"],
+            charge_settings=ChargeSettings.from_dict(data["chargeSettings"]),
+            charge_state=ChargeState.from_dict(data["chargeState"]),
+            information=VehicleInformation.from_dict(data["information"]),
+            interventions=[
+                VehicleIntervention.from_dict(i)
+                for i in data.get("interventions", [])
+            ],
+            is_reachable=data["isReachable"],
+            last_seen=_parse_datetime(data.get("lastSeen")),
+        )
+
+
+@dataclass
+class EnodeVehicles:
+    """Represents a collection of enode vehicles."""
+    """This class holds a list of EnodeVehicle instances."""
+    vehicles: list[EnodeVehicle]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> 'EnodeVehicles':
+        vehicle_dicts = data.get("data", {}).get("enodeVehicles", [])
+        vehicles = [EnodeVehicle.from_dict(v) for v in vehicle_dicts]
+        return cls(vehicles=vehicles)
+
+
+@dataclass
+class EnodeCharger:
+    """Represents a single enode charger with relevant information."""
+    can_smart_charge: bool
+    charge_settings: ChargeSettings
+    charge_state: ChargeState
+    id: str
+    information: dict
+    interventions: list[Intervention]
+    is_reachable: bool
+    last_seen: datetime
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'EnodeCharger':
+        """Create an instance of EnodeCharger from a dictionary."""
+        charge_settings_data = data['chargeSettings']
+        charge_state_data = data['chargeState']
+        interventions_data = data['interventions']
+        
+        charge_settings = ChargeSettings(
+            calculated_deadline=datetime.fromisoformat(charge_settings_data['calculatedDeadline']),
+            capacity=charge_settings_data['capacity'],
+            deadline=datetime.fromisoformat(charge_settings_data['deadline']) if charge_settings_data['deadline'] else None,
+            hour_friday=charge_settings_data['hourFriday'],
+            hour_monday=charge_settings_data['hourMonday'],
+            hour_saturday=charge_settings_data['hourSaturday'],
+            hour_sunday=charge_settings_data['hourSunday'],
+            hour_thursday=charge_settings_data['hourThursday'],
+            hour_tuesday=charge_settings_data['hourTuesday'],
+            hour_wednesday=charge_settings_data['hourWednesday'],
+            id=charge_settings_data['id'],
+            initial_charge=charge_settings_data['initialCharge'],
+            initial_charge_timestamp=datetime.fromisoformat(charge_settings_data['initialChargeTimestamp']),
+            is_smart_charging_enabled=charge_settings_data['isSmartChargingEnabled'],
+            is_solar_charging_enabled=charge_settings_data['isSolarChargingEnabled'],
+            max_charge_limit=charge_settings_data['maxChargeLimit'],
+            min_charge_limit=charge_settings_data['minChargeLimit']
+        )
+
+        charge_state = ChargeState(
+            battery_capacity=charge_state_data['batteryCapacity'],
+            battery_level=charge_state_data['batteryLevel'],
+            charge_limit=charge_state_data['chargeLimit'],
+            charge_rate=charge_state_data['chargeRate'],
+            charge_time_remaining=charge_state_data['chargeTimeRemaining'],
+            is_charging=charge_state_data['isCharging'],
+            is_fully_charged=charge_state_data['isFullyCharged'],
+            is_plugged_in=charge_state_data['isPluggedIn'],
+            last_updated=datetime.fromisoformat(charge_state_data['lastUpdated']),
+            power_delivery_state=charge_state_data['powerDeliveryState'],
+            range=charge_state_data['range']
+        )
+
+        interventions = [Intervention(description=intervention['description'], title=intervention['title'])
+                         for intervention in interventions_data]
+
+        return cls(
+            can_smart_charge=data['canSmartCharge'],
+            charge_settings=charge_settings,
+            charge_state=charge_state,
+            id=data['id'],
+            information=data['information'],
+            interventions=interventions,
+            is_reachable=data['isReachable'],
+            last_seen=datetime.fromisoformat(data['lastSeen'])
+        )
+
+
+@dataclass
+class EnodeChargers:
+    """Represents a collection of enode chargers."""
+    chargers: list[EnodeCharger]
+
+    @classmethod
+    def from_dict(cls, data: list[dict]) -> 'EnodeChargers':
+        """Create an instance of EnodeChargers from a list of dictionaries."""
+        chargers = [EnodeCharger.from_dict(item) for item in data]
+        return cls(chargers=chargers)
+
+    def as_dict(self) -> dict[str, EnodeCharger]:
+        """Return only chargers with smart charging enabled as a dict keyed by charger ID."""
+        return {
+            charger.id: charger
+            for charger in self.chargers
+            if charger.charge_settings.is_smart_charging_enabled
+        }
 
 @dataclass
 class Price:
+    """Price data for one hour."""
+
     date_from: datetime
     date_till: datetime
     price_data: list['Price']
@@ -637,7 +1675,7 @@ class Price:
     energy_tax_price: float = 0.0
     total: float = 0.0
     per_unit: Optional[str] = None
-    unit: Optional[str] = None
+    unit: Optional[str] = None      
     tax_rate: float = 0.0
     tax: float = 0.0
     start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -650,14 +1688,33 @@ class Price:
     market_price_including_tax_and_markup: float = 0.0
 
     def __post_init__(self):
+        """Initialize energy_type if provided in data.
+        This method sets the energy tax price based on the energy type.
+        This tax is for The Netherlands and may change yearly.
+        The values are based on the energy tax for electricity and gas in 2025.
+        €0,10154×1,21=€0,12286 per kWh (<10.000 kWh)
+        Iedere aansluiting krijgt in 2025 een vermindering van € 635,19 (inclusief btw) (tot ~4.700 kWh) via de belastingvermindering/regeling basisbehoefte
+
+        Onderdeel	Tarief 2025
+        Energiebelasting stroom (<10.000 kWh)	€ 0,10154/kWh excl. btw → € 0,12286/kWh incl. btw
+        Energiebelasting stroom (>10.000 kWh)	€ 0,06937/kWh excl. btw → € 0,08400/kWh incl. btw
+        Vermindering energiebelasting	€ 635,19 per jaar (incl. btw)
+        """
         if self.energy_type:
             if self.energy_type == "electricity":
-                self.energy_tax_price = 0.1228634
+                # self.energy_tax_price = 0.15239 # electricity tax 2023
+                # self.energy_tax_price = 0.13165  # electricity tax 2024
+                self.energy_tax_price = 0.1228634  # electricity tax 2025 incl. BTW
             if self.energy_type == "gas":
-                self.energy_tax_price = 0.6995736
+                # self.energy_tax_price = 0.5927 # gas tax 2023
+                # self.energy_tax_price = 0.70544  # gas tax 2024
+                self.energy_tax_price = 0.6995736  # gas tax 2025
+        # not in use anymore, get energy_tax_price from API response
 
     def __init__(self, data: dict, energy_type: Optional[str] = None) -> None:
+        """Parse the response from the prices query."""
         self.energy_type = energy_type
+        # self.energy_type = data.get("energy_type", None)
 
         date_from_str = data.get('from', '')
         date_till_str = data.get('till', '')
@@ -666,33 +1723,60 @@ class Price:
 
         if date_from_str:
             try:
+                # Step 1: Replace 'Z' with '+00:00' to indicate UTC
                 date_str = date_from_str.replace('Z', '+00:00')
+                
+                # Step 2: Parse the date string to a datetime object
                 dt = datetime.fromisoformat(date_str)
+                
+                # Step 3: Convert the datetime object to ISO 8601 format
                 iso_format_date = dt.isoformat()
-                self.date_from = datetime.fromisoformat(iso_format_date)
+                self.date_from = datetime.fromisoformat(iso_format_date)  # Regular datetime
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_from_str)
 
         if date_till_str:
             try:
+                # Step 1: Replace 'Z' with '+00:00' to indicate UTC
                 date_str = date_till_str.replace('Z', '+00:00')
+                
+                # Step 2: Parse the date string to a datetime object
                 dt = datetime.fromisoformat(date_str)
+                
+                # Step 3: Convert the datetime object to ISO 8601 format
                 iso_format_date = dt.isoformat()
-                self.date_till = datetime.fromisoformat(iso_format_date)
+                self.date_till = datetime.fromisoformat(iso_format_date)  # Regular datetime
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_till_str)
 
+        """ The market price of the product or service. """
         self.market_price = data["marketPrice"]
+        """ The amount of tax added to the market price. """
         self.market_price_tax = data["marketPriceTax"]
+        """ The amount of sourcing markup added to the market price. """
         self.sourcing_markup_price = data["sourcingMarkupPrice"]
         self.energy_tax_price = data["energyTaxPrice"]
         self.market_price_including_tax = self.market_price + self.market_price_tax
+
+        # Tax added to the market price including tax and markup
         self.market_price_including_tax_and_markup = (
             self.market_price + self.market_price_tax + self.sourcing_markup_price
         )
+
         self.per_unit = data['perUnit']
 
+        # Check if the "energy_type" key is present in the data dictionary
+        # print("DATA:", self)
+        # print("TESTDATA:", data)
+
+    def per_unit(self) -> str:
+        """Return the unit of the price."""
+        if self.per_unit:
+            return self.per_unit
+        return None
+
     def __str__(self) -> str:
+        """Return a string representation of this price entry."""
         return "%s -> %s: %.4f %s" % (
             self.date_from.isoformat() if self.date_from else "N/A",
             self.date_till.isoformat() if self.date_till else "N/A",
@@ -701,35 +1785,46 @@ class Price:
         )
 
     @property
-    def ET(self, data) -> str:
+    def ET(self, data) -> str: # not in use anymore
+        """Returns energy type 'electricity' or 'gas'."""
         if "energy_type" in data:
             self.energy_type = data["energy_type"]
             if self.energy_type == "electricity":
-                self.energy_tax_price = 0.1228634
+                # self.energy_tax_price = 0.15239 # electricity tax 2023
+                # self.energy_tax_price = 0.13165  # electricity tax 2024
+                self.energy_tax_price = 0.1228634  # electricity tax 2025
             if self.energy_type == "gas":
-                self.energy_tax_price = 0.6995736
+                # self.energy_tax_price = 0.5927 # gas tax 2023
+                # self.energy_tax_price = 0.70544  # gas tax 2024
+                self.energy_tax_price = 0.6995736  # gas tax 2025
             return data["energy_type"]
         else:
             return None
 
     @property
     def for_now(self) -> bool:
+        """Whether this price entry is for the current hour."""
         return self.date_from <= datetime.now(timezone.utc) < self.date_till
 
     @property
     def for_future(self) -> bool:
+        """Whether this price entry is for and hour after the current one."""
         return self.date_from.hour > datetime.now(timezone.utc).hour
 
     @property
     def for_today(self) -> bool:
-        now = datetime.now(timezone.utc).astimezone()
+        """Whether this price entry is for the current day."""
+        now = datetime.now(timezone.utc).astimezone(
+        )  # Convert to local timezone
         day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         day_end = day_start + timedelta(days=1)
         return self.date_from >= day_start and self.date_till <= day_end
 
     @property
     def for_tomorrow(self) -> bool:
-        now = datetime.now(timezone.utc).astimezone()
+        """Whether this price entry is for tomorrow."""
+        now = datetime.now(timezone.utc).astimezone(
+        )  # Convert to local timezone
         tomorrow = now + timedelta(days=1)
         tomorrow_start = tomorrow.replace(
             hour=0, minute=0, second=0, microsecond=0)
@@ -738,19 +1833,24 @@ class Price:
 
     @property
     def for_upcoming(self) -> bool:
+        """ Whether this price entry is for a hour after the current one. """
         now = datetime.now(timezone.utc).astimezone()
         return self.date_from > now
 
     @property
     def for_previous_hour(self) -> bool:
-        now = datetime.now(timezone.utc).astimezone()
+        """ Whether this price entry is for the previous hour. """
+        now = datetime.now(timezone.utc).astimezone(
+        )  # Convert to local timezone
         previous_hour_start = now.replace(
             microsecond=0, second=0, minute=0) - timedelta(hours=1)
         return self.date_from == previous_hour_start
 
     @property
     def for_next_hour(self) -> bool:
-        now = datetime.now(timezone.utc).astimezone()
+        """ Whether this price entry is for the next hour. """
+        now = datetime.now(timezone.utc).astimezone(
+        )  # Convert to local timezone
         next_hour_start = now.replace(
             microsecond=0, second=0, minute=0) + timedelta(hours=1)
         next_hour_end = next_hour_start + timedelta(hours=1)
@@ -758,17 +1858,21 @@ class Price:
 
     @property
     def previous_hour(self):
+        """ Price that was the previous hour applicable. """
         return next((hour for hour in self.price_data if hour.for_previous_hour), None)
 
     @property
     def next_hour(self):
+        """ Price that is-the next hour applicable. """
         return next((hour for hour in self.price_data if hour.for_next_hour), None)
 
+    # Calculate the market price with tax by adding marketPrice and marketPriceTax
     @property
     def market_price_with_tax(self) -> float:
         """The market price including tax."""
         return self.market_price + self.market_price_tax
 
+    # Calculate the market price with tax and sourcing markup by adding marketPrice, marketPriceTax and sourcing_markup_price
     @property
     def market_price_with_tax_and_markup(self) -> float:
         """The market price including tax."""
@@ -803,13 +1907,23 @@ class Price:
         if not prices:
             return {}
 
+        # Calculate the minimum price
         min_price = min(prices)
+
+        # Calculate the maximum price
         max_price = max(prices)
+
+        # Calculate the average price
         avg_price = mean(prices)
+
+        # Calculate the total price
         total_price = sum(prices)
+
+        # Calculate the standard deviation
         n = len(prices)
         std_dev = (sum((x - avg_price) ** 2 for x in prices) / n) ** 0.5
 
+        # Create a dictionary to store the calculated statistics
         stats = {
             'min_price': min_price,
             'max_price': max_price,
@@ -858,7 +1972,19 @@ class Price:
             }
         }
 
+
 @dataclass
+class PriceDataAvg:
+    """Dataclass representing average price data for a time period."""
+    values: list[Price]
+    total: float
+    market_price_with_tax_and_markup: float
+    market_markup_price: float
+    market_price_with_tax: float
+    market_price_tax: float
+    market_price: float
+
+
 class PriceData:
     """Price data for a period of time."""
     price_data: list[Price] = []
@@ -875,17 +2001,27 @@ class PriceData:
     gas_unit: str = None
     elec_unit: str = None
 
+    """" 
+    PriceDataAvg = namedtuple('PriceDataAvg', [
+        'values', 'total', 'market_price_with_tax_and_markup',
+        'market_markup_price', 'market_price_with_tax',
+        'market_price_tax', 'market_price'
+    ])
+    """
+
     def __init__(self, prices: Optional[list['Price']] = None, energy_type: Optional[str] = None):
         self.price_data = [Price({**price, "energy_type": energy_type})
                            for price in prices] if prices else []
         self.energy_type = energy_type
 
     def __add__(self, other: 'PriceData') -> 'PriceData':
+        """Combine two PriceData objects."""
         pd = PriceData()
         pd.price_data = self.price_data + other.price_data
         return pd
 
     def __str__(self):
+        """Return a string representation of this price data."""
         return str([str(price) for price in self.price_data])
 
     def filter_prices(self, start_date: datetime, end_date: datetime) -> list[Price]:
@@ -918,7 +2054,7 @@ class PriceData:
         matching_hours = [hour for hour in self.price_data if hour.for_now]
         if matching_hours:
             return matching_hours[0]
-        else:
+        else:  # only occurs when hour.for_now is not in range of price_data
             return None
 
     @property
@@ -927,38 +2063,832 @@ class PriceData:
         return next((hour for hour in self.price_data if hour.for_next_hour), None)
 
     @property
+    def today_tax_markup_avg(self) -> float:
+        """ Average market price including tax and markup for today. """
+        today_market_tax_markup = [
+            hour.market_price_with_tax_and_markup for hour in self.today_prices]
+        return mean(today_market_tax_markup)
+
+    @property
     def today_min(self) -> Optional[Price]:
         """Price with the lowest total for today."""
-        if self.today != []:
+        if not self.today == []:
             return min([hour for hour in self.today], key=lambda hour: hour.total)
 
     @property
     def today_max(self) -> Optional[Price]:
         """Price with the highest total for today."""
-        if self.today != []:
+        if not self.today == []:
             return max([hour for hour in self.today], key=lambda hour: hour.total)
 
     @property
     def today_avg(self) -> float:
         """Average price for today."""
-        if self.today != []:
+        if not self.today == []:
             return mean(hour.total for hour in self.today)
+
+    @property  # todo
+    def tomorrow_average_price(self) -> Optional[float]:
+        """ Average total price for tomorrow. """
+        tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
+
+        if not tomorrow_prices:
+            return None
+
+        average_price = mean(price.total for price in tomorrow_prices)
+        rounded_average_price = round(average_price, DEFAULT_ROUND)
+
+        return rounded_average_price
+
+    @property
+    def tomorrow_average_price_including_tax(self) -> Optional[float]:
+        """ Average total price including tax and markup for tomorrow. """
+        tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
+
+        if not tomorrow_prices:
+            return None
+
+        average_price = mean(
+            price.market_price_including_tax for price in tomorrow_prices)
+        rounded_average_price = round(average_price, DEFAULT_ROUND)
+
+        return rounded_average_price
+
+    @property
+    def tomorrow_average_price_including_tax_and_markup(self) -> Optional[float]:
+        """ Average total price including tax and markup for tomorrow. """
+        tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
+
+        if not tomorrow_prices:
+            return None
+
+        average_price = mean(
+            price.market_price_including_tax_and_markup for price in tomorrow_prices)
+        rounded_average_price = round(average_price, DEFAULT_ROUND)
+
+        return rounded_average_price
+
+    @property
+    def tomorrow_average_market_price(self) -> Optional[float]:
+        """ Average market price for tomorrow. """
+        tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
+
+        if not tomorrow_prices:
+            return None
+
+        average_price = mean(price.market_price for price in tomorrow_prices)
+        rounded_average_price = round(average_price, DEFAULT_ROUND)
+
+        return rounded_average_price
 
     @property
     def tomorrow_min(self) -> Optional[Price]:
         """Price with the lowest total for today."""
-        if self.tomorrow != []:
+        if not self.tomorrow == []:
             return min([hour for hour in self.tomorrow], key=lambda hour: hour.total)
 
     @property
     def tomorrow_max(self) -> Optional[Price]:
         """Price with the highest total for today."""
-        if self.tomorrow != []:
+        if not self.tomorrow == []:
             return max([hour for hour in self.tomorrow], key=lambda hour: hour.total)
 
-    # ... rest of the methods unchanged ...
-    
+    @property
+    def all_min(self) -> Price:
+        return min([hour for hour in self.price_data], key=lambda hour: hour.total)
+
+    @property
+    def all_max(self) -> Price:
+        return max([hour for hour in self.price_data], key=lambda hour: hour.total)
+
+    @property
+    def upcoming(self) -> list[Price]:
+        return [hour for hour in self.price_data if hour.for_upcoming]
+
+    @property
+    def all_attr(self):
+        """ Electricity price data for the all hours """
+        all_data = []
+        total_price = 0
+        for hour in self.price_data:
+            all_data.append({
+                'from': hour.date_from.isoformat(),
+                'till': hour.date_till.isoformat(),
+                'price': hour.total
+            })
+            total_price += hour.total
+        return {
+            'all_hours': all_data,
+            'average': total_price / len(all_data) if len(all_data) > 0 else 0
+        }
+
+    @property
+    def upcoming_attr(self):
+        """ Electricity price data for the upcoming hours """
+        upcoming_data = []
+        total_price = 0
+        for hour in self.price_data:
+            if hour.for_upcoming:
+                upcoming_data.append({
+                    'from': hour.date_from.isoformat(),
+                    'till': hour.date_till.isoformat(),
+                    'price': hour.total
+                })
+                total_price += hour.total
+        return {
+            'upcoming': upcoming_data,
+            'average': total_price / len(upcoming_data) if len(upcoming_data) > 0 else 0
+        }
+
+    @property
+    def upcoming_min(self) -> Optional['Price']:
+        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
+
+    @property
+    def upcoming_max(self) -> Optional['Price']:
+        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
+
+    @property
+    def elec_previoushour(self):
+        """Return the electricity price for the previous hour"""
+        # Get the current time
+        now = datetime.now()
+
+        # Find the previous hour by subtracting one hour from the current time
+        prev_hour = now - timedelta(hours=1)
+
+        # Filter the list of prices to find the price for the previous hour
+        prev_hour_prices = [
+            price for price in self.price_data if price.date_from <= prev_hour <= price.date_till]
+
+        # If there is a price for the previous hour, return it
+        if prev_hour_prices:
+            return prev_hour_prices[0]
+
+        # If there is no price for the previous hour, return None
+        return None
+
+    @property
+    def elec_nexthour(self):
+        """Return the electricity price for the next hour"""
+        # Get the current time
+        now = datetime.now()
+
+        # Find the next hour by adding one hour to the current time
+        next_hour = now + timedelta(hours=1)
+
+        # Filter the list of prices to find the price for the next hour
+        next_hour_price = next(
+            (price.total for price in self.price_data if price.date_from.time == next_hour), None)
+
+        # Return the next hour price
+        return next_hour_price
+
+    @property
+    def older_avg(self: list['PriceData']) -> float | None:
+        """Calcutale the average price."""
+        if not self:
+            return mean(hour.total for hour in self.all)
+        else:
+            return None
+
+    # Calculate the average price of a list of prices
+    @property
+    def avg(prices) -> float:
+        # Calculate the average price of a list of prices
+        return mean(prices)
+
+    @property
+    def today_tax_avg(self) -> float:
+        """ Average market price including tax and markup for today. """
+        today_market_prices_tax_markup = [
+            hour.market_price_with_tax for hour in self.today_prices]
+        return mean(today_market_prices_tax_markup)
+
+    def average_price(self, start_date: datetime, end_date: datetime) -> float:
+        """Get the average price for a period of time."""
+        prices = self.filter_prices(start_date, end_date)
+        if prices:
+            return mean(price.total for price in prices)
+        return 0.0
+
+    def future_prices(self) -> list[Price]:
+        """Prices for hours after the current one."""
+        return [hour for hour in self.price_data if hour.for_upcoming]
+
+    @property
+    def upcoming_prices(self):
+        """ Prices for hours after the current one. """
+        return [hour for hour in self.price_data if hour.for_upcoming]
+
+    @property
+    def today_prices(self):
+        """ Prices for today. """
+        return [hour for hour in self.price_data if hour.for_today]
+
+    @property
+    def tomorrow_prices(self):
+        """ Prices for tomorrow. """
+        return [hour for hour in self.price_data if hour.for_tomorrow]
+
+    def asdict(
+        self,
+        attr: str,
+        upcoming_only: bool = False,
+        today_only: bool = False,
+        tomorrow_only: bool = False,
+        timezone: str | None = None
+    ) -> list[dict]:
+        """
+        Return a list of dictionaries suitable for use as entity attribute data.
+
+        Args:
+            attr (str): The attribute name (e.g., 'marketPrice') to extract from each price object.
+            upcoming_only (bool): If True, include only upcoming prices.
+            today_only (bool): If True, include only today's prices.
+            tomorrow_only (bool): If True, include only tomorrow's prices.
+            timezone (str | None): The timezone to localize the 'from' and 'till' datetimes. Defaults to UTC.
+
+        Returns:
+            list[dict]: A list of dicts with keys 'from', 'till', and the selected 'price'.
+        """
+        try:
+            tz = pytz.timezone(timezone) if timezone else pytz.UTC
+
+            # self.price_data is altijd een list
+            if isinstance(self.price_data, list):
+                if upcoming_only:
+                    prices = self.upcoming_prices
+                elif today_only:
+                    prices = self.today_prices
+                elif tomorrow_only:
+                    prices = self.tomorrow_prices
+                    if not prices:
+                        return [{'message': 'No prices for tomorrow.'}]
+                else:
+                    prices = self.price_data
+            else:
+                if upcoming_only:
+                    prices = [self]
+                elif today_only:
+                    prices = [p for p in self.price_data if p.for_today]
+                elif tomorrow_only:
+                    prices = [p for p in self.price_data if p.for_tomorrow]
+                    if not prices:
+                        return [{'message': 'No prices for tomorrow.'}]
+                else:
+                    prices = [self.price_data]
+
+            # DEBUG: If the attribute is not found, return a list of dictionaries with the error message
+            # return [{'type': type(self.price_data).__name__, 'price': price} for price in prices]
+
+            return [
+                {
+                    'from': price.date_from.astimezone(tz),
+                    'till': price.date_till.astimezone(tz),
+                    'price': round(getattr(price, attr), 3),
+                }
+                for price in prices
+            ]
+
+        except AttributeError as err:
+            _LOGGER.error("Price object has no attribute '%s'", err)
+            return [{'error': f'Price object has no attribute: {err}'}]
+
+        except Exception as exc:
+            _LOGGER.exception(
+                "Failed to convert price data to dict (attr=%s, upcoming_only=%s, today_only=%s, tomorrow_only=%s, timezone=%s): %s",
+                attr, upcoming_only, today_only, tomorrow_only, timezone, exc
+            )
+            return [{'error': f'Failed to convert price data: {exc}'}]
+
+
     @staticmethod
+    def asdict_to_local(prices_dict, timezone):
+        """ Convert prices dictionary to local timezone. """
+        local_prices = []
+        for price_data in prices_dict:
+            local_date_from = price_data['from'].astimezone(timezone)
+            local_date_till = price_data['till'].astimezone(timezone)
+            local_price_data = {
+                'from': local_date_from,
+                'till': local_date_till,
+                'price': price_data['price']
+            }
+            local_prices.append(local_price_data)
+        return local_prices
+
+    def test_asdict(self, attr):  # remove me
+        """Return a dict that can be used as entity attribute data."""
+        result = []
+        for e in self.price_data:
+            data = {
+                "from": e.date_from,
+                "till": e.date_till,
+                "date_from": e.date_from,
+                "date_till": e.date_till,
+                "market_price": e.market_price,
+                "market_price_tax": e.market_price_tax,
+                "sourcing_markup_price": e.sourcing_markup_price,
+                "energy_tax_price": e.energy_tax_price,
+                "total": e.total,
+                "price": getattr(e, attr)
+            }
+            result.append(data)
+        return result
+
+    def calculate_stats(self):
+        electricity_prices = [
+            price.total for price in self if price.electricity]
+        gas_prices = [price.total for price in self if price.gas]
+
+        electricity_mean = mean(electricity_prices)
+        gas_mean = mean(gas_prices)
+
+        electricity_min = min(electricity_prices)
+        gas_min = min(gas_prices)
+
+        electricity_max = max(electricity_prices)
+        gas_max = max(gas_prices)
+
+        return {
+            'electricity': {
+                'mean': electricity_mean,
+                'min': electricity_min,
+                'max': electricity_max
+            },
+            'gas': {
+                'mean': gas_mean,
+                'min': gas_min,
+                'max': gas_max
+            }
+        }
+
+    def calculate_stats(data):
+        print(data)
+        electricity_prices = data.MarketPrices.electricity
+        gas_prices = data.MarketPrices.gas
+
+        # Calculate total market price and total market price tax and the total price
+        total_market_price = sum(
+            price.market_price for price in electricity_prices)
+        total_market_price_with_tax = sum(
+            price.market_price_with_tax for price in electricity_prices)
+        total_price = sum(price.total for price in electricity_prices)
+
+        # Calculate average prices
+        average_market_price = total_market_price / len(electricity_prices)
+        average_market_price_with_tax = total_market_price_with_tax / \
+            len(electricity_prices)
+        average_total_price = total_price / len(electricity_prices)
+
+        # Find the minimum and maximum prices
+        min_market_price = min(
+            price.market_price for price in electricity_prices)
+        max_market_price = max(
+            price.market_price for price in electricity_prices)
+        min_market_price_with_tax = min(
+            price.market_price_with_tax for price in electricity_prices)
+        max_market_price_with_tax = max(
+            price.market_price_with_tax for price in electricity_prices)
+        min_total_price = min(price.total for price in electricity_prices)
+        max_total_price = max(price.total for price in electricity_prices)
+
+        # Find the time interval with the highest market price
+        max_market_price_interval = max(
+            electricity_prices, key=lambda x: x['marketPrice'])
+        max_market_price_from = datetime.fromisoformat(
+            max_market_price_interval['from'])
+        max_market_price_till = datetime.fromisoformat(
+            max_market_price_interval['till'])
+
+        # Find the time interval with the lowest market price
+        min_market_price_interval = min(
+            electricity_prices, key=lambda x: x['marketPrice'])
+        min_market_price_from = datetime.fromisoformat(
+            min_market_price_interval['from'])
+        min_market_price_till = datetime.fromisoformat(
+            min_market_price_interval['till'])
+
+        # Compile the statistics into a dictionary
+        stats = {
+            'total_market_price': total_market_price,
+            'total_market_price_tax': total_market_price_with_tax,
+            'total_price': total_price,
+            'average_market_price': average_market_price,
+            'average_market_price_with_tax': average_market_price_with_tax,
+            'average_total_price': average_total_price,
+            'min_market_price': min_market_price,
+            'max_market_price': max_market_price,
+            'min_market_price_from': min_market_price_from,
+            'min_market_price_till': min_market_price_till,
+            'max_market_price_from': max_market_price_from,
+            'max_market_price_till': max_market_price_till
+        }
+
+        return stats
+
+    @property
+    def today_prices(self) -> list[Price]:
+        """ Get a list of all the prices for today. """
+        return list(filter(lambda hour: hour.for_today, self.price_data))
+
+    @property
+    def today_market_avg(self) -> float:
+        """ Average market price for today. """
+        today_market_prices = [
+            hour.market_price for hour in self.today_prices]
+        return mean(today_market_prices)
+
+    def get_price_statistics(price_data: 'PriceData', start_date: datetime, end_date: datetime) -> Union[dict, None]:
+        """Calculate statistics for prices within a specific date range."""
+        filtered_prices = price_data.filter_prices(start_date, end_date)
+        if filtered_prices:
+            prices = [price.total for price in filtered_prices]
+            return {
+                "min_price": min(prices),
+                "max_price": max(prices),
+                "avg_price": mean(prices),
+                "total_price": sum(prices),
+                "std_dev": (sum((x - mean(prices)) ** 2 for x in prices) / len(prices)) ** 0.5,
+            }
+        return None
+
+    @staticmethod
+    def from_dict(data: dict[str, list[dict[str, str]]]) -> Optional['PriceData']:
+        """Parse the response from the marketPrices query."""
+        _LOGGER.debug("PriceData %s", data)
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        payload = data.get("data", {}).get("marketPrices")
+        if payload is None:
+            raise RequestException("Unexpected response")
+
+        # return PriceData(
+        #    prices=[Price.from_dict(price_data) for price_data in payload],
+        # )
+        electricity_prices = payload.get("marketPricesElectricity", [])
+        gas_prices = payload.get("marketPricesGas", [])
+        prices = [Price(price_data)
+                  for price_data in electricity_prices + gas_prices]
+        energy_type = "electricity" if electricity_prices else "gas"
+
+        return PriceData(prices=prices, energy_type=energy_type)
+
+    @property
+    def all_avg(self):
+        """Get the average of all prices."""
+        all_prices = [price for price in self.price_data]
+
+        if not all_prices:
+            return None
+
+        avg = round(mean(price.total for price in all_prices), DEFAULT_ROUND)
+        market_price_with_tax_and_markup_avg = round(mean(
+            price.market_price_with_tax_and_markup for price in all_prices), DEFAULT_ROUND)
+        market_price_with_tax_avg = round(mean(
+            price.market_price_with_tax for price in all_prices), DEFAULT_ROUND)
+        market_price_tax_avg = round(mean(
+            price.market_price_tax for price in all_prices), DEFAULT_ROUND)
+        market_price_markup_avg = round(mean(
+            price.sourcing_markup_price for price in all_prices), DEFAULT_ROUND)
+        market_price_avg = round(
+            mean(price.market_price for price in all_prices), DEFAULT_ROUND)
+
+        return type('PriceDataAvg', (object,), {'values': all_prices, 'total': avg, 'market_price_with_tax_and_markup': market_price_with_tax_and_markup_avg, 'market_markup_price': market_price_markup_avg, 'market_price_with_tax': market_price_with_tax_avg, 'market_price_tax': market_price_tax_avg, 'market_price': market_price_avg})
+
+    @property
+    def upcoming_avg(self) -> Optional[PriceDataAvg]:
+        """Get the average of upcoming prices."""
+        upcoming_prices = self.get_prices_for_time_period(TimePeriod.UPCOMING)
+
+        if not upcoming_prices:
+            return None
+
+        avg = round(mean(price.total for price in upcoming_prices),
+                    DEFAULT_ROUND)
+        market_price_with_tax_and_markup_avg = round(mean(
+            price.market_price_with_tax_and_markup for price in upcoming_prices), DEFAULT_ROUND)
+        market_price_with_tax_avg = round(
+            mean(price.market_price_with_tax for price in upcoming_prices), DEFAULT_ROUND)
+        market_price_tax_avg = round(
+            mean(price.market_price_tax for price in upcoming_prices), DEFAULT_ROUND)
+        market_price_markup_avg = round(
+            mean(price.sourcing_markup_price for price in upcoming_prices), DEFAULT_ROUND)
+        market_price_avg = round(
+            mean(price.market_price for price in upcoming_prices), DEFAULT_ROUND)
+
+        """
+        PriceDataAvg = namedtuple('PriceDataAvg', [
+            'values', 'total', 'market_price_with_tax_and_markup',
+            'market_markup_price', 'market_price_with_tax',
+            'market_price_tax', 'market_price'
+        ])
+        """
+
+        return PriceDataAvg(
+            values=upcoming_prices,
+            total=avg,
+            market_price_with_tax_and_markup=market_price_with_tax_and_markup_avg,
+            market_markup_price=market_price_markup_avg,
+            market_price_with_tax=market_price_with_tax_avg,
+            market_price_tax=market_price_tax_avg,
+            market_price=market_price_avg
+        )
+
+    @property
+    def tomorrow_avg(self) -> Optional[PriceDataAvg]:
+        """Get the average of tomorrow's prices."""
+        now = datetime.now(timezone.utc).astimezone()
+        tomorrow = now + timedelta(days=1)
+        tomorrow_start = tomorrow.replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
+
+        # tomorrow_prices = [
+        #     price for price in self.price_data
+        #     if tomorrow_start <= price.date_from < tomorrow_end
+        # ]
+        tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
+
+        if not tomorrow_prices:
+            return None
+
+        avg = round(mean(price.total for price in tomorrow_prices),
+                    DEFAULT_ROUND)
+        market_price_with_tax_and_markup_avg = round(mean(
+            price.market_price_including_tax_and_markup for price in tomorrow_prices), DEFAULT_ROUND)
+        market_price_with_tax_avg = round(mean(
+            price.market_price_including_tax for price in tomorrow_prices), DEFAULT_ROUND)
+        market_price_tax_avg = round(
+            mean(price.market_price_tax for price in tomorrow_prices), DEFAULT_ROUND)
+        market_markup_price_avg = round(
+            mean(price.sourcing_markup_price for price in tomorrow_prices), DEFAULT_ROUND)
+        market_price_avg = round(
+            mean(price.market_price for price in tomorrow_prices), DEFAULT_ROUND)
+
+        """
+        PriceDataAvg = namedtuple('PriceDataAvg', [
+            'values', 'total', 'market_price_with_tax_and_markup',
+            'market_markup_price', 'market_price_with_tax',
+            'market_price_tax', 'market_price'
+        ])
+        """
+
+        return PriceDataAvg(
+            values=tomorrow_prices,
+            total=avg,
+            market_price_with_tax_and_markup=market_price_with_tax_and_markup_avg,
+            market_markup_price=market_markup_price_avg,
+            market_price_with_tax=market_price_with_tax_avg,
+            market_price_tax=market_price_tax_avg,
+            market_price=market_price_avg
+        )
+
+    @property
+    def tomorrow_prices_market(self) -> list:
+        """ Get the market prices for tomorrow"""
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
+            return None
+        # if -1 < datetime.now().hour < 15:
+        #    return None
+
+        today_prices = []
+        tomorrow_prices = []
+        for price in self.price_data:
+            if price.for_today:
+                today_prices.append(price.market_price)
+            elif price.for_tomorrow:
+                tomorrow_prices.append(price.market_price)
+        if tomorrow_prices:
+            return round(mean(tomorrow_prices), DEFAULT_ROUND)
+        return None
+
+    @property
+    def tomorrow_prices_market_tax(self) -> list:
+        """ Get the market prices incl tax for tomorrow"""
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
+            return None
+
+#        if not self.price_data:
+#            return None
+#        if -1 < datetime.now().hour < 15:
+#            return None
+
+        today_prices = []
+        tomorrow_prices = []
+        for price in self.price_data:
+            if price.for_today:
+                today_prices.append(price.market_price_including_tax)
+            elif price.for_tomorrow:
+                tomorrow_prices.append(price.market_price_including_tax)
+        if tomorrow_prices:
+            return round(mean(tomorrow_prices), DEFAULT_ROUND)
+        return None
+
+    @property
+    def tomorrow_prices_market_tax_markup(self) -> list:
+        """ Get the market prices incl tax and markup for tomorrow"""
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
+            return None
+
+#        if not self.price_data:
+#            return None
+#        if -1 < datetime.now().hour < 15:
+#            return None
+
+        today_prices = []
+        tomorrow_prices = []
+        for price in self.price_data:
+            if price.for_today:
+                today_prices.append(
+                    price.market_price_including_tax_and_markup)
+            elif price.for_tomorrow:
+                tomorrow_prices.append(
+                    price.market_price_including_tax_and_markup)
+        if tomorrow_prices:
+            return round(mean(tomorrow_prices), DEFAULT_ROUND)
+        return None
+
+    @property
+    def today_prices_total(self) -> list:
+        """ Get the market prices for today"""
+        if not self.price_data:
+            return None
+
+        today_prices = []
+        for price in self.price_data:
+            if price.for_today:
+                today_prices.append(price.total)
+        if today_prices:
+            return round(mean(today_prices), DEFAULT_ROUND)
+        return None
+
+    @property
+    def tomorrow_prices_total(self) -> list:
+        """ Get the market prices for tomorrow"""
+        current_hour_utc = datetime.now(timezone.utc).hour
+        if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
+            return None
+
+#        if not self.price_data:
+#            return None
+#        if -1 < datetime.now().hour < 15:
+#            return None
+
+        tomorrow_prices = []
+        for price in self.price_data:
+            if price.for_tomorrow:
+                tomorrow_prices.append(price.total)
+        if tomorrow_prices:
+            return round(mean(tomorrow_prices), DEFAULT_ROUND)
+        return None
+
+    @property
+    def upcoming_min(self) -> Price:
+        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
+
+    @property
+    def upcoming_max(self) -> Price:
+        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
+
+    @property
+    def length(self) -> int:
+        return len(self.price_data)
+
+    @property
+    def upcoming_market_avg(self):
+        """Calculate the average market price of upcoming prices."""
+        current_hour_end = self.current_hour.date_till
+        upcoming_prices = [
+            price for price in self.price_data if price.date_from > current_hour_end
+        ]
+
+        if not upcoming_prices:
+            return None
+
+        market_total_price = sum(
+            price.market_price for price in upcoming_prices)
+        return market_total_price / len(upcoming_prices)
+
+    @property
+    def upcoming_market_tax_markup_avg(self):
+        """Calculate the average market price with tax of upcoming prices."""
+        current_hour = self.current_hour
+        upcoming_prices = [
+            price for price in self.price_data if price.date_from > current_hour.date_till]
+        total_price = sum(
+            [price.market_price_with_tax_and_markup for price in upcoming_prices])
+        if upcoming_prices:
+            return total_price / len(upcoming_prices)
+        else:
+            return None
+
+    @property
+    def upcoming_market_tax_avg(self):
+        """Calculate the average market price with tax of upcoming prices."""
+        current_hour_end = self.current_hour.date_till
+        upcoming_prices = [
+            price for price in self.price_data if price.date_from > current_hour_end
+        ]
+
+        if not upcoming_prices:
+            return None
+
+        total_price_with_tax = sum(
+            price.market_price_with_tax for price in upcoming_prices)
+        average_price_with_tax = total_price_with_tax / len(upcoming_prices)
+
+        return average_price_with_tax
+
+    @property
+    def today_gas_before6am(self) -> list[Price]:
+        """ Get a list of gas prices for today before 6AM. """
+        return [price.total for price in self.price_data if price.for_today and price.date_from.hour < 6]
+
+    @property
+    def today_gas_after6am(self) -> list[Price]:
+        """ Get a list of gas prices for today after 6AM. """
+        return [price.total for price in self.price_data if price.for_today and price.date_from.hour >= 6]
+
+    @property
+    def tomorrow_gas_before6am(self) -> list[Price]:
+        """ Get a list of gas prices for tomorrow before 6AM. """
+        return [price.total for price in self.price_data if price.for_tomorrow and price.date_from.hour < 6]
+
+    @property
+    def tomorrow_gas_after6am(self) -> list[Price]:
+        """ Get a list of gas prices for tomorrow after 6AM. """
+        return [price.total for price in self.price_data if price.for_tomorrow and price.date_from.hour >= 6]
+
+    def get_prices_for_time_period(self, period: TimePeriod):
+        if period == TimePeriod.TODAY:
+            return [hour for hour in self.price_data if hour.for_today]
+        elif period == TimePeriod.TOMORROW:
+            return [hour for hour in self.price_data if hour.for_tomorrow]
+        elif period == TimePeriod.UPCOMING:
+            return [hour for hour in self.price_data if hour.for_upcoming]
+        else:
+            raise ValueError(f"Invalid time period: {period}")
+
+
+@dataclass
+class MarketPrices:
+    """ Market prices for electricity and gas.
+
+        Attributes:
+        electricity (PriceData): The electricity price data.
+        gas (PriceData): The gas price data.
+        energy_type (Optional[str]): The type of energy (e.g., 'electricity' or 'gas').
+        energy_country (str): The country code ('NL' or 'BE') for which the prices apply.
+        today (list): Prices for today.
+        tomorrow (list): Prices for tomorrow.
+    """
+    # note: zet velden zonder default altijd voor velden met default
+
+    electricity: Optional[PriceData] = None
+    gas: Optional[PriceData] = None
+    energy_type: Optional[str] = None
+    energy_country: str = "NL"  # Default to NL, can be overridden
+    today: list = field(default_factory=list)
+    tomorrow: list = field(default_factory=list)
+
+#    def __init__(self, electricity: Optional[PriceData] = None, gas: Optional[PriceData] = None, energy_type: Optional[str] = None) -> None:
+#         self.electricity = electricity
+#         self.gas = gas
+#         self.energy_type = energy_type
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> 'MarketPrices':
+        """Parse the response from the marketPrices query."""
+        _LOGGER.debug("Prices %s", data)
+
+        if errors := data.get("errors"):
+            if errors[0]["message"].startswith("No marketprices found for segment"):
+                return MarketPrices(PriceData(), PriceData())
+            # raise RequestException(errors[0]["message"])
+
+        payload = data.get("data")
+        if payload is None:
+            # raise RequestException("Unexpected response")
+            return None
+
+        # Get market prices from the payload
+        market_prices_electricity = payload.get("marketPricesElectricity", {})
+        market_prices_gas = payload.get("marketPricesGas", {})
+
+        return MarketPrices(
+            electricity=PriceData(market_prices_electricity,
+                                  energy_type="electricity"),
+            gas=PriceData(market_prices_gas, energy_type="gas"),
+        )
+
+    @classmethod
     def from_be_dict(cls, data: dict[str, object]) -> 'MarketPrices':
         """
         Create MarketPrices instance from BE market prices dict.
@@ -971,17 +2901,21 @@ class PriceData:
         """
         _LOGGER.debug("BE Market Prices %s", data)
 
+        # Defensive: if empty data, return empty PriceData
         if not data:
             return cls(PriceData(), PriceData())
 
         try:
             payload = data.get("data").get("marketPrices", {})
         except KeyError as err:
-            raise ValueError("Invalid response format: %s" % err) from err
+                    raise ValueError(f"Invalid response format: %s" % err) from err
 
+        # electricity_data = data.get("electricityPrices", {})
+        # gas_data = data.get("gasPrices", {})
         electricity_data = payload.get("electricityPrices", {})
         gas_data = payload.get("gasPrices", {})
 
+        # Construct PriceData for electricity and gas similarly to other methods
         electricity_price_data = PriceData(electricity_data, energy_type="electricity")
         gas_price_data = PriceData(gas_data, energy_type="gas")
 
@@ -991,13 +2925,54 @@ class PriceData:
             energy_country="BE"
         )
 
+    @staticmethod
+    def from_userprices_dict(data: dict[str, object]) -> Optional['MarketPrices']:
+        """Parse the response from the marketPrices query."""
+        _LOGGER.debug("User Prices %s", data)
+
+        # Return None if the data is empty
+        # if not data:
+        #    return None
+
+        # Check for errors in the data
+        if errors := data.get("errors"):
+            # If the error message indicates no market prices found, return empty PriceData for both
+            if errors[0]["message"].startswith("No marketprices found for segment"):
+                return MarketPrices(PriceData(), PriceData())
+
+            # Raise an exception for other errors
+            raise RequestException(errors[0]["message"])
+
+        # Extract the payload from the data
+        payload = data.get("data")
+        if payload is None:
+            raise RequestException("Unexpected response")
+
+        # Get customer market prices from the payload
+        customer_market_prices = payload.get("customerMarketPrices", {})
+
+        market_prices_electricity = customer_market_prices.get(
+            "electricityPrices", {})
+        market_prices_gas = customer_market_prices.get("gasPrices", {})
+
+        # Debugging print to check what type of data is in customer_market_prices
+        # print("TYPEDATA:", customer_market_prices.get("electricityPrices"))
+
+        return MarketPrices(
+            electricity=PriceData(market_prices_electricity,
+                                  energy_type="electricity"),
+            gas=PriceData(market_prices_gas, energy_type="gas"),
+        )
+
 @dataclass
 class Session:
     """A trading session for a battery."""
 
     date: datetime
     trading_result: float
-    cumulative_trading_result: float
+    cumulative_result: float
+    result: float = field(init=False)
+    status: str = field(default="")
 
     @staticmethod
     def from_dict(payload: dict[str, object]) -> 'SmartBatterySessions.Session':
@@ -1007,12 +2982,565 @@ class Session:
         try:
             return SmartBatterySessions.Session(
                 date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
-                trading_result=float(payload["tradingResult"]),
-                cumulative_trading_result=float(payload["cumulativeTradingResult"]),
+                cumulative_result=float(payload["cumulativeResult"]),
+                result=float(payload["result"]),
+                status=str(payload["status"])
             )
         except KeyError as exc:
-            raise RequestException("Missing expected field in session: %s" % exc) from exc
+            raise RequestException(f"Missing expected field in session: %s" % exc) from exc
         except ValueError as exc:
             raise RequestException("Invalid data format in session payload: %s" % exc) from exc
 
-# ... rest of file unchanged ...
+
+@dataclass
+class SmartBatteries:
+    """Collection of the users SmartBatteries."""
+
+    smart_batteries: list["SmartBattery"] = field(default_factory=list)
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> 'SmartBatteries':
+        """Parse the response from the smartBatteries query."""
+
+        if not data:
+            _LOGGER.debug("No data found in smart batteries response.")
+            # return SmartBatteries(smart_batteries=[])
+            return SmartBatteries()
+            # raise RequestException("Unexpected response")
+
+        _LOGGER.debug("SmartBatteries %s", data)
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        payload = data.get("smartBatteries")
+        if not payload:
+            raise RequestException("Unexpected response")
+        if not isinstance(payload, list):
+            raise RequestException("Expected 'smartBatteries' to be a list.")
+
+        return SmartBatteries(
+            smart_batteries=[
+                SmartBattery.from_dict(smart_battery)
+                for smart_battery in payload
+                # for smart_battery in payload.get("smartBatteries", [])
+            ],
+        )
+
+@dataclass
+class SmartBatterySettings:
+    """Battery configuration settings."""
+
+    battery_mode: str
+    imbalance_trading_strategy: str
+    self_consumption_trading_allowed: bool
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'SmartBatterySettings':
+        return cls(
+            battery_mode=data["batteryMode"],
+            imbalance_trading_strategy=data["imbalanceTradingStrategy"],
+            self_consumption_trading_allowed=data["selfConsumptionTradingAllowed"]
+        )
+
+    def __str__(self) -> str:
+        return (
+            f"BatteryMode={self.battery_mode}, "
+            f"Strategy={self.imbalance_trading_strategy}, "
+            f"SelfConsumptionAllowed={self.self_consumption_trading_allowed}"
+        )
+
+@dataclass
+class SmartBattery:
+    """
+    Core smart battery device data.
+
+    Attributes:
+        brand: Manufacturer or brand of the battery.
+        capacity: Total storage capacity in kWh.
+        external_reference: External identifier used by the provider or platform.
+        id: Unique identifier of the battery.
+        max_charge_power: Maximum charging power in kW.
+        max_discharge_power: Maximum discharging power in kW.
+        provider: Name of the service provider.
+        created_at: Datetime the battery was registered (must be timezone-aware).
+        updated_at: Datetime the battery was last updated (must be timezone-aware).
+        settings: Optional battery configuration settings.
+        sessions: List of usage sessions or historical interactions.
+    """
+
+    brand: str
+    capacity: float
+    id: str
+    external_reference: str = ""
+    max_charge_power: float = 0.0
+    max_discharge_power: float = 0.0
+    provider: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # settings: SmartBatterySettings = field(default_factory=SmartBatterySettings)
+    settings: SmartBatterySettings | None = None
+    # sessions: list["SmartBatterySession"] = field(default_factory=list)
+    sessions: list[object] = field(default_factory=list)
+
+    @staticmethod
+    def from_dict(payload: dict[str, object]) -> "SmartBattery":
+        """Parse the response for a single SmartBattery."""
+        _LOGGER.debug("SmartBattery payload: %s", payload)
+
+        created_at = None
+        updated_at = None
+        try:
+            if 'created_at' in payload:
+                created_at = datetime.fromisoformat(payload["created_at"]).astimezone(timezone.utc)
+            if 'updated_at' in payload:
+                updated_at = datetime.fromisoformat(payload["updated_at"]).astimezone(timezone.utc)
+            if 'createdAt' in payload:
+                created_at = datetime.fromisoformat(payload["createdAt"]).astimezone(timezone.utc)
+            if 'updatedAt' in payload:
+                updated_at = datetime.fromisoformat(payload["updatedAt"]).astimezone(timezone.utc)
+
+        except KeyError as exc:
+            raise ValueError("Missing expected datetime field: %s" % exc) from exc
+
+        settings_data = payload.get("settings")
+        settings = SmartBatterySettings(
+            battery_mode=settings_data.get("batteryMode", ""),
+            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
+            self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
+        ) if settings_data else None
+
+        sessions_data = payload.get("sessions", [])
+        sessions = [SmartBatterySession.from_dict(s) for s in sessions_data]
+
+        return SmartBattery(
+            brand=payload.get("brand", ""),
+            capacity=payload.get("capacity", 0.0),
+            external_reference=payload.get("externalReference", ""),
+            id=payload["id"],
+            max_charge_power=payload.get("maxChargePower", 0.0),
+            max_discharge_power=payload.get("maxDischargePower", 0.0),
+            provider=payload.get("provider", ""),
+            created_at=created_at,
+            updated_at=updated_at,
+            settings=settings,
+            sessions=sessions,
+        )
+
+
+    @classmethod
+    def from_dict_list(cls, items: list[object]) -> list["SmartBattery"]:
+        """Convert a list of dictionaries to a list of SmartBattery instances."""
+        return [cls(**item) if isinstance(item, dict) else item for item in items]
+
+@dataclass
+class SmartBatterySession:
+    """A trading session for a smart battery."""
+
+    date: date
+    cumulative_result: float
+    result: float
+    status: str
+    tradeIndex: int | None
+
+    @staticmethod
+    def from_dict(payload: dict[str, object]) -> "SmartBatterySession":
+        """Parse the session payload from SmartBatterySessions."""
+        _LOGGER.debug("🔁 Parsing SmartBatterySession: %s", payload)
+        try:
+            return SmartBatterySession(
+                date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
+                cumulative_result=payload["cumulativeResult"],
+                result=payload["result"],
+                status=payload["status"],
+                tradeIndex=payload["tradeIndex"],
+            )
+        except KeyError as exc:
+            raise ValueError("Missing expected field in session: %s" % exc) from exc
+        except ValueError as exc:
+            raise ValueError("Invalid data format in session payload: %s" % exc) from exc
+
+@dataclass
+class SmartBatterySessions:
+    """Collection of smart battery trading sessions."""
+
+    device_id: str
+    fairuse_policy_verified: bool
+    period_start_date: date
+    period_end_date: date
+    period_trade_index: int
+    period_trading_result: float
+    trading_result: float
+    period_total_result: float
+    period_imbalance_result: float
+    period_epex_result: float
+    period_frank_slim: float
+    sessions: list[SmartBatterySession]
+    total_trading_result: float
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> 'SmartBatterySessions':
+        """Parse the response from the SmartBatterySessions query."""
+        _LOGGER.debug("🔁 Parsing SmartBatterySessions response: %s", data)
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        payload = data.get("data")
+        if not payload:
+            # return None
+            raise RequestException("Unexpected response")
+
+        smart_battery_session_data = payload.get("smartBatterySessions")
+        
+        return SmartBatterySessions(
+            device_id=smart_battery_session_data.get("deviceId"),
+            fairuse_policy_verified=smart_battery_session_data.get("fairusePolicyVerified", False),
+            period_start_date=datetime.fromisoformat(smart_battery_session_data.get("periodStartDate")).astimezone(timezone.utc),
+            period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
+            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
+            period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
+            trading_result=smart_battery_session_data.get("tradingResult"),
+            period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
+            period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult")),
+            period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
+            period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim")),
+            sessions=[
+                SmartBatterySession.from_dict(session)
+                for session in smart_battery_session_data.get("sessions", [])
+            ],
+            total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
+        )
+
+    def __iter__(self) -> Iterator:
+        return iter(self.sessions)
+
+    def __len__(self) -> int:
+        return len(self.sessions)
+
+    def __getitem__(self, index: int) -> SmartBatterySession:
+        return self.sessions[index]
+
+    def __str__(self) -> str:
+        return f"SmartBatterySessions({self.device_id}, {len(self.sessions)} sessions, total_result={self.total_trading_result})"
+    
+@dataclass
+class SmartBatterySummary:
+    """Data representation of a smart battery session summary."""
+    
+    last_known_state_of_charge: int
+    last_known_status: str
+    last_update: datetime
+    total_result: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SmartBatterySummary":
+        """
+        Create a SmartBatterySummary from a dictionary.
+
+        Args:
+            data: Dictionary containing smart battery summary fields.
+
+        Returns:
+            SmartBatterySummary: Parsed dataclass instance.
+
+        Raises:
+            ValueError: If 'lastUpdate' is missing or invalid.
+        """
+        try:
+            last_update = datetime.fromisoformat(data["lastUpdate"].replace("Z", "+00:00")).astimezone(timezone.utc)
+        except (KeyError, ValueError) as e:
+            raise ValueError("Invalid or missing 'lastUpdate' in smartBatterySummary") from e
+
+        return cls(
+            last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
+            last_known_status=data.get("lastKnownStatus", ""),
+            last_update=last_update,
+            total_result=data.get("totalResult", 0.0),
+        )
+
+
+@dataclass
+class SmartBatteryDetails:
+    """Complete smart battery data including configuration and summary."""
+
+    smart_battery: SmartBattery
+    smart_battery_summary: SmartBatterySummary
+    smart_battery_settings: SmartBatterySettings | None = None
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> "SmartBatteryDetails":
+        """Parse SmartBatteryDetails from a raw dictionary."""
+
+        sb_data = data.get("smartBattery", {})
+
+        if not sb_data:
+            raise ValueError("No smart battery data found")
+
+        _LOGGER.debug("SmartBatteryDetails %s", sb_data)
+
+        settings_data = sb_data.get("settings", {})
+        _LOGGER.debug("SmartBatterySettings %s", settings_data)
+        if not settings_data:
+            _LOGGER.warning("No settings data found in smart battery data")
+            settings_data = {}
+
+        smart_battery_settings = SmartBatterySettings(
+            battery_mode=settings_data.get("batteryMode", ""),
+            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
+            self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False)
+        )
+
+        created_at_str = sb_data.get("createdAt")
+        updated_at_str = sb_data.get("updatedAt")
+        created_at_str = sb_data.get("created_at")
+        updated_at_str = sb_data.get("updated_at")
+        _LOGGER.debug("createdAttttt: %s, updatedAt: %s", created_at_str, updated_at_str)
+
+        try:
+            created_at = datetime.fromisoformat(created_at_str).astimezone(timezone.utc) if created_at_str else None
+        except Exception as exc:
+            _LOGGER.warning("Invalid or missing 'createdAt' in smart battery data: %s", created_at_str)
+            created_at = None
+
+        try:
+            updated_at = datetime.fromisoformat(updated_at_str).astimezone(timezone.utc) if updated_at_str else None
+        except Exception as exc:
+            _LOGGER.warning("Invalid or missing 'updatedAt' in smart battery data: %s", updated_at_str)
+            updated_at = None
+
+        smart_battery = SmartBattery(
+            brand=sb_data.get("brand", ""),
+            capacity=sb_data.get("capacity", 0.0),
+            external_reference=sb_data.get("externalReference", ""),
+            id=sb_data.get("id", ""),
+            settings=smart_battery_settings,
+            max_charge_power=sb_data.get("maxChargePower", 0.0),
+            max_discharge_power=sb_data.get("maxDischargePower", 0.0),
+            provider=sb_data.get("provider", ""),
+            updated_at=updated_at,
+            created_at=created_at,
+            sessions=[
+                SmartBatterySession.from_dict(session)
+                for session in sb_data.get("sessions", [])
+            ],
+        )
+
+        summary_data = data.get("smartBatterySummary", {})
+        last_update = datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
+
+        smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
+
+        return SmartBatteryDetails(
+            smart_battery=smart_battery,
+            smart_battery_summary=smart_battery_summary
+        )
+
+def parse_utc_isoformat(value: str) -> datetime:
+    """Convert ISO8601 datetime string to UTC-aware datetime."""
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+
+def parse_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return parse_utc_isoformat(value)
+        except (ValueError, TypeError):
+            _LOGGER.warning("Invalid datetime string: %s", value)
+    return None
+
+@dataclass
+class BatterySessionSummary:
+    active: bool
+    charge_energy: float
+    discharge_energy: float
+    updated_at: str | datetime | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.updated_at, str):
+            try:
+                self.updated_at = parse_datetime(self.updated_at)
+            except ValueError:
+                _LOGGER.warning("Invalid updated_at format: %s", self.updated_at)
+                self.updated_at = None
+
+
+@dataclass
+class BatteryEntityGroup:
+    """
+    Data representation of a battery entity group.
+
+    Attributes:
+        id: Unique identifier of the battery group.
+        name: Human-readable name of the battery group.
+        battery_ids: List of associated battery device IDs.
+        created_at: Datetime when this group was created.
+        updated_at: Datetime when this group was last updated.
+        mode_sensor: Entity representing the battery mode.
+        soc_sensor: Entity representing the state of charge.
+        result_sensors: List of result sensor data.
+    """
+
+    id: str
+    name: str
+    battery_ids: list[str]
+    created_at: datetime
+    updated_at: datetime
+    mode_sensor: object
+    soc_sensor: object
+    result_sensors: list["BatteryEntityGroup.ResultSensor"] = field(default_factory=list)
+
+    @dataclass
+    class ResultSensor:
+        """
+        Representation of an individual result sensor within a battery entity group.
+
+        Attributes:
+            type: Type of result (e.g., 'nettoresultaat').
+            entity: Home Assistant entity representing the result.
+        """
+        type: str
+        entity: object
+
+        @classmethod
+        def from_dict(cls, data: dict[str, object]) -> "BatteryEntityGroup.ResultSensor":
+            """
+            Create a ResultSensor from a dictionary.
+
+            Args:
+                data: Dictionary with result sensor data.
+
+            Returns:
+                ResultSensor instance.
+            """
+            return cls(
+                type=data["type"],
+                entity=data["entity"],
+            )
+
+        def to_dict(self) -> dict[str, object]:
+            """
+            Serialize ResultSensor to a dictionary.
+
+            Returns:
+                Dictionary representation of the result sensor.
+            """
+            return {
+                "type": self.type,
+                "entity": self.entity,
+            }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "BatteryEntityGroup":
+        """
+        Create a BatteryEntityGroup from a dictionary.
+
+        Args:
+            data: Dictionary containing battery entity group fields.
+
+        Returns:
+            BatteryEntityGroup instance.
+        """
+        try:
+            created_at = datetime.fromisoformat(data["createdAt"]).astimezone(timezone.utc)
+            updated_at = datetime.fromisoformat(data["updatedAt"]).astimezone(timezone.utc)
+        except Exception as exc:
+            raise ValueError("Invalid datetime format in 'createdAt' or 'updatedAt'") from exc
+
+        return cls(
+            id=data["id"],
+            name=data["name"],
+            battery_ids=data["batteryIds"],
+            created_at=created_at,
+            updated_at=updated_at,
+            mode_sensor=data.get("modeSensor"),
+            soc_sensor=data.get("socSensor"),
+            result_sensors=[
+                cls.ResultSensor.from_dict(sensor)
+                for sensor in data.get("resultSensors", [])
+            ],
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        """
+        Serialize BatteryEntityGroup to a dictionary.
+
+        Returns:
+            Dictionary representation of the battery entity group.
+        """
+        return {
+            "id": self.id,
+            "name": self.name,
+            "batteryIds": self.battery_ids,
+            "createdAt": self.created_at.isoformat(),
+            "updatedAt": self.updated_at.isoformat(),
+            "modeSensor": self.mode_sensor,
+            "socSensor": self.soc_sensor,
+            "resultSensors": [sensor.to_dict() for sensor in self.result_sensors],
+        }
+
+def _parse_datetime(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.rstrip("Z"))
+        return dt.replace(tzinfo=ZoneInfo("UTC"))
+    except ValueError as err:
+        raise ValueError("Invalid datetime string: %s" % value) from err
+
+def test_parse_datetime(value: object) -> datetime | None:
+    """Parse a datetime string into a timezone-aware datetime object (UTC).
+
+    Handles:
+    - ISO 8601 strings
+    - Strings ending with 'Z' as UTC
+    - Timezone-naive input defaulting to UTC
+
+    Returns None if value is None.
+    Raises ValueError on invalid input.
+    """
+    if value is None:
+        return None
+
+    if not isinstance(value, str):
+        raise ValueError("Expected string for datetime parsing, got: %s" % type(value).__name__)
+
+    try:
+        dt = parse_datetime(value)
+    except (ValueError, TypeError) as err:
+        _LOGGER.debug("Failed to parse datetime string '%s': %s", value, err)
+        raise ValueError("Invalid datetime string: %s" % value) from err
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+    return dt
+
+def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[str, object]:
+    """
+    Convert a BatteryEntityGroup instance into a dictionary suitable for use
+    in Home Assistant's extra_state_attributes.
+
+    Args:
+        group: The BatteryEntityGroup instance.
+
+    Returns:
+        A dictionary representing extra state attributes.
+    """
+    return {
+        "battery_group_id": group.id,
+        "battery_group_name": group.name,
+        "battery_ids": group.battery_ids,
+        "created_at": group.created_at.isoformat(),
+        "updated_at": group.updated_at.isoformat(),
+        "mode_sensor": group.mode_sensor,
+        "soc_sensor": group.soc_sensor,
+        "result_sensors": [
+            {
+                "type": sensor.type,
+                "entity": sensor.entity,
+            }
+            for sensor in group.result_sensors
+        ],
+    }
