@@ -17,6 +17,8 @@ classifiers = [
 packages = [
     { include = "python_frank_energie" },
 ]
+virtualenvs.create = true
+virtualenvs.in-project = true
 
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
