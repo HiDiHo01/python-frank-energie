@@ -5,9 +5,8 @@ import asyncio
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 import re
-from typing import Any, Optional
+from typing import Optional
 import logging
-from urllib import response
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ if sys.platform == "win32":
 class FrankEnergieQuery:
     """Represents a GraphQL query for the FrankEnergie API."""
 
-    def __init__(self, query: str, operation_name: str, variables: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, query: str, operation_name: str, variables: Optional[dict[str, object]] = None) -> None:
         if variables is not None and not isinstance(variables, dict):
             raise TypeError("The 'variables' argument must be a dictionary if provided.")
 
@@ -41,7 +40,7 @@ class FrankEnergieQuery:
         self.operation_name = operation_name
         self.variables = variables if variables is not None else {}
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Convert the query to a dictionary suitable for GraphQL API calls."""
         return {
             "query": self.query,
@@ -50,7 +49,7 @@ class FrankEnergieQuery:
         }
 
 
-def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
+def sanitize_query(query: FrankEnergieQuery) -> dict[str, object]:
     sanitized_query = query.to_dict()
     if "password" in sanitized_query["variables"]:
         sanitized_query["variables"]["password"] = "****"
@@ -115,7 +114,7 @@ class FrankEnergie:
     async def _query(self,
                      query: FrankEnergieQuery,
                      extra_headers: Optional[dict[str, str]] = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Send a query to the FrankEnergie API.
 
         Args:
@@ -166,7 +165,7 @@ class FrankEnergie:
                 timeout=30
             ) as resp:
                 resp.raise_for_status()
-                response: dict[str, Any] = await resp.json()
+                response: dict[str, object] = await resp.json()
 
             # self._process_diagnostic_data(response)
             if not response:
@@ -203,7 +202,7 @@ class FrankEnergie:
             traceback.print_exc()
             raise error
 
-    def _process_diagnostic_data(self, response: dict[str, Any]) -> None:
+    def _process_diagnostic_data(self, response: dict[str, object]) -> None:
         """Process the diagnostic data and update the sensor state.
 
         Args:
@@ -214,7 +213,7 @@ class FrankEnergie:
             self._frank_energie_diagnostic_sensor.update_diagnostic_data(
                 diagnostic_data)
 
-    def _handle_errors(self, response: dict[str, Any]) -> None:
+    def _handle_errors(self, response: dict[str, object]) -> None:
         """Catch common error messages and raise a more specific exception.
 
         Args:
@@ -351,7 +350,7 @@ class FrankEnergie:
         self._auth = Authentication.from_dict(response)
         return self._auth
 
-    async def meter_readings(self, site_reference: str) -> EnergyConsumption:
+    async def old_meter_readings(self, site_reference: str) -> EnergyConsumption:
         """Retrieve the meter_readings.
 
         Args:
@@ -511,7 +510,7 @@ class FrankEnergie:
         try:
 
             # response = await self._query(query)
-            response: dict[str, Any] = await self._query(query)
+            response: dict[str, object] = await self._query(query)
             # Response data for testing purposes
             # mock_response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 1', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 100, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 2', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
             if response is None:
@@ -593,9 +592,13 @@ class FrankEnergie:
             {"siteReference": site_reference},
         )
 
-        response = await self._query(query)
-        return Invoices.from_dict(response)
-
+        try:
+            response = await self._query(query)
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            return Invoices.from_dict(response)
+        except Exception as e:
+            _LOGGER.error("Error fetching invoices: %s", e)
+            return Invoices()
 
     async def me(self, site_reference: str | None = None) -> Me:
         if self._auth is None:
@@ -748,7 +751,12 @@ class FrankEnergie:
             {"siteReference": site_reference},
         )
 
-        response = await self._query(query)
+        try:
+            response = await self._query(query)
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+        except Exception as e:
+            _LOGGER.error("Error fetching user data: %s", e)
+            return Me()
         return Me.from_dict(response)
 
     async def UserSites(self, site_reference: str | None = None) -> UserSites:
@@ -778,8 +786,13 @@ class FrankEnergie:
             {},
         )
 
-        response = await self._query(query)
-        return UserSites.from_dict(response)
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            response = await self._query(query)
+            return UserSites.from_dict(response)
+        except Exception as e:
+            _LOGGER.error("Error fetching user sites: %s", e)
+            return UserSites()
 
     # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
     # query UserSmartCharging {\\n  userSmartCharging {\\n    isActivated\\n    provider\\n    userCreatedAt\\n    userId\\n    isAvailableInCountry\\n    needsSubscription\\n    subscription {\\n      startDate\\n      endDate\\n      id\\n      proposition {\\n        product\\n        countryCode\\n      }\\n    }\\n  }\\n}\\n\",\"operationName\":\"UserSmartCharging\"}
@@ -806,8 +819,12 @@ class FrankEnergie:
             {}
         )
 
-        response = await self._query(query)
-        return Me.from_dict(response)
+        try:
+            response = await self._query(query)
+            return Me.from_dict(response)
+        except Exception as e:
+            _LOGGER.error("Error fetching user country: %s", e)
+            return Me()
 
     async def user(self, site_reference: str | None = None) -> User:
         if self._auth is None:
@@ -952,9 +969,14 @@ class FrankEnergie:
             "Me",
             {"siteReference": site_reference},
         )
-        
-        response = await self._query(query)
-        return User.from_dict(response)
+
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            response = await self._query(query)
+            return User.from_dict(response)
+        except Exception as e:
+            _LOGGER.error("Error fetching user data: %s", e)
+            return User()
 
     async def be_prices(
         self,
@@ -1000,8 +1022,14 @@ class FrankEnergie:
             "MarketPrices",
             {"date": str(start_date)},  
         )
-        response = await self._query(query, extra_headers=headers)
-        return MarketPrices.from_be_dict(response)
+
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))        
+            response = await self._query(query, extra_headers=headers)
+            return MarketPrices.from_be_dict(response)
+        except Exception as e:
+            _LOGGER.error("Error fetching market prices: %s", e)
+            return MarketPrices()
 
     async def prices(
         self, start_date: Optional[date] | None = None, end_date: Optional[date] | None = None
@@ -1042,8 +1070,14 @@ class FrankEnergie:
             "MarketPrices",
             {"startDate": str(start_date), "endDate": str(end_date)},
         )
-        response = await self._query(query)
-        return MarketPrices.from_dict(response)
+
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            response = await self._query(query)
+            return MarketPrices.from_dict(response)
+        except Exception as e:
+            _LOGGER.error("Error fetching market prices: %s", e)
+            return MarketPrices()
 
     async def user_prices(
         self,
@@ -1122,8 +1156,14 @@ class FrankEnergie:
             "MarketPrices",
             {"date": str(start_date), "siteReference": site_reference},
         )
-        response = await self._query(query)
-        return MarketPrices.from_userprices_dict(response)
+
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            response = await self._query(query)
+            return MarketPrices.from_userprices_dict(response)
+        except Exception as e:
+            _LOGGER.error("Error fetching market prices: %s", e)
+            return MarketPrices()
 
     async def period_usage_and_costs(self,
                                      site_reference: str,
@@ -1251,35 +1291,44 @@ class FrankEnergie:
             "SmartBatteries",
         )
 
-        response = await self._query(query)
-        mock_response = {
-            "data": {
-                "smartBatteries": [
-                    {
-                        "brand": "Sessy 1",
-                        "capacity": 5.2,
-                        "createdAt": "2024-11-22T14:41:47.853Z",
-                        "externalReference": "AAA1AAAA",
-                        "id": "cm3mockyl0000tc3nhygweghn",
-                        "maxChargePower": 2.2,
-                        "maxDischargePower": 1.7,
-                        "provider": "SESSY",
-                        "updatedAt": "2025-02-07T22:03:21.898Z",
-                    },
-                    {
-                        "brand": "Sessy 2",
-                        "capacity": 5.4,
-                        "createdAt": "2024-11-24T14:41:47.853Z",
-                        "externalReference": "BBB2BBBB",
-                        "id": "cm3moonyl0000tc3nhygweghn",
-                        "maxChargePower": 2.4,
-                        "maxDischargePower": 1.9,
-                        "provider": "SESSYY",
-                        "updatedAt": "2025-02-09T22:03:21.898Z",
-                    }
-                ]
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            # response = await self._query(query)
+            # Mock response for testing purposes
+            # Simulate a GraphQL response with smart batteries data
+            response = await self._query(query)
+            mock_response = {
+                "data": {
+                    "smartBatteries": [
+                        {
+                            "brand": "Sessy 1",
+                            "capacity": 5.2,
+                            "createdAt": "2024-11-22T14:41:47.853Z",
+                            "externalReference": "AAA1AAAA",
+                            "id": "cm3mockyl0000tc3nhygweghn",
+                            "maxChargePower": 2.2,
+                            "maxDischargePower": 1.7,
+                            "provider": "SESSY",
+                            "updatedAt": "2025-02-07T22:03:21.898Z",
+                        },
+                        {
+                            "brand": "Sessy 2",
+                            "capacity": 5.4,
+                            "createdAt": "2024-11-24T14:41:47.853Z",
+                            "externalReference": "BBB2BBBB",
+                            "id": "cm3moonyl0000tc3nhygweghn",
+                            "maxChargePower": 2.4,
+                            "maxDischargePower": 1.9,
+                            "provider": "SESSYY",
+                            "updatedAt": "2025-02-09T22:03:21.898Z",
+                        }
+                    ]
+                }
             }
-        }
+            # response = mock_response  # Use the mock response for testing
+        except Exception as error:
+            _LOGGER.error("Error fetching smart batteries: %s", error)
+            return None
     
         # Handle empty or missing response data
         if not response:
@@ -1343,17 +1392,24 @@ class FrankEnergie:
             {"deviceId": device_id}
         )
 
-        # response = await self._query(query)
-        response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "cm3mockyl0000tc3nhygweghn", 'settings': {
-            "batteryMode": "IMBALANCE_TRADING",
-            "imbalanceTradingStrategy": "AGGRESSIVE",
-            "selfConsumptionTradingAllowed": True
-        }}, "smartBatterySummary": {
-            'lastKnownStateOfCharge': 72,
-            'lastKnownStatus': 'CHARGE_IMBALANCE',
-            'lastUpdate': '2025-04-20T11:30:00.000Z',
-            'totalResult': 225.01642490011401
-        }}}
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            # Simulate a GraphQL response with smart battery details and summary data
+            # response = mock_response  # Use the mock response for testing
+            response = await self._query(query)
+            mock_response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "cm3mockyl0000tc3nhygweghn", 'settings': {
+                "batteryMode": "IMBALANCE_TRADING",
+                "imbalanceTradingStrategy": "AGGRESSIVE",
+                "selfConsumptionTradingAllowed": True
+            }}, "smartBatterySummary": {
+                'lastKnownStateOfCharge': 72,
+                'lastKnownStatus': 'CHARGE_IMBALANCE',
+                'lastUpdate': '2025-04-20T11:30:00.000Z',
+                'totalResult': 225.01642490011401
+            }}}
+        except Exception as error:
+            _LOGGER.error("Error fetching smart battery details: %s", error)
+            return SmartBatteryDetails()
 
         if response is None:
             _LOGGER.debug("No response data for 'smartBatteries'")
@@ -1444,235 +1500,241 @@ class FrankEnergie:
             },
         )
 
-        # response = await self._query(query)
+        try:
+            response = await self._query(query)
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            # Simulate a GraphQL response with smart battery sessions data
+            # response = mock_response  # Use the mock response for testing
 
-        # response = {'data': {'smartBatterySessions': {'deviceId': 'cm3mockyl0000tc3nhygweghn', 'periodEndDate': '2025-03-05', 'periodEpexResult': -2.942766199999732, 'periodFrankSlim': 1.20423240187929, 'periodImbalanceResult': 1.7713489102796198, 'periodStartDate': '2025-02-26', 'periodTotalResult': 0.03281511215917776, 'periodTradeIndex': 15, 'periodTradingResult': 2.97558131215891, 'sessions': [{'cumulativeTradingResult': 0.28038336264503827, 'date': '2025-02-26', 'tradingResult': 0.28038336264503827}, {'cumulativeTradingResult': 0.4106682080427912, 'date': '2025-02-27', 'tradingResult': 0.13028484539775292}, {'cumulativeTradingResult': 0.9406592591022027, 'date': '2025-02-28', 'tradingResult': 0.5299910510594116}, {'cumulativeTradingResult': 1.11818115465891, 'date': '2025-03-01', 'tradingResult': 0.17752189555670733}, {'cumulativeTradingResult': 1.8727723946589099, 'date': '2025-03-02', 'tradingResult': 0.7545912399999999}, {'cumulativeTradingResult': 2.38716782965891, 'date': '2025-03-03', 'tradingResult': 0.5143954350000001}, {'cumulativeTradingResult': 2.5980938146589097, 'date': '2025-03-04', 'tradingResult': 0.21092598499999982}, {'cumulativeTradingResult': 2.97558131215891, 'date': '2025-03-05', 'tradingResult': 0.3774874975}], 'totalTradingResult': 55.14711599931087}}}
-        response = {"data": {
-                        "smartBatterySessions": {
-                        "deviceId": "cm3mockyl0000tc3nhygweghn",
-                        "fairUsePolicyVerified": False,
-                        "periodEndDate": "2025-07-14",
-                        "periodEpexResult": -27.08788163827556,
-                        "periodFrankSlim": 9.829589864560651,
-                        "periodImbalanceResult": 82.051806755679,
-                        "periodStartDate": "2025-07-01",
-                        "periodTotalResult": 64.79351498196408,
-                        "periodTradeIndex": 72,
-                        "periodTradingResult": 91.88139662023964,
-                        "sessions": [
-                            {
-                            "cumulativeResult": 642.6859216849974,
-                            "date": "2025-07-01",
-                            "result": 5.530381924,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 11
-                            },
-                            {
-                            "cumulativeResult": 650.4153791904641,
-                            "date": "2025-07-02",
-                            "result": 7.72945750546675,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 125
-                            },
-                            {
-                            "cumulativeResult": 656.4380804304641,
-                            "date": "2025-07-03",
-                            "result": 6.022701240000001,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 6
-                            },
-                            {
-                            "cumulativeResult": 660.2747142008642,
-                            "date": "2025-07-04",
-                            "result": 3.836633770399999,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 37
-                            },
-                            {
-                            "cumulativeResult": 664.5093663068641,
-                            "date": "2025-07-05",
-                            "result": 4.2346521059999995,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 16
-                            },
-                            {
-                            "cumulativeResult": 674.5431836355311,
-                            "date": "2025-07-06",
-                            "result": 10.033817328667,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 361
-                            },
-                            {
-                            "cumulativeResult": 683.6324345535311,
-                            "date": "2025-07-07",
-                            "result": 9.089250918000001,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": -6
-                            },
-                            {
-                            "cumulativeResult": 692.9073872853883,
-                            "date": "2025-07-08",
-                            "result": 9.274952731857148,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 86
-                            },
-                            {
-                            "cumulativeResult": 700.9413248353883,
-                            "date": "2025-07-09",
-                            "result": 8.03393755,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 1
-                            },
-                            {
-                            "cumulativeResult": 709.570350711077,
-                            "date": "2025-07-10",
-                            "result": 8.62902587568875,
-                            "status": "COMPLETE_PRELIMINARY",
-                            "tradeIndex": None
-                            },
-                            {
-                            "cumulativeResult": 719.058522523077,
-                            "date": "2025-07-11",
-                            "result": 9.488171812000003,
-                            "status": "COMPLETE_PRELIMINARY",
-                            "tradeIndex": None
-                            },
-                            {
-                            "cumulativeResult": 723.3513938190771,
-                            "date": "2025-07-12",
-                            "result": 4.292871296,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 32
-                            },
-                            {
-                            "cumulativeResult": 726.802228441237,
-                            "date": "2025-07-13",
-                            "result": 3.4508346221600004,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 122
-                            },
-                            {
-                            "cumulativeResult": 729.0369363812371,
-                            "date": "2025-07-14",
-                            "result": 2.23470794,
-                            "status": "ACTIVE",
-                            "tradeIndex": None
+            # mock_response = {'data': {'smartBatterySessions': {'deviceId': 'cm3mockyl0000tc3nhygweghn', 'periodEndDate': '2025-03-05', 'periodEpexResult': -2.942766199999732, 'periodFrankSlim': 1.20423240187929, 'periodImbalanceResult': 1.7713489102796198, 'periodStartDate': '2025-02-26', 'periodTotalResult': 0.03281511215917776, 'periodTradeIndex': 15, 'periodTradingResult': 2.97558131215891, 'sessions': [{'cumulativeTradingResult': 0.28038336264503827, 'date': '2025-02-26', 'tradingResult': 0.28038336264503827}, {'cumulativeTradingResult': 0.4106682080427912, 'date': '2025-02-27', 'tradingResult': 0.13028484539775292}, {'cumulativeTradingResult': 0.9406592591022027, 'date': '2025-02-28', 'tradingResult': 0.5299910510594116}, {'cumulativeTradingResult': 1.11818115465891, 'date': '2025-03-01', 'tradingResult': 0.17752189555670733}, {'cumulativeTradingResult': 1.8727723946589099, 'date': '2025-03-02', 'tradingResult': 0.7545912399999999}, {'cumulativeTradingResult': 2.38716782965891, 'date': '2025-03-03', 'tradingResult': 0.5143954350000001}, {'cumulativeTradingResult': 2.5980938146589097, 'date': '2025-03-04', 'tradingResult': 0.21092598499999982}, {'cumulativeTradingResult': 2.97558131215891, 'date': '2025-03-05', 'tradingResult': 0.3774874975}], 'totalTradingResult': 55.14711599931087}}}
+            mock_response = {"data": {
+                            "smartBatterySessions": {
+                            "deviceId": "cm3mockyl0000tc3nhygweghn",
+                            "fairUsePolicyVerified": False,
+                            "periodEndDate": "2025-07-14",
+                            "periodEpexResult": -27.08788163827556,
+                            "periodFrankSlim": 9.829589864560651,
+                            "periodImbalanceResult": 82.051806755679,
+                            "periodStartDate": "2025-07-01",
+                            "periodTotalResult": 64.79351498196408,
+                            "periodTradeIndex": 72,
+                            "periodTradingResult": 91.88139662023964,
+                            "sessions": [
+                                {
+                                "cumulativeResult": 642.6859216849974,
+                                "date": "2025-07-01",
+                                "result": 5.530381924,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 11
+                                },
+                                {
+                                "cumulativeResult": 650.4153791904641,
+                                "date": "2025-07-02",
+                                "result": 7.72945750546675,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 125
+                                },
+                                {
+                                "cumulativeResult": 656.4380804304641,
+                                "date": "2025-07-03",
+                                "result": 6.022701240000001,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 6
+                                },
+                                {
+                                "cumulativeResult": 660.2747142008642,
+                                "date": "2025-07-04",
+                                "result": 3.836633770399999,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 37
+                                },
+                                {
+                                "cumulativeResult": 664.5093663068641,
+                                "date": "2025-07-05",
+                                "result": 4.2346521059999995,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 16
+                                },
+                                {
+                                "cumulativeResult": 674.5431836355311,
+                                "date": "2025-07-06",
+                                "result": 10.033817328667,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 361
+                                },
+                                {
+                                "cumulativeResult": 683.6324345535311,
+                                "date": "2025-07-07",
+                                "result": 9.089250918000001,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": -6
+                                },
+                                {
+                                "cumulativeResult": 692.9073872853883,
+                                "date": "2025-07-08",
+                                "result": 9.274952731857148,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 86
+                                },
+                                {
+                                "cumulativeResult": 700.9413248353883,
+                                "date": "2025-07-09",
+                                "result": 8.03393755,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 1
+                                },
+                                {
+                                "cumulativeResult": 709.570350711077,
+                                "date": "2025-07-10",
+                                "result": 8.62902587568875,
+                                "status": "COMPLETE_PRELIMINARY",
+                                "tradeIndex": None
+                                },
+                                {
+                                "cumulativeResult": 719.058522523077,
+                                "date": "2025-07-11",
+                                "result": 9.488171812000003,
+                                "status": "COMPLETE_PRELIMINARY",
+                                "tradeIndex": None
+                                },
+                                {
+                                "cumulativeResult": 723.3513938190771,
+                                "date": "2025-07-12",
+                                "result": 4.292871296,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 32
+                                },
+                                {
+                                "cumulativeResult": 726.802228441237,
+                                "date": "2025-07-13",
+                                "result": 3.4508346221600004,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 122
+                                },
+                                {
+                                "cumulativeResult": 729.0369363812371,
+                                "date": "2025-07-14",
+                                "result": 2.23470794,
+                                "status": "ACTIVE",
+                                "tradeIndex": None
+                                }
+                            ],
+                        },
+                            "deviceId": "cm3moonyl0000tc3nhygweghn",
+                            "fairUsePolicyVerified": False,
+                            "periodEndDate": "2025-07-14",
+                            "periodEpexResult": -27.08788163827556,
+                            "periodFrankSlim": 9.829589864560651,
+                            "periodImbalanceResult": 82.051806755679,
+                            "periodStartDate": "2025-07-01",
+                            "periodTotalResult": 64.79351498196408,
+                            "periodTradeIndex": 72,
+                            "periodTradingResult": 91.88139662023964,
+                            "sessions": [
+                                {
+                                "cumulativeResult": 642.6859216849974,
+                                "date": "2025-07-01",
+                                "result": 5.530381924,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 11
+                                },
+                                {
+                                "cumulativeResult": 650.4153791904641,
+                                "date": "2025-07-02",
+                                "result": 7.72945750546675,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 125
+                                },
+                                {
+                                "cumulativeResult": 656.4380804304641,
+                                "date": "2025-07-03",
+                                "result": 6.022701240000001,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 6
+                                },
+                                {
+                                "cumulativeResult": 660.2747142008642,
+                                "date": "2025-07-04",
+                                "result": 3.836633770399999,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 37
+                                },
+                                {
+                                "cumulativeResult": 664.5093663068641,
+                                "date": "2025-07-05",
+                                "result": 4.2346521059999995,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 16
+                                },
+                                {
+                                "cumulativeResult": 674.5431836355311,
+                                "date": "2025-07-06",
+                                "result": 10.033817328667,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 361
+                                },
+                                {
+                                "cumulativeResult": 683.6324345535311,
+                                "date": "2025-07-07",
+                                "result": 9.089250918000001,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": -6
+                                },
+                                {
+                                "cumulativeResult": 692.9073872853883,
+                                "date": "2025-07-08",
+                                "result": 9.274952731857148,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 86
+                                },
+                                {
+                                "cumulativeResult": 700.9413248353883,
+                                "date": "2025-07-09",
+                                "result": 8.03393755,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 1
+                                },
+                                {
+                                "cumulativeResult": 709.570350711077,
+                                "date": "2025-07-10",
+                                "result": 8.62902587568875,
+                                "status": "COMPLETE_PRELIMINARY",
+                                "tradeIndex": None
+                                },
+                                {
+                                "cumulativeResult": 719.058522523077,
+                                "date": "2025-07-11",
+                                "result": 9.488171812000003,
+                                "status": "COMPLETE_PRELIMINARY",
+                                "tradeIndex": None
+                                },
+                                {
+                                "cumulativeResult": 723.3513938190771,
+                                "date": "2025-07-12",
+                                "result": 4.292871296,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 32
+                                },
+                                {
+                                "cumulativeResult": 726.802228441237,
+                                "date": "2025-07-13",
+                                "result": 3.4508346221600004,
+                                "status": "COMPLETE_FINAL",
+                                "tradeIndex": 122
+                                },
+                                {
+                                "cumulativeResult": 729.0369363812371,
+                                "date": "2025-07-14",
+                                "result": 2.23470794,
+                                "status": "ACTIVE",
+                                "tradeIndex": None
+                                }
+                            ]
                             }
-                        ],
-                    },
-                        "deviceId": "cm3moonyl0000tc3nhygweghn",
-                        "fairUsePolicyVerified": False,
-                        "periodEndDate": "2025-07-14",
-                        "periodEpexResult": -27.08788163827556,
-                        "periodFrankSlim": 9.829589864560651,
-                        "periodImbalanceResult": 82.051806755679,
-                        "periodStartDate": "2025-07-01",
-                        "periodTotalResult": 64.79351498196408,
-                        "periodTradeIndex": 72,
-                        "periodTradingResult": 91.88139662023964,
-                        "sessions": [
-                            {
-                            "cumulativeResult": 642.6859216849974,
-                            "date": "2025-07-01",
-                            "result": 5.530381924,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 11
-                            },
-                            {
-                            "cumulativeResult": 650.4153791904641,
-                            "date": "2025-07-02",
-                            "result": 7.72945750546675,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 125
-                            },
-                            {
-                            "cumulativeResult": 656.4380804304641,
-                            "date": "2025-07-03",
-                            "result": 6.022701240000001,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 6
-                            },
-                            {
-                            "cumulativeResult": 660.2747142008642,
-                            "date": "2025-07-04",
-                            "result": 3.836633770399999,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 37
-                            },
-                            {
-                            "cumulativeResult": 664.5093663068641,
-                            "date": "2025-07-05",
-                            "result": 4.2346521059999995,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 16
-                            },
-                            {
-                            "cumulativeResult": 674.5431836355311,
-                            "date": "2025-07-06",
-                            "result": 10.033817328667,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 361
-                            },
-                            {
-                            "cumulativeResult": 683.6324345535311,
-                            "date": "2025-07-07",
-                            "result": 9.089250918000001,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": -6
-                            },
-                            {
-                            "cumulativeResult": 692.9073872853883,
-                            "date": "2025-07-08",
-                            "result": 9.274952731857148,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 86
-                            },
-                            {
-                            "cumulativeResult": 700.9413248353883,
-                            "date": "2025-07-09",
-                            "result": 8.03393755,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 1
-                            },
-                            {
-                            "cumulativeResult": 709.570350711077,
-                            "date": "2025-07-10",
-                            "result": 8.62902587568875,
-                            "status": "COMPLETE_PRELIMINARY",
-                            "tradeIndex": None
-                            },
-                            {
-                            "cumulativeResult": 719.058522523077,
-                            "date": "2025-07-11",
-                            "result": 9.488171812000003,
-                            "status": "COMPLETE_PRELIMINARY",
-                            "tradeIndex": None
-                            },
-                            {
-                            "cumulativeResult": 723.3513938190771,
-                            "date": "2025-07-12",
-                            "result": 4.292871296,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 32
-                            },
-                            {
-                            "cumulativeResult": 726.802228441237,
-                            "date": "2025-07-13",
-                            "result": 3.4508346221600004,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 122
-                            },
-                            {
-                            "cumulativeResult": 729.0369363812371,
-                            "date": "2025-07-14",
-                            "result": 2.23470794,
-                            "status": "ACTIVE",
-                            "tradeIndex": None
-                            }
-                        ]
                         }
-                    }
-
+        except Exception as error:
+            _LOGGER.error("Error fetching smart battery sessions: %s", error)
+            return SmartBatterySessions()
         return SmartBatterySessions.from_dict(response)
 
     async def enode_vehicles(self) -> EnodeVehicles:
@@ -1733,8 +1795,15 @@ class FrankEnergie:
             {},
         )
 
-        response: dict = await self._query(query)
-        response = {'data': {'enodeVehicles': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-07-23T05:00:00.000Z', 'deadline': '2025-06-13T10:00:00.000Z', 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cmbf6o4080omz95248nylyc7r', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 100, 'minChargeLimit': 30}, 'chargeState': {'batteryCapacity': 86.5, 'batteryLevel': 49, 'chargeLimit': 100, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': False, 'isPluggedIn': False, 'lastUpdated': '2025-07-22T10:53:42.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': 173}, 'id': 'cmbf6o4080omz95248nylyc7r', 'information': {'brand': 'Audi', 'model': 'e-tron', 'vin': 'WAUZZZGE9PB016244', 'year': 2023}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-07-22T14:13:36.722Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-07-23T05:00:00.000Z', 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cmaoye3x2203favu7d4icx7io', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 100, 'minChargeLimit': 75}, 'chargeState': {'batteryCapacity': 28.9, 'batteryLevel': 63, 'chargeLimit': 100, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': False, 'isPluggedIn': True, 'lastUpdated': '2025-07-22T13:01:54.000Z', 'powerDeliveryState': 'PLUGGED_IN:STOPPED', 'range': 98}, 'id': 'cmaoye3x2203favu7d4icx7io', 'information': {'brand': 'MINI', 'model': 'Cooper', 'vin': 'WMW11DJ0702S08837', 'year': 2021}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-07-22T14:12:24.999Z'}]}}
+        try:
+            _LOGGER.debug("Query: %s", sanitize_query(query))
+            # Simulate a GraphQL response with enode vehicles data
+            # response = mock_response  # Use the mock response for testing
+            response: dict = await self._query(query)
+            mock_response = {'data': {'enodeVehicles': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-07-23T05:00:00.000Z', 'deadline': '2025-06-13T10:00:00.000Z', 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cmbf6o4080omz95248nylyc7r', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 100, 'minChargeLimit': 30}, 'chargeState': {'batteryCapacity': 86.5, 'batteryLevel': 49, 'chargeLimit': 100, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': False, 'isPluggedIn': False, 'lastUpdated': '2025-07-22T10:53:42.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': 173}, 'id': 'cmbf6o4080omz95248nylyc7r', 'information': {'brand': 'Audi', 'model': 'e-tron', 'vin': 'WAUZZZGE9PB016244', 'year': 2023}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-07-22T14:13:36.722Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-07-23T05:00:00.000Z', 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cmaoye3x2203favu7d4icx7io', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 100, 'minChargeLimit': 75}, 'chargeState': {'batteryCapacity': 28.9, 'batteryLevel': 63, 'chargeLimit': 100, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': False, 'isPluggedIn': True, 'lastUpdated': '2025-07-22T13:01:54.000Z', 'powerDeliveryState': 'PLUGGED_IN:STOPPED', 'range': 98}, 'id': 'cmaoye3x2203favu7d4icx7io', 'information': {'brand': 'MINI', 'model': 'Cooper', 'vin': 'WMW11DJ0702S08837', 'year': 2021}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-07-22T14:12:24.999Z'}]}}
+        except Exception as error:
+            _LOGGER.error("Error fetching enode vehicles: %s", error)
+            return EnodeVehicles([])
         return EnodeVehicles.from_dict(response)
 
     @property
@@ -1782,7 +1851,7 @@ class FrankEnergie:
         """
         return self
 
-    async def __aexit__(self, *_exc_info: Any) -> None:
+    async def __aexit__(self, *_exc_info: object) -> None:
         """Async exit.
 
         Args:
