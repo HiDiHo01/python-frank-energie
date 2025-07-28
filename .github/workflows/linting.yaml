@@ -1,4 +1,4 @@
-name: Linting
+name: Pre-commit Linting & CI
 
 on: [pull_request]
 
@@ -62,11 +62,11 @@ jobs:
       - name: Check out code from GitHub
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
+      - name: Set up Python 3.13
         id: python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.13"
 
       - name: Get pip cache dir
         run: echo "PIP_CACHE_DIR=$(pip cache dir)" >> $GITHUB_ENV
@@ -78,6 +78,7 @@ jobs:
           key: pip-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-${{ hashFiles('poetry.lock') }}
           restore-keys: |
             pip-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-
+            pip-${{ runner.os }}-v1-
 
       - name: 🏗 Install workflow dependencies
         run: |
@@ -95,10 +96,13 @@ jobs:
             venv-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-
 
       - name: Install Python dependencies
-        run: poetry install --no-interaction
+        run: poetry install --no-interaction --with=dev
 
       - name: Run pre-commit migrate-config
         run: poetry run pre-commit migrate-config
+
+      - name: Install pre-commit hooks
+        run: poetry run pre-commit install
 
       - name: Run pre-commit for ${{ matrix.id }}
         run: poetry run pre-commit run ${{ matrix.id }} --all-files --hook-stage manual
