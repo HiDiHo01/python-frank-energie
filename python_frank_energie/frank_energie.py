@@ -24,7 +24,7 @@ from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehi
                      MarketPrices, Me, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.6.17"
+VERSION = "2025.7.29"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -1293,7 +1293,6 @@ class FrankEnergie:
 
         try:
             _LOGGER.debug("Query: %s", sanitize_query(query))
-            # response = await self._query(query)
             # Mock response for testing purposes
             # Simulate a GraphQL response with smart batteries data
             response = await self._query(query)
@@ -1395,7 +1394,6 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Query: %s", sanitize_query(query))
             # Simulate a GraphQL response with smart battery details and summary data
-            # response = mock_response  # Use the mock response for testing
             response = await self._query(query)
             mock_response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "cm3mockyl0000tc3nhygweghn", 'settings': {
                 "batteryMode": "IMBALANCE_TRADING",
@@ -1407,6 +1405,7 @@ class FrankEnergie:
                 'lastUpdate': '2025-04-20T11:30:00.000Z',
                 'totalResult': 225.01642490011401
             }}}
+            # response = mock_response  # Use the mock response for testing
         except Exception as error:
             _LOGGER.error("Error fetching smart battery details: %s", error)
             return SmartBatteryDetails()
@@ -1453,7 +1452,6 @@ class FrankEnergie:
                     status
                     tradeIndex
                 }
-                totalTradingResult
             }
         }
         """
@@ -1488,10 +1486,9 @@ class FrankEnergie:
                             status
                             tradeIndex
                         }
-                        totalTradingResult
                     }
-                    }
-                """,
+                }
+            """,
             "SmartBatterySessions",
             {
                 "deviceId": device_id,
@@ -1732,6 +1729,7 @@ class FrankEnergie:
                             ]
                             }
                         }
+            # response = mock_response  # Use the mock response for testing
         except Exception as error:
             _LOGGER.error("Error fetching smart battery sessions: %s", error)
             return SmartBatterySessions()

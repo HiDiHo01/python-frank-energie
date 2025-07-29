@@ -7,7 +7,7 @@ from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from statistics import mean
-from typing import Iterator, Optional, Set, Union
+from typing import Iterator, Set, Union
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -24,7 +24,7 @@ DEFAULT_ROUND = 6
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-VERSION = "2025.5.23"
+VERSION = "2025.7.29"
 FETCH_TOMORROW_HOUR_UTC = 12
 
 @dataclass
@@ -88,7 +88,7 @@ class Authentication:
         )
 
     @staticmethod
-    def _extract_payload(data: dict) -> Optional[dict]:
+    def _extract_payload(data: dict) -> dict | None:
         """Extract the login or renewToken payload from the data dictionary."""
         return data.get("data", {}).get("login") or data.get("data", {}).get("renewToken")
 
@@ -167,7 +167,7 @@ class Invoice:
         return invoice_start_year == current_year
 
     @staticmethod
-    def from_dict(data: dict[str, object]) -> Optional['Invoice']:
+    def from_dict(data: dict[str, object]) -> Union['Invoice', None]:
         """Parse the response from the invoice query."""
         if data is None:
             return None
@@ -182,6 +182,12 @@ class Invoice:
             TotalAmount=float(data.get("TotalAmount")),
         )
 
+def invoices_from_list(data: list[dict[str, object]]) -> list[Invoice]:
+    """Parses a list of invoice dicts into Invoice instances."""
+    if not isinstance(data, list):
+        raise TypeError("Expected a list of dicts for invoices")
+
+    return [invoice for item in data if (invoice := Invoice.from_dict(item))]
 
 @dataclass
 class Invoices:
@@ -189,11 +195,10 @@ class Invoices:
 
     def __init__(
         self,
-        allPeriodsInvoices: Optional[list[Invoice]
-                                     ] = field(default_factory=list),
-        previousPeriodInvoice: Optional[Invoice] = None,
-        currentPeriodInvoice: Optional[Invoice] = None,
-        upcomingPeriodInvoice: Optional[Invoice] = None,
+        allPeriodsInvoices: list[Invoice] | None = field(default_factory=list),
+        previousPeriodInvoice: Invoice | None = None,
+        currentPeriodInvoice: Invoice | None = None,
+        upcomingPeriodInvoice: Invoice | None = None,
         AllInvoicesDictForPreviousYear: dict = field(default_factory=dict),
         AllInvoicesDictForThisYear: dict = field(default_factory=dict),
         AllInvoicesDict: dict = field(default_factory=dict),
@@ -297,7 +302,7 @@ class Invoices:
         """Calculate the total costs for the specified year using allPeriodsInvoices."""
         return sum(invoice.TotalAmount for invoice in self.get_invoices_for_year(year))
 
-    def calculate_average_costs_per_month(self, year: int = None) -> Optional[float]:
+    def calculate_average_costs_per_month(self, year: int = None) -> float | None:
         """Calculate the average costs per month."""
         if year is None:
             invoices = self.allPeriodsInvoices
@@ -328,7 +333,7 @@ class Invoices:
 
         return average_costs
 
-    def calculate_expected_costs_this_year(self) -> Optional[float]:
+    def calculate_expected_costs_this_year(self) -> float | None:
         """Calculate the expected costs for the current year."""
         current_year = datetime.now().year
 
@@ -350,7 +355,7 @@ class Invoices:
             invoice.StartDate.year for invoice in self.allPeriodsInvoices}
         return unique_years
 
-    def calculate_average_costs_per_year(self) -> Optional[float]:
+    def calculate_average_costs_per_year(self) -> float | None:
         """Calculate the average costs for the specified year."""
         invoices = self.allPeriodsInvoices
 
@@ -368,7 +373,7 @@ class Invoices:
 
         return average_costs
 
-    def calculate_average_costs_per_month_this_year(self) -> Optional[float]:
+    def calculate_average_costs_per_month_this_year(self) -> float | None:
         """Calculate the average costs per month for this year."""
         invoices_count = 0
         total_costs = 0.0
@@ -504,9 +509,9 @@ class PeriodUsageAndCosts:
     """Bevat het verbruik en de kosten van gas, elektriciteit en teruglevering voor een periode."""
 
     _id: str
-    gas: Optional[EnergyCategory]
-    electricity: Optional[EnergyCategory]
-    feed_in: Optional[EnergyCategory]
+    gas: EnergyCategory | None
+    electricity: EnergyCategory | None
+    feed_in: EnergyCategory | None
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> 'PeriodUsageAndCosts':
@@ -545,11 +550,11 @@ class UserSites:
     deliverySites: list[object]
     addressFormatted: str
     addressHasMultipleSites: bool
-    deliveryEndDate: Optional[str]
-    deliveryStartDate: Optional[str]
-    firstMeterReadingDate: Optional[str]
-    lastMeterReadingDate: Optional[str]
-    propositionType: Optional[str]
+    deliveryEndDate: str | None
+    deliveryStartDate: str | None
+    firstMeterReadingDate: str | None
+    lastMeterReadingDate: str | None
+    propositionType: str | None
     reference: str
     segments: list[str]
     status: str
@@ -569,8 +574,8 @@ class UserSites:
         if not user_sites or not isinstance(user_sites, list):
             raise RequestException("Unexpected response format for userSites")
 
-        first_meter_reading_date: Optional[str] = None
-        last_meter_reading_date: Optional[str] = None
+        first_meter_reading_date: str | None = None
+        last_meter_reading_date: str | None = None
         if user_sites and isinstance(user_sites, list):
             first_site = user_sites[0]
             first_meter_reading_date = first_site.get("firstMeterReadingDate")
@@ -680,7 +685,7 @@ class Me:
         )
 
 
-def get_segments(data: dict[str, object]) -> Optional[list[str]]:
+def get_segments(data: dict[str, object]) -> list[str] | None:
     delivery_site_data = data.get("user")
     if delivery_site_data:
         delivery_site = DeliverySite(**delivery_site_data)
@@ -695,7 +700,7 @@ class Address:
     houseNumber: str
     zipCode: str
     city: str
-    houseNumberAddition: Optional[str] = field(default=None)
+    houseNumberAddition: str | None = field(default=None)
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> "Address":
@@ -760,15 +765,15 @@ class DeliverySite(BaseModel):
     },
     """
     addressHasMultipleSites: bool
-    propositionType: Optional[str]
+    propositionType: str | None
     reference: str
     segments: list[str]
     address: Address
     status: str
-    deliveryStartDate: Optional[date]
-    deliveryEndDate: Optional[date] = None
-    firstMeterReadingDate: Optional[date]
-    lastMeterReadingDate: Optional[date]
+    deliveryStartDate: date | None
+    deliveryEndDate: date | None = None
+    firstMeterReadingDate: date | None
+    lastMeterReadingDate: date | None
 
     @staticmethod
     def from_dict(payload: dict[str, str]) -> 'DeliverySite':
@@ -822,8 +827,8 @@ class DeliverySite(BaseModel):
 
 @dataclass
 class Person:
-    firstName: Optional[str] = None
-    lastName: Optional[str] = None
+    firstName: str | None = None
+    lastName: str | None = None
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> "Person":
@@ -835,9 +840,9 @@ class Person:
 
 @dataclass
 class Contact:
-    emailAddress: Optional[EmailStr] = None
-    phoneNumber: Optional[str] = None
-    mobileNumber: Optional[str] = None
+    emailAddress: EmailStr | None = None
+    phoneNumber: str | None = None
+    mobileNumber: str | None = None
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> "Contact":
@@ -855,8 +860,8 @@ class Email:
 
 @dataclass
 class Debtor:
-    bankAccountNumber: Optional[str] = None
-    preferredAutomaticCollectionDay: Optional[int] = None
+    bankAccountNumber: str | None = None
+    preferredAutomaticCollectionDay: int | None = None
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> "Debtor":
@@ -870,33 +875,33 @@ class Debtor:
 @dataclass
 class GridOperatorAddress:
     """Address of the grid operator."""
-    street: Optional[str] = None
-    houseNumber: Optional[str] = None
-    houseNumberAddition: Optional[str] = None
-    zipCode: Optional[str] = None
-    city: Optional[str] = None
+    street: str | None = None
+    houseNumber: str | None = None
+    houseNumberAddition: str | None = None
+    zipCode: str | None = None
+    city: str | None = None
 
 
 @dataclass
 class ExternalDetails:
     """Details about the external grid operator."""
-    gridOperator: Optional[str] = None
+    gridOperator: str | None = None
     address: GridOperatorAddress = field(default_factory=GridOperatorAddress)
 
 
 @dataclass
 class Connection:
     """Represents a connection to the energy grid."""
-    id: Optional[str] = None
-    connectionId: Optional[str] = None
-    EAN: Optional[str] = None
-    segment: Optional[str] = None
-    status: Optional[str] = None
-    contractStatus: Optional[str] = None
-    estimatedFeedIn: Optional[float] = None
-    firstMeterReadingDate: Optional[str] = None
-    lastMeterReadingDate: Optional[str] = None
-    meterType: Optional[str] = None
+    id: str | None = None
+    connectionId: str | None = None
+    EAN: str | None = None
+    segment: str | None = None
+    status: str | None = None
+    contractStatus: str | None = None
+    estimatedFeedIn: float | None = None
+    firstMeterReadingDate: str | None = None
+    lastMeterReadingDate: str | None = None
+    meterType: str | None = None
     externalDetails: ExternalDetails = field(default_factory=ExternalDetails)
 
 
@@ -915,8 +920,8 @@ class MeterReadingExportPeriod:
 
 
 class UserDetails:
-    id: Optional[str] = None
-    email: Optional[str] = None
+    id: str | None = None
+    email: str | None = None
 
 
 @dataclass
@@ -928,7 +933,7 @@ class Signup:
 class UserSettings:
     id: str
     disabledHapticFeedback: bool
-    jedlixUserId: Optional[str]
+    jedlixUserId: str | None
     jedlixPushNotifications: bool
     smartPushNotifications: bool
     rewardPayoutPreference: str
@@ -958,14 +963,14 @@ class activePaymentAuthorization:
 class InviteLinkUser:
     awardRewardType: str
     createdAt: str
-    description: Optional[str]
+    description: str | None
     discountPerConnection: int
     fromName: str
     id: str
-    imageUrl: Optional[str]
+    imageUrl: str | None
     slug: str
     status: str
-    tintColor: Optional[str]
+    tintColor: str | None
     treesAmountPerConnection: int
     type: str
     updatedAt: str
@@ -979,38 +984,38 @@ class Organization:
 
 @dataclass
 class PushNotificationPriceAlert:
-    id: Optional[str] = None
-    isEnabled: Optional[bool] = None
-    type: Optional[str] = None
-    weekdays: Optional[list[int]] = None
+    id: str | None = None
+    isEnabled: bool | None = None
+    type: str | None = None
+    weekdays: list[int] | None = None
 
 
 @dataclass
 class SmartCharging:
-    isActivated: Optional[bool] = None
-    provider: Optional[str] = None
-    userCreatedAt: Optional[str] = None
-    userId: Optional[str] = None
-    isAvailableInCountry: Optional[bool] = None
-    needsSubscription: Optional[bool] = None
-    subscription: Optional[str] = None
+    isActivated: bool | None = None
+    provider: str | None = None
+    userCreatedAt: str | None = None
+    userId: str | None = None
+    isAvailableInCountry: bool | None = None
+    needsSubscription: bool | None = None
+    subscription: str | None = None
 
 
 @dataclass
 class SmartTrading:
-    isActivated: Optional[bool] = None
-    userCreatedAt: Optional[str] = None
-    userId: Optional[str] = None
-    isAvailableInCountry: Optional[bool] = None
+    isActivated: bool | None = None
+    userCreatedAt: str | None = None
+    userId: str | None = None
+    isAvailableInCountry: bool | None = None
 
 
 @dataclass
 class ExternalDetails:
-    reference: Optional[str] = None
-    person: Optional[Person] = None
-    contact: Optional[Contact] = None
-    address: Optional[Address] = None
-    debtor: Optional[Debtor] = None
+    reference: str | None = None
+    person: Person | None = None
+    contact: Contact | None = None
+    address: Address | None = None
+    debtor: Debtor | None = None
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> "ExternalDetails":
@@ -1099,7 +1104,8 @@ class EnergyConsumption:
         self.daily_consumption = daily_consumption
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> Optional['EnergyConsumption']:
+    def from_dict(cls, data: dict[str, object]):
+        # type: (dict[str, object]) -> EnergyConsumption | None
         """
         Create an EnergyConsumption instance from a dictionary.
 
@@ -1129,17 +1135,17 @@ class User:
 
     id: str
     PaymentAuthorizations: list
-    activePaymentAuthorization: Optional[list]
+    activePaymentAuthorization: list | None
     InviteLinkUser: InviteLinkUser
     Organization: Organization
     # deliverySites: DeliverySiteList
-    connections: Optional[list[Connection]]
+    connections: list[Connection] | None
     # deliverySites: list[DeliverySite]
     createdAt: datetime
     updatedAt: datetime
     email: str
-    # firstName: Optional[str]
-    # lastName: Optional[str]
+    # firstName: str | None
+    # lastName: str | None
     countryCode: str
     # segments: list[str]
     lastLogin: datetime
@@ -1159,15 +1165,15 @@ class User:
     websiteUrl: str
     customerSupportEmail: str
     Signup: Signup
-    treesCount: Optional[int] = 0
-    friendsCount: Optional[int] = 0
-    smartCharging: Optional[SmartCharging] = None
-    smartTrading: Optional[SmartTrading] = None
-    externalDetails: Optional[dict] = None
-    deliveryEndDate: Optional[date] = None
+    treesCount: int | None = 0
+    friendsCount: int | None = 0
+    smartCharging: SmartCharging | None = None
+    smartTrading: SmartTrading | None = None
+    externalDetails: dict | None = None
+    deliveryEndDate: date | None = None
 
     @staticmethod
-    def from_dict(data: dict[str, object]) -> Optional["User"]:
+    def from_dict(data: dict[str, object]) -> 'User':
         """Parse the response from the me query."""
         _LOGGER.debug("User %s", data)
 
@@ -1343,7 +1349,7 @@ class MonthSummary:
     typename: str
 
     @staticmethod
-    def from_dict(data: dict[str, str]) -> Optional['MonthSummary']:
+    def from_dict(data: dict[str, str]) -> Union['MonthSummary', None]:
         """Parse the response from the monthSummary query."""
         _LOGGER.debug("MonthSummary %s", data)
 
@@ -1668,14 +1674,14 @@ class Price:
     date_from: datetime
     date_till: datetime
     price_data: list['Price']
-    energy_type: Optional[str] = None
+    energy_type: str | None = None
     market_price: float = 0.0
     market_price_tax: float = 0.0
     sourcing_markup_price: float = 0.0
     energy_tax_price: float = 0.0
     total: float = 0.0
-    per_unit: Optional[str] = None
-    unit: Optional[str] = None      
+    per_unit: str | None = None
+    unit: str | None = None      
     tax_rate: float = 0.0
     tax: float = 0.0
     start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -1711,7 +1717,7 @@ class Price:
                 self.energy_tax_price = 0.6995736  # gas tax 2025
         # not in use anymore, get energy_tax_price from API response
 
-    def __init__(self, data: dict, energy_type: Optional[str] = None) -> None:
+    def __init__(self, data: dict, energy_type: str | None = None) -> None:
         """Parse the response from the prices query."""
         self.energy_type = energy_type
         # self.energy_type = data.get("energy_type", None)
@@ -1988,7 +1994,7 @@ class PriceDataAvg:
 class PriceData:
     """Price data for a period of time."""
     price_data: list[Price] = []
-    energy_type: Optional[str] = None
+    energy_type: str | None = None
     current_hour: Price = None
     previous_hour: Price = None
     next_hour: Price = None
@@ -2009,7 +2015,7 @@ class PriceData:
     ])
     """
 
-    def __init__(self, prices: Optional[list['Price']] = None, energy_type: Optional[str] = None):
+    def __init__(self, prices: list['Price'] | None = None, energy_type: str | None = None):
         self.price_data = [Price({**price, "energy_type": energy_type})
                            for price in prices] if prices else []
         self.energy_type = energy_type
@@ -2044,12 +2050,12 @@ class PriceData:
         return [hour for hour in self.price_data if hour.for_tomorrow]
 
     @property
-    def previous_hour(self) -> Optional['Price']:
+    def previous_hour(self) -> Price | None:
         """ Price that was the previous hour applicable. """
         return next((hour for hour in self.price_data if hour.for_previous_hour), None)
 
     @property
-    def current_hour(self) -> Optional['Price']:
+    def current_hour(self) -> Price | None:
         """ Price that's currently applicable. """
         matching_hours = [hour for hour in self.price_data if hour.for_now]
         if matching_hours:
@@ -2058,7 +2064,7 @@ class PriceData:
             return None
 
     @property
-    def next_hour(self) -> Optional['Price']:
+    def next_hour(self) -> Price | None:
         """ Price that's next hour applicable. """
         return next((hour for hour in self.price_data if hour.for_next_hour), None)
 
@@ -2070,13 +2076,13 @@ class PriceData:
         return mean(today_market_tax_markup)
 
     @property
-    def today_min(self) -> Optional[Price]:
+    def today_min(self) -> Price | None:
         """Price with the lowest total for today."""
         if not self.today == []:
             return min([hour for hour in self.today], key=lambda hour: hour.total)
 
     @property
-    def today_max(self) -> Optional[Price]:
+    def today_max(self) -> Price | None:
         """Price with the highest total for today."""
         if not self.today == []:
             return max([hour for hour in self.today], key=lambda hour: hour.total)
@@ -2088,7 +2094,7 @@ class PriceData:
             return mean(hour.total for hour in self.today)
 
     @property  # todo
-    def tomorrow_average_price(self) -> Optional[float]:
+    def tomorrow_average_price(self) -> float | None:
         """ Average total price for tomorrow. """
         tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
 
@@ -2101,7 +2107,7 @@ class PriceData:
         return rounded_average_price
 
     @property
-    def tomorrow_average_price_including_tax(self) -> Optional[float]:
+    def tomorrow_average_price_including_tax(self) -> float | None:
         """ Average total price including tax and markup for tomorrow. """
         tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
 
@@ -2115,7 +2121,7 @@ class PriceData:
         return rounded_average_price
 
     @property
-    def tomorrow_average_price_including_tax_and_markup(self) -> Optional[float]:
+    def tomorrow_average_price_including_tax_and_markup(self) -> float | None:
         """ Average total price including tax and markup for tomorrow. """
         tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
 
@@ -2129,7 +2135,7 @@ class PriceData:
         return rounded_average_price
 
     @property
-    def tomorrow_average_market_price(self) -> Optional[float]:
+    def tomorrow_average_market_price(self) -> float | None:
         """ Average market price for tomorrow. """
         tomorrow_prices = self.get_prices_for_time_period(TimePeriod.TOMORROW)
 
@@ -2142,13 +2148,13 @@ class PriceData:
         return rounded_average_price
 
     @property
-    def tomorrow_min(self) -> Optional[Price]:
+    def tomorrow_min(self) -> Price | None:
         """Price with the lowest total for today."""
         if not self.tomorrow == []:
             return min([hour for hour in self.tomorrow], key=lambda hour: hour.total)
 
     @property
-    def tomorrow_max(self) -> Optional[Price]:
+    def tomorrow_max(self) -> Price | None:
         """Price with the highest total for today."""
         if not self.tomorrow == []:
             return max([hour for hour in self.tomorrow], key=lambda hour: hour.total)
@@ -2201,11 +2207,11 @@ class PriceData:
         }
 
     @property
-    def upcoming_min(self) -> Optional['Price']:
+    def upcoming_min(self) -> Price | None:
         return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
 
     @property
-    def upcoming_max(self) -> Optional['Price']:
+    def upcoming_max(self) -> Price | None:
         return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
 
     @property
@@ -2500,7 +2506,7 @@ class PriceData:
             hour.market_price for hour in self.today_prices]
         return mean(today_market_prices)
 
-    def get_price_statistics(price_data: 'PriceData', start_date: datetime, end_date: datetime) -> Union[dict, None]:
+    def get_price_statistics(price_data: 'PriceData', start_date: datetime, end_date: datetime) -> dict | None:
         """Calculate statistics for prices within a specific date range."""
         filtered_prices = price_data.filter_prices(start_date, end_date)
         if filtered_prices:
@@ -2515,7 +2521,7 @@ class PriceData:
         return None
 
     @staticmethod
-    def from_dict(data: dict[str, list[dict[str, str]]]) -> Optional['PriceData']:
+    def from_dict(data: dict[str, list[dict[str, str]]]) -> Union['PriceData', None]:
         """Parse the response from the marketPrices query."""
         _LOGGER.debug("PriceData %s", data)
 
@@ -2560,7 +2566,7 @@ class PriceData:
         return type('PriceDataAvg', (object,), {'values': all_prices, 'total': avg, 'market_price_with_tax_and_markup': market_price_with_tax_and_markup_avg, 'market_markup_price': market_price_markup_avg, 'market_price_with_tax': market_price_with_tax_avg, 'market_price_tax': market_price_tax_avg, 'market_price': market_price_avg})
 
     @property
-    def upcoming_avg(self) -> Optional[PriceDataAvg]:
+    def upcoming_avg(self) -> PriceDataAvg | None:
         """Get the average of upcoming prices."""
         upcoming_prices = self.get_prices_for_time_period(TimePeriod.UPCOMING)
 
@@ -2599,7 +2605,7 @@ class PriceData:
         )
 
     @property
-    def tomorrow_avg(self) -> Optional[PriceDataAvg]:
+    def tomorrow_avg(self) -> PriceDataAvg | None:
         """Get the average of tomorrow's prices."""
         now = datetime.now(timezone.utc).astimezone()
         tomorrow = now + timedelta(days=1)
@@ -2844,24 +2850,19 @@ class MarketPrices:
         Attributes:
         electricity (PriceData): The electricity price data.
         gas (PriceData): The gas price data.
-        energy_type (Optional[str]): The type of energy (e.g., 'electricity' or 'gas').
+        energy_type (str | None): The type of energy (e.g., 'electricity' or 'gas').
         energy_country (str): The country code ('NL' or 'BE') for which the prices apply.
         today (list): Prices for today.
         tomorrow (list): Prices for tomorrow.
     """
     # note: zet velden zonder default altijd voor velden met default
 
-    electricity: Optional[PriceData] = None
-    gas: Optional[PriceData] = None
-    energy_type: Optional[str] = None
+    electricity: PriceData | None = None
+    gas: PriceData | None = None
+    energy_type: str | None = None
     energy_country: str = "NL"  # Default to NL, can be overridden
     today: list = field(default_factory=list)
     tomorrow: list = field(default_factory=list)
-
-#    def __init__(self, electricity: Optional[PriceData] = None, gas: Optional[PriceData] = None, energy_type: Optional[str] = None) -> None:
-#         self.electricity = electricity
-#         self.gas = gas
-#         self.energy_type = energy_type
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> 'MarketPrices':
@@ -2926,7 +2927,7 @@ class MarketPrices:
         )
 
     @staticmethod
-    def from_userprices_dict(data: dict[str, object]) -> Optional['MarketPrices']:
+    def from_userprices_dict(data: dict[str, object]) -> Union['MarketPrices', None]:
         """Parse the response from the marketPrices query."""
         _LOGGER.debug("User Prices %s", data)
 
@@ -3036,7 +3037,9 @@ class SmartBatterySettings:
     self_consumption_trading_allowed: bool
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'SmartBatterySettings':
+    def from_dict(cls, data: dict) -> Union['SmartBatterySettings', None]:
+        if not data:
+            return None
         return cls(
             battery_mode=data["batteryMode"],
             imbalance_trading_strategy=data["imbalanceTradingStrategy"],
@@ -3084,7 +3087,7 @@ class SmartBattery:
     sessions: list[object] = field(default_factory=list)
 
     @staticmethod
-    def from_dict(payload: dict[str, object]) -> "SmartBattery":
+    def from_dict(payload: dict[str, object]) -> Union["SmartBattery", None]:
         """Parse the response for a single SmartBattery."""
         _LOGGER.debug("SmartBattery payload: %s", payload)
 
@@ -3137,7 +3140,7 @@ class SmartBattery:
 class SmartBatterySession:
     """A trading session for a smart battery."""
 
-    date: date
+    date: datetime
     cumulative_result: float
     result: float
     status: str
@@ -3148,16 +3151,25 @@ class SmartBatterySession:
         """Parse the session payload from SmartBatterySessions."""
         _LOGGER.debug("🔁 Parsing SmartBatterySession: %s", payload)
         try:
-            return SmartBatterySession(
-                date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
-                cumulative_result=payload["cumulativeResult"],
-                result=payload["result"],
-                status=payload["status"],
-                tradeIndex=payload["tradeIndex"],
+            raw_trade_index = payload.get("tradeIndex")
+
+            trade_index = (
+                int(raw_trade_index)
+                if isinstance(raw_trade_index, int)
+                else None
             )
+
+            return SmartBatterySession(
+                date=datetime.fromisoformat(str(payload["date"])).astimezone(timezone.utc),
+                cumulative_result=float(payload["cumulativeResult"]),
+                result=float(payload["result"]),
+                status=str(payload["status"]),
+                tradeIndex=trade_index,
+            )
+
         except KeyError as exc:
             raise ValueError("Missing expected field in session: %s" % exc) from exc
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError("Invalid data format in session payload: %s" % exc) from exc
 
 @dataclass
@@ -3170,16 +3182,16 @@ class SmartBatterySessions:
     period_end_date: date
     period_trade_index: int
     period_trading_result: float
-    trading_result: float
+    # trading_result: float
     period_total_result: float
     period_imbalance_result: float
     period_epex_result: float
     period_frank_slim: float
     sessions: list[SmartBatterySession]
-    total_trading_result: float
+    # total_trading_result: float
 
     @staticmethod
-    def from_dict(data: dict[str, object]) -> 'SmartBatterySessions':
+    def from_dict(data: dict[str, object]) -> Union['SmartBatterySessions', None]:
         """Parse the response from the SmartBatterySessions query."""
         _LOGGER.debug("🔁 Parsing SmartBatterySessions response: %s", data)
 
@@ -3188,10 +3200,11 @@ class SmartBatterySessions:
 
         payload = data.get("data")
         if not payload:
-            # return None
-            raise RequestException("Unexpected response")
+            _LOGGER.debug("No data found in SmartBatterySessions response.")
+            raise RequestException("No data found in SmartBatterySessions response")
 
         smart_battery_session_data = payload.get("smartBatterySessions")
+        _LOGGER.debug("SmartBatterySessions data: %s", smart_battery_session_data)
         
         return SmartBatterySessions(
             device_id=smart_battery_session_data.get("deviceId"),
@@ -3200,7 +3213,7 @@ class SmartBatterySessions:
             period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
             period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
             period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
-            trading_result=smart_battery_session_data.get("tradingResult"),
+            # trading_result=smart_battery_session_data.get("tradingResult"),
             period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
             period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult")),
             period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
@@ -3209,7 +3222,7 @@ class SmartBatterySessions:
                 SmartBatterySession.from_dict(session)
                 for session in smart_battery_session_data.get("sessions", [])
             ],
-            total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
+            #total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
         )
 
     def __iter__(self) -> Iterator:
@@ -3234,7 +3247,7 @@ class SmartBatterySummary:
     total_result: float
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> "SmartBatterySummary":
+    def from_dict(cls, data: dict[str, object]) -> Union['SmartBatterySummary', None]:
         """
         Create a SmartBatterySummary from a dictionary.
 
@@ -3269,7 +3282,7 @@ class SmartBatteryDetails:
     smart_battery_settings: SmartBatterySettings | None = None
 
     @staticmethod
-    def from_dict(data: dict[str, object]) -> "SmartBatteryDetails":
+    def from_dict(data: dict[str, object]) -> Union['SmartBatteryDetails', None]:
         """Parse SmartBatteryDetails from a raw dictionary."""
 
         sb_data = data.get("smartBattery", {})
