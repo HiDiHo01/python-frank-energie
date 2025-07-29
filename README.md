@@ -1,3 +1,4 @@
+[![Release](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/release.yaml/badge.svg)](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/release.yaml)
 [![Run Frank Energie Query](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/run_query.yml/badge.svg)](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/run_query.yml)
 [![Dependabot Updates](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/dependabot/dependabot-updates/badge.svg?branch=main)](https://github.com/HiDiHo01/python-frank-energie/actions/workflows/dependabot/dependabot-updates)
 # python-frank-energie
