@@ -1,0 +1,116 @@
+{
+  "data": {
+    "smartBatterySessions": {
+      "deviceId": "MyDeviceId",
+      "fairUsePolicyVerified": false,
+      "periodEndDate": "2025-07-14",
+      "periodEpexResult": -27.08788163827556,
+      "periodFrankSlim": 9.829589864560651,
+      "periodImbalanceResult": 82.051806755679,
+      "periodStartDate": "2025-07-01",
+      "periodTotalResult": 64.79351498196408,
+      "periodTradeIndex": 72,
+      "periodTradingResult": 91.88139662023964,
+      "sessions": [
+        {
+          "cumulativeResult": 642.6859216849974,
+          "date": "2025-07-01",
+          "result": 5.530381924,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 11
+        },
+        {
+          "cumulativeResult": 650.4153791904641,
+          "date": "2025-07-02",
+          "result": 7.72945750546675,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 125
+        },
+        {
+          "cumulativeResult": 656.4380804304641,
+          "date": "2025-07-03",
+          "result": 6.022701240000001,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 6
+        },
+        {
+          "cumulativeResult": 660.2747142008642,
+          "date": "2025-07-04",
+          "result": 3.836633770399999,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 37
+        },
+        {
+          "cumulativeResult": 664.5093663068641,
+          "date": "2025-07-05",
+          "result": 4.2346521059999995,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 16
+        },
+        {
+          "cumulativeResult": 674.5431836355311,
+          "date": "2025-07-06",
+          "result": 10.033817328667,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 361
+        },
+        {
+          "cumulativeResult": 683.6324345535311,
+          "date": "2025-07-07",
+          "result": 9.089250918000001,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": -6
+        },
+        {
+          "cumulativeResult": 692.9073872853883,
+          "date": "2025-07-08",
+          "result": 9.274952731857148,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 86
+        },
+        {
+          "cumulativeResult": 700.9413248353883,
+          "date": "2025-07-09",
+          "result": 8.03393755,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 1
+        },
+        {
+          "cumulativeResult": 709.570350711077,
+          "date": "2025-07-10",
+          "result": 8.62902587568875,
+          "status": "COMPLETE_PRELIMINARY",
+          "tradeIndex": null
+        },
+        {
+          "cumulativeResult": 719.058522523077,
+          "date": "2025-07-11",
+          "result": 9.488171812000003,
+          "status": "COMPLETE_PRELIMINARY",
+          "tradeIndex": null
+        },
+        {
+          "cumulativeResult": 723.3513938190771,
+          "date": "2025-07-12",
+          "result": 4.292871296,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 32
+        },
+        {
+          "cumulativeResult": 726.802228441237,
+          "date": "2025-07-13",
+          "result": 3.4508346221600004,
+          "status": "COMPLETE_FINAL",
+          "tradeIndex": 122
+        },
+        {
+          "cumulativeResult": 729.0369363812371,
+          "date": "2025-07-14",
+          "result": 2.23470794,
+          "status": "ACTIVE",
+          "tradeIndex": null
+        }
+      ]
+    }
+  }
+}
