@@ -7,7 +7,9 @@ from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from statistics import mean
-from typing import Iterator, Set, Union
+from typing import Set, Union
+
+from collections.abc import Iterator
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -349,7 +351,7 @@ class Invoices:
 
         return expected_costs_this_year
 
-    def get_unique_years(self) -> Set[int]:
+    def get_unique_years(self) -> set[int]:
         """Get the unique years present in allPeriodsInvoices."""
         unique_years = {
             invoice.StartDate.year for invoice in self.allPeriodsInvoices}
@@ -1783,7 +1785,7 @@ class Price:
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
-        return "%s -> %s: %.4f %s" % (
+        return "{} -> {}: {:.4f} {}".format(
             self.date_from.isoformat() if self.date_from else "N/A",
             self.date_till.isoformat() if self.date_till else "N/A",
             self.total,

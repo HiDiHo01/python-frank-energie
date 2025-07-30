@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # Filename: test_query.py
 # Project: python-frank-energie
 # Created Date: 2025-4-4
