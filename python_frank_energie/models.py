@@ -2,14 +2,11 @@
 # python_frank_energie/models.py
 
 import logging
-import statistics
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from statistics import mean
-from typing import Set, Union
-
-from collections.abc import Iterator
+from typing import Iterator, Set, Union
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -145,9 +142,9 @@ class Invoice:
     """Represents invoice information, including the start date, period
     description, and total amount."""
 
-    StartDate: datetime
+    StartDate: datetime | None
     PeriodDescription: str
-    TotalAmount: float
+    TotalAmount: float | None
 
     @property
     def for_last_year(self) -> bool:
@@ -178,10 +175,12 @@ class Invoice:
             return [Invoice.from_dict(item) for item in data]
 
         return Invoice(
-            StartDate=parse(data.get("StartDate")).astimezone(
-                pytz.timezone('Europe/Amsterdam')),
+            StartDate=(
+                parse(value).astimezone(pytz.timezone('Europe/Amsterdam'))
+                if (value := data.get("StartDate")) is not None else None
+            ),
             PeriodDescription=data.get("PeriodDescription"),
-            TotalAmount=float(data.get("TotalAmount")),
+            TotalAmount=float(value) if (value := data.get("TotalAmount")) is not None else None,
         )
 
 def invoices_from_list(data: list[dict[str, object]]) -> list[Invoice]:
@@ -351,7 +350,7 @@ class Invoices:
 
         return expected_costs_this_year
 
-    def get_unique_years(self) -> set[int]:
+    def get_unique_years(self) -> Set[int]:
         """Get the unique years present in allPeriodsInvoices."""
         unique_years = {
             invoice.StartDate.year for invoice in self.allPeriodsInvoices}
@@ -606,8 +605,14 @@ class UserSites:
         sites_as_dict = []
         for site in self.deliverySites:
             address = site.get('address', {})
+            house_addition = (
+                address.get('houseNumberAddition', '')
+                if address.get('houseNumberAddition') else ''
+            )
             sites_as_dict.append(
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}")
+                f"{address.get('street')} {address.get('houseNumber')} "
+                f"{house_addition} {address.get('zipCode')} {address.get('city')}"
+            )
         return sites_as_dict
 
     @property
@@ -631,9 +636,13 @@ class UserSites:
             address = getattr(site, 'address', None)
 
             if address:
+                house_addition = (
+                    getattr(address, 'houseNumberAddition', '')
+                    if getattr(address, 'houseNumberAddition', None) else ''
+                )
                 sites_as_dict.append(
                     f"{getattr(address, 'street', '')} {getattr(address, 'houseNumber', '')} "
-                    f"{getattr(address, 'houseNumberAddition', '') if getattr(address, 'houseNumberAddition', None) else ''} "
+                    f"{house_addition} "
                     f"{getattr(address, 'zipCode', '')} {getattr(address, 'city', '')}".strip()
                 )
         return sites_as_dict
@@ -823,8 +832,14 @@ class DeliverySite(BaseModel):
         sites_as_dict = []
         for site in self.deliverySites:
             address = site.get('address', {})
+            house_addition = (
+                address.get('houseNumberAddition', '')
+                if address.get('houseNumberAddition') else ''
+            )
             sites_as_dict.append(
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}")
+                f"{address.get('street')} {address.get('houseNumber')} "
+                f"{house_addition} {address.get('zipCode')} {address.get('city')}"
+            )
         return sites_as_dict
 
 @dataclass
@@ -1087,7 +1102,8 @@ class DailyConsumption:
 
         Parameters:
         - date (str): The date of the daily consumption.
-        - consumption_kwh (float): The energy consumption in kilowatt-hours for the specified date.
+        - consumption_kwh (float): The energy consumption in kilowatt-hours
+          for the specified date.
         """
         self.date = date
         self.consumption_kwh = consumption_kwh
@@ -1100,7 +1116,8 @@ class EnergyConsumption:
 
         Parameters:
         - user_id (str): The unique identifier of the user.
-        - daily_consumption (List[DailyConsumption]): A list of DailyConsumption instances representing daily energy consumption.
+        - daily_consumption (List[DailyConsumption]): A list of DailyConsumption
+          instances representing daily energy consumption.
         """
         self.user_id = user_id
         self.daily_consumption = daily_consumption
@@ -1143,8 +1160,8 @@ class User:
     # deliverySites: DeliverySiteList
     connections: list[Connection] | None
     # deliverySites: list[DeliverySite]
-    createdAt: datetime
-    updatedAt: datetime
+    createdAt: datetime | None
+    updatedAt: datetime | None
     email: str
     # firstName: str | None
     # lastName: str | None
@@ -1208,8 +1225,8 @@ class User:
             # segments=first_site.get("segments", []),
             # lastLogin=datetime.fromisoformat(payload.get("lastLogin")),
             lastLogin=last_login,
-            createdAt=datetime.fromisoformat(payload.get("createdAt")),
-            updatedAt=datetime.fromisoformat(payload.get("updatedAt")),
+            createdAt=datetime.fromisoformat(value) if (value := payload.get("createdAt")) is not None else None,
+            updatedAt=datetime.fromisoformat(value) if (value := payload.get("updatedAt")) is not None else None,
             email=payload.get("email"),
             reference=payload.get("reference"),
             connectionsStatus=payload.get("connectionsStatus"),
@@ -1252,8 +1269,14 @@ class User:
         sites_as_dict = []
         for site in self.deliverySites:
             address = site.get('address', {})
+            house_addition = (
+                address.get('houseNumberAddition', '')
+                if address.get('houseNumberAddition') else ''
+            )
             sites_as_dict.append(
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}")
+                f"{address.get('street')} {address.get('houseNumber')} "
+                f"{house_addition} {address.get('zipCode')} {address.get('city')}"
+            )
         return sites_as_dict
 
     @property
@@ -1262,10 +1285,16 @@ class User:
         for index, site in enumerate(self.deliverySites, start=1):
             address = site.get('address', {})
             site_name = f"Delivery site {index}"
-            house_number_addition = f"{address.get('houseNumberAddition')}" if address.get(
-                'houseNumberAddition') else ""
+            house_number_addition = (
+                f"{address.get('houseNumberAddition')}"
+                if address.get('houseNumberAddition') else ""
+            )
             site_info = {
-                site_name: f"{address.get('street')} {address.get('houseNumber')} {house_number_addition if house_number_addition else ''} {address.get('zipCode')} {address.get('city')}"
+                site_name: (
+                    f"{address.get('street')} {address.get('houseNumber')} "
+                    f"{house_number_addition if house_number_addition else ''} "
+                    f"{address.get('zipCode')} {address.get('city')}"
+                )
             }
             sites.append(site_info)
         return sites
@@ -1294,8 +1323,13 @@ class User:
         for index, site in enumerate(self.deliverySites, start=1):
             address = site.get('address', {})
             site_name = f"Delivery site {index}"
+            house_addition = (
+                address.get('houseNumberAddition', '')
+                if address.get('houseNumberAddition') else ''
+            )
             site_info = {
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}"
+                f"{address.get('street')} {address.get('houseNumber')} "
+                f"{house_addition} {address.get('zipCode')} {address.get('city')}"
             }
             site_dict[site_name] = site_info
         return site_dict
@@ -1600,11 +1634,14 @@ class EnodeCharger:
         charge_settings_data = data['chargeSettings']
         charge_state_data = data['chargeState']
         interventions_data = data['interventions']
-        
+
         charge_settings = ChargeSettings(
             calculated_deadline=datetime.fromisoformat(charge_settings_data['calculatedDeadline']),
             capacity=charge_settings_data['capacity'],
-            deadline=datetime.fromisoformat(charge_settings_data['deadline']) if charge_settings_data['deadline'] else None,
+            deadline=(
+                datetime.fromisoformat(charge_settings_data['deadline'])
+                if charge_settings_data['deadline'] else None
+            ),
             hour_friday=charge_settings_data['hourFriday'],
             hour_monday=charge_settings_data['hourMonday'],
             hour_saturday=charge_settings_data['hourSaturday'],
@@ -1683,7 +1720,7 @@ class Price:
     energy_tax_price: float = 0.0
     total: float = 0.0
     per_unit: str | None = None
-    unit: str | None = None      
+    unit: str | None = None
     tax_rate: float = 0.0
     tax: float = 0.0
     start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -1701,7 +1738,8 @@ class Price:
         This tax is for The Netherlands and may change yearly.
         The values are based on the energy tax for electricity and gas in 2025.
         €0,10154×1,21=€0,12286 per kWh (<10.000 kWh)
-        Iedere aansluiting krijgt in 2025 een vermindering van € 635,19 (inclusief btw) (tot ~4.700 kWh) via de belastingvermindering/regeling basisbehoefte
+        Iedere aansluiting krijgt in 2025 een vermindering van € 635,19 (inclusief btw)
+        (tot ~4.700 kWh) via de belastingvermindering/regeling basisbehoefte
 
         Onderdeel	Tarief 2025
         Energiebelasting stroom (<10.000 kWh)	€ 0,10154/kWh excl. btw → € 0,12286/kWh incl. btw
@@ -1733,10 +1771,10 @@ class Price:
             try:
                 # Step 1: Replace 'Z' with '+00:00' to indicate UTC
                 date_str = date_from_str.replace('Z', '+00:00')
-                
+
                 # Step 2: Parse the date string to a datetime object
                 dt = datetime.fromisoformat(date_str)
-                
+
                 # Step 3: Convert the datetime object to ISO 8601 format
                 iso_format_date = dt.isoformat()
                 self.date_from = datetime.fromisoformat(iso_format_date)  # Regular datetime
@@ -1747,10 +1785,10 @@ class Price:
             try:
                 # Step 1: Replace 'Z' with '+00:00' to indicate UTC
                 date_str = date_till_str.replace('Z', '+00:00')
-                
+
                 # Step 2: Parse the date string to a datetime object
                 dt = datetime.fromisoformat(date_str)
-                
+
                 # Step 3: Convert the datetime object to ISO 8601 format
                 iso_format_date = dt.isoformat()
                 self.date_till = datetime.fromisoformat(iso_format_date)  # Regular datetime
@@ -1785,7 +1823,7 @@ class Price:
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
-        return "{} -> {}: {:.4f} {}".format(
+        return "%s -> %s: %.4f %s" % (
             self.date_from.isoformat() if self.date_from else "N/A",
             self.date_till.isoformat() if self.date_till else "N/A",
             self.total,
@@ -1880,7 +1918,8 @@ class Price:
         """The market price including tax."""
         return self.market_price + self.market_price_tax
 
-    # Calculate the market price with tax and sourcing markup by adding marketPrice, marketPriceTax and sourcing_markup_price
+    # Calculate the market price with tax and sourcing markup by adding
+    # marketPrice, marketPriceTax and sourcing_markup_price
     @property
     def market_price_with_tax_and_markup(self) -> float:
         """The market price including tax."""
@@ -2009,7 +2048,7 @@ class PriceData:
     gas_unit: str = None
     elec_unit: str = None
 
-    """" 
+    """"
     PriceDataAvg = namedtuple('PriceDataAvg', [
         'values', 'total', 'market_price_with_tax_and_markup',
         'market_markup_price', 'market_price_with_tax',
@@ -2365,7 +2404,8 @@ class PriceData:
 
         except Exception as exc:
             _LOGGER.exception(
-                "Failed to convert price data to dict (attr=%s, upcoming_only=%s, today_only=%s, tomorrow_only=%s, timezone=%s): %s",
+                "Failed to convert price data to dict (attr=%s, upcoming_only=%s, today_only=%s, "
+                "tomorrow_only=%s, timezone=%s): %s",
                 attr, upcoming_only, today_only, tomorrow_only, timezone, exc
             )
             return [{'error': f'Failed to convert price data: {exc}'}]
@@ -2565,7 +2605,15 @@ class PriceData:
         market_price_avg = round(
             mean(price.market_price for price in all_prices), DEFAULT_ROUND)
 
-        return type('PriceDataAvg', (object,), {'values': all_prices, 'total': avg, 'market_price_with_tax_and_markup': market_price_with_tax_and_markup_avg, 'market_markup_price': market_price_markup_avg, 'market_price_with_tax': market_price_with_tax_avg, 'market_price_tax': market_price_tax_avg, 'market_price': market_price_avg})
+        return type('PriceDataAvg', (object,), {
+            'values': all_prices,
+            'total': avg,
+            'market_price_with_tax_and_markup': market_price_with_tax_and_markup_avg,
+            'market_markup_price': market_price_markup_avg,
+            'market_price_with_tax': market_price_with_tax_avg,
+            'market_price_tax': market_price_tax_avg,
+            'market_price': market_price_avg
+        })
 
     @property
     def upcoming_avg(self) -> PriceDataAvg | None:
@@ -2911,7 +2959,7 @@ class MarketPrices:
         try:
             payload = data.get("data").get("marketPrices", {})
         except KeyError as err:
-                    raise ValueError(f"Invalid response format: %s" % err) from err
+            raise ValueError(f"Invalid response format: %s" % err) from err
 
         # electricity_data = data.get("electricityPrices", {})
         # gas_data = data.get("gasPrices", {})
@@ -3180,15 +3228,15 @@ class SmartBatterySessions:
 
     device_id: str
     fairuse_policy_verified: bool
-    period_start_date: date
-    period_end_date: date
-    period_trade_index: int
-    period_trading_result: float
+    period_start_date: date | None
+    period_end_date: date | None
+    period_trade_index: int | None
+    period_trading_result: float | None
     # trading_result: float
-    period_total_result: float
-    period_imbalance_result: float
-    period_epex_result: float
-    period_frank_slim: float
+    period_total_result: float | None
+    period_imbalance_result: float | None
+    period_epex_result: float | None
+    period_frank_slim: float | None
     sessions: list[SmartBatterySession]
     # total_trading_result: float
 
@@ -3207,19 +3255,51 @@ class SmartBatterySessions:
 
         smart_battery_session_data = payload.get("smartBatterySessions")
         _LOGGER.debug("SmartBatterySessions data: %s", smart_battery_session_data)
-        
+
         return SmartBatterySessions(
             device_id=smart_battery_session_data.get("deviceId"),
             fairuse_policy_verified=smart_battery_session_data.get("fairusePolicyVerified", False),
-            period_start_date=datetime.fromisoformat(smart_battery_session_data.get("periodStartDate")).astimezone(timezone.utc),
-            period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
-            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
-            period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
+            period_start_date=(
+                datetime.fromisoformat(value).astimezone(timezone.utc)
+                if (value := smart_battery_session_data.get("periodStartDate")) is not None
+                else None
+            ),
+            period_end_date=(
+                datetime.fromisoformat(value).astimezone(timezone.utc)
+                if (value := smart_battery_session_data.get("periodEndDate")) is not None
+                else None
+            ),
+            period_trade_index=(
+                int(value)
+                if (value := smart_battery_session_data.get("periodTradeIndex")) is not None
+                else None
+            ),
+            period_trading_result=(
+                float(value)
+                if (value := smart_battery_session_data.get("periodTradingResult")) is not None
+                else None
+            ),
             # trading_result=smart_battery_session_data.get("tradingResult"),
-            period_total_result=float(smart_battery_session_data.get("periodTotalResult")),
-            period_imbalance_result=float(smart_battery_session_data.get("periodImbalanceResult")),
-            period_epex_result=float(smart_battery_session_data.get("periodEpexResult")),
-            period_frank_slim=float(smart_battery_session_data.get("periodFrankSlim")),
+            period_total_result=(
+                float(value)
+                if (value := smart_battery_session_data.get("periodTotalResult")) is not None
+                else None
+            ),
+            period_imbalance_result=(
+                float(value)
+                if (value := smart_battery_session_data.get("periodImbalanceResult")) is not None
+                else None
+            ),
+            period_epex_result=(
+                float(value)
+                if (value := smart_battery_session_data.get("periodEpexResult")) is not None
+                else None
+            ),
+            period_frank_slim=(
+                float(value)
+                if (value := smart_battery_session_data.get("periodFrankSlim")) is not None
+                else None
+            ),
             sessions=[
                 SmartBatterySession.from_dict(session)
                 for session in smart_battery_session_data.get("sessions", [])
@@ -3237,12 +3317,13 @@ class SmartBatterySessions:
         return self.sessions[index]
 
     def __str__(self) -> str:
-        return f"SmartBatterySessions({self.device_id}, {len(self.sessions)} sessions, total_result={self.total_trading_result})"
-    
+        return (f"SmartBatterySessions({self.device_id}, {len(self.sessions)} sessions, "
+                f"total_result={self.total_trading_result})")
+
 @dataclass
 class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
-    
+
     last_known_state_of_charge: int
     last_known_status: str
     last_update: datetime
