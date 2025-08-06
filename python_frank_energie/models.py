@@ -39,6 +39,7 @@ class Authentication:
 
     authToken: str
     refreshToken: str
+    version: str
     expires_at: datetime | None = None
 
     @staticmethod
@@ -51,6 +52,9 @@ class Authentication:
 
         login_payload = data.get("data", {}).get("login")
         renew_payload = data.get("data", {}).get("renewToken")
+        version = data.get("data", {}).get("version")
+        _LOGGER.debug("API version: %s", version)
+
         if not login_payload and not renew_payload:
             raise AuthException("Unexpected response")
 
@@ -85,6 +89,7 @@ class Authentication:
             authToken=auth_token,
             refreshToken=refresh_token,
             expires_at=expires_at,
+            version=version,
         )
 
     @staticmethod
@@ -504,12 +509,12 @@ class PeriodUsageAndCosts:
     """Bevat het verbruik en de kosten van gas, elektriciteit en teruglevering voor een periode."""
 
     _id: str
-    gas: Optional[EnergyCategory]
-    electricity: Optional[EnergyCategory]
-    feed_in: Optional[EnergyCategory]
+    gas: EnergyCategory | None
+    electricity: EnergyCategory | None
+    feed_in: EnergyCategory | None
 
     @staticmethod
-    def from_dict(data: dict[str, Any]) -> 'PeriodUsageAndCosts':
+    def from_dict(data: dict[str, object]) -> 'PeriodUsageAndCosts':
         """Maakt een PeriodUsageAndCosts-object aan vanuit een dictionary."""
         try:
             input_data = data.get("data")
@@ -595,28 +600,6 @@ class UserSites:
         )
 
     @property
-    def old_format_delivery_site_as_dict(self):
-        sites_as_dict = []
-        for site in self.deliverySites:
-            address = site.get('address', {})
-            sites_as_dict.append(
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}")
-        return sites_as_dict
-
-    @property
-    def old2_format_delivery_site_as_dict(self) -> list[str]:
-        """Format delivery site information as a list of formatted addresses."""
-        sites_as_dict = []
-        for site in self.deliverySites:
-            address = getattr(site, 'address', {})
-            sites_as_dict.append(
-                f"{address.get('street', '')} {address.get('houseNumber', '')} "
-                f"{address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} "
-                f"{address.get('zipCode', '')} {address.get('city', '')}".strip()
-            )
-        return sites_as_dict
-
-    @property
     def format_delivery_site_as_dict(self) -> list[str]:
         """Format delivery site information as a list of formatted addresses."""
         sites_as_dict = []
@@ -625,9 +608,11 @@ class UserSites:
 
             if address:
                 sites_as_dict.append(
-                    f"{getattr(address, 'street', '')} {getattr(address, 'houseNumber', '')} "
-                    f"{getattr(address, 'houseNumberAddition', '') if getattr(address, 'houseNumberAddition', None) else ''} "
-                    f"{getattr(address, 'zipCode', '')} {getattr(address, 'city', '')}".strip()
+                    " ".join(
+                        str(getattr(address, attr, "")).strip()
+                        for attr in ["street", "houseNumber", "houseNumberAddition", "zipCode", "city"]
+                        if getattr(address, attr, "")
+                    )
                 )
         return sites_as_dict
 
@@ -885,6 +870,24 @@ class ExternalDetails:
 
 
 @dataclass
+class Contract:
+    startDate: datetime
+    endDate: datetime | None
+    contractType: str
+    productName: str
+    tariffChartId: str | None
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> "Contract":
+        return Contract(
+            start_date=data.get("startDate"),
+            end_date=data.get("endDate", {}),
+            contract_type=data.get("contractType", {}),
+            product_name=data.get("productName", {}),
+            tariff_chart_id=data.get("tariffChartId", {}),
+        )
+
+@dataclass
 class Connection:
     """Represents a connection to the energy grid."""
     id: Optional[str] = None
@@ -898,6 +901,7 @@ class Connection:
     lastMeterReadingDate: Optional[str] = None
     meterType: Optional[str] = None
     externalDetails: ExternalDetails = field(default_factory=ExternalDetails)
+    contract: Contract = None
 
 
 @dataclass
@@ -2939,18 +2943,26 @@ class Session:
     """A trading session for a battery."""
 
     date: datetime
+    status: str
     trading_result: float
+    trade_index: int | None
+    result: float
+    cumulative_result: float
     cumulative_trading_result: float
 
     @staticmethod
-    def from_dict(payload: dict[str, Any]) -> 'SmartBatterySessions.Session':
+    def from_dict(payload: dict[str, object]) -> 'SmartBatterySessions.Session':
         """Parse the sessions payload from the SmartBatterySessions query result."""
         _LOGGER.debug("🔁 Parsing SmartBatterySessions.Session response: %s", payload)
 
         try:
             return SmartBatterySessions.Session(
                 date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
+                status=str(payload["status"]),
+                trade_index=payload.get("tradeIndex"),
+                result=float(payload["result"]),
                 trading_result=float(payload["tradingResult"]),
+                cumulative_result=float(payload["cumulativeResult"]),
                 cumulative_trading_result=float(payload["cumulativeTradingResult"]),
             )
         except KeyError as exc:
@@ -3139,7 +3151,7 @@ class SmartBatterySessions:
     fairuse_policy_verified: bool
     period_start_date: date
     period_end_date: date
-    period_trade_index: int
+    period_trade_index: int | None
     period_trading_result: float
     trading_result: float
     period_total_result: float
@@ -3164,12 +3176,14 @@ class SmartBatterySessions:
 
         smart_battery_session_data = payload.get("smartBatterySessions")
         
+        _LOGGER.debug("SmartBatterySessions data: %s", smart_battery_session_data)
+        
         return SmartBatterySessions(
             device_id=smart_battery_session_data.get("deviceId"),
             fairuse_policy_verified=smart_battery_session_data.get("fairusePolicyVerified", False),
             period_start_date=datetime.fromisoformat(smart_battery_session_data.get("periodStartDate")).astimezone(timezone.utc),
             period_end_date=datetime.fromisoformat(smart_battery_session_data.get("periodEndDate")).astimezone(timezone.utc),
-            period_trade_index=int(smart_battery_session_data.get("periodTradeIndex")),
+            period_trade_index=smart_battery_session_data.get("periodTradeIndex", None),
             period_trading_result=float(smart_battery_session_data.get("periodTradingResult")),
             trading_result=smart_battery_session_data.get("tradingResult"),
             period_total_result=float(smart_battery_session_data.get("periodTotalResult")),

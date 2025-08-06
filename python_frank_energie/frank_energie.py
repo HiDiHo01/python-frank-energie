@@ -19,14 +19,13 @@ from aiohttp import ClientResponse, ClientSession, ClientError
 
 from .authentication import Authentication
 from .exceptions import (AuthException, AuthRequiredException,
-                         ConnectionException, FrankEnergieError,
-                         FrankEnergieException, LoginError, NetworkError,
-                         RequestException, SmartTradingNotEnabledException, SmartChargingNotEnabledException)
-from .models import (Authentication, EnergyConsumption, EnodeChargers, Invoice, Invoices,
+                         FrankEnergieException, NetworkError,
+                         RequestException)
+from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehicles, Invoices,
                      MarketPrices, Me, MonthInsights, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.6.17"
+VERSION = "2025.8.3"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -69,6 +68,7 @@ class FrankEnergie:
         clientsession: Optional[ClientSession] = None,
         auth_token: Optional[str] = None,
         refresh_token: Optional[str] = None,
+        version: str | None = None,
     ) -> None:
         """Initialize the FrankEnergie client."""
         self._session: Optional[ClientSession] = clientsession
@@ -76,9 +76,10 @@ class FrankEnergie:
         self._auth: Optional[Authentication] = None
 
         if auth_token or refresh_token:
-            self._auth = Authentication(auth_token, refresh_token)
+            self._auth = Authentication(auth_token, refresh_token, version)
 
     is_smart_charging = False
+    is_smart_trading = False
 
     async def close(self) -> None:
         """Close the client session if it was created internally."""
@@ -274,6 +275,7 @@ class FrankEnergie:
             login(email: $email, password: $password) {
                 authToken
                 refreshToken
+                __typename
             }
             version
             __typename
@@ -1219,7 +1221,7 @@ class FrankEnergie:
             raise FrankEnergieException("Kon verbruik en kosten niet ophalen voor opgegeven periode.") from err
 
 
-    async def smart_batteries(self) -> SmartBatteries:
+    async def smart_batteries(self) -> SmartBatteries | None:
         """Get the users smart batteries.
         For this to work, the user must have a smart battery connected to their account and smart-trading must be enabled.
 
@@ -1248,35 +1250,12 @@ class FrankEnergie:
             "SmartBatteries",
         )
 
-        response = await self._query(query)
-        mock_response = {
-            "data": {
-                "smartBatteries": [
-                    {
-                        "brand": "Sessy 1",
-                        "capacity": 5.2,
-                        "createdAt": "2024-11-22T14:41:47.853Z",
-                        "externalReference": "AAA1AAAA",
-                        "id": "cm3mockyl0000tc3nhygweghn",
-                        "maxChargePower": 2.2,
-                        "maxDischargePower": 1.7,
-                        "provider": "SESSY",
-                        "updatedAt": "2025-02-07T22:03:21.898Z",
-                    },
-                    {
-                        "brand": "Sessy 2",
-                        "capacity": 5.4,
-                        "createdAt": "2024-11-24T14:41:47.853Z",
-                        "externalReference": "BBB2BBBB",
-                        "id": "cm3moonyl0000tc3nhygweghn",
-                        "maxChargePower": 2.4,
-                        "maxDischargePower": 1.9,
-                        "provider": "SESSYY",
-                        "updatedAt": "2025-02-09T22:03:21.898Z",
-                    }
-                ]
-            }
-        }
+        try: 
+            _LOGGER.debug("Querying smart batteries")
+            response = await self._query(query)
+        except Exception as e:
+            _LOGGER.error("Failed to query smart batteries: %s", e)
+            return None
     
         # Handle empty or missing response data
         if not response:
@@ -1307,7 +1286,7 @@ class FrankEnergie:
         return SmartBatteries(smart_batteries)
 
 
-    async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails:
+    async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails | None:
         """Retrieve smart battery details and summary."""
         if self._auth is None:
             raise AuthRequiredException
@@ -1340,21 +1319,16 @@ class FrankEnergie:
             {"deviceId": device_id}
         )
 
-        response = await self._query(query)
-        mock_response = {'data': {'smartBattery': {'brand': 'SolarEdge', 'capacity': 16, 'id': "cm3mockyl0000tc3nhygweghn", 'settings': {
-            "batteryMode": "IMBALANCE_TRADING",
-            "imbalanceTradingStrategy": "AGGRESSIVE",
-            "selfConsumptionTradingAllowed": True
-        }}, "smartBatterySummary": {
-            'lastKnownStateOfCharge': 72,
-            'lastKnownStatus': 'CHARGE_IMBALANCE',
-            'lastUpdate': '2025-04-20T11:30:00.000Z',
-            'totalResult': 225.01642490011401
-        }}}
+        try: 
+            _LOGGER.debug("Querying smart battery details for device_id: %s", device_id)
+            response = await self._query(query)
+        except Exception as e:
+            _LOGGER.error("Failed to query smart battery details: %s", e)
+            return None
 
         if response is None:
             _LOGGER.debug("No response data for 'smartBatteries'")
-            return {}
+            return None
         if "smartBattery" not in response["data"] or "smartBatterySummary" not in response["data"]:
             _LOGGER.debug("Incomplete response data for 'smartBattery' or 'smartBatterySummary'")
             return {}
@@ -1365,7 +1339,7 @@ class FrankEnergie:
 
     async def smart_battery_sessions(
         self, device_id: str, start_date: date, end_date: date
-    ) -> SmartBatterySessions:
+    ) -> SmartBatterySessions | None:
         """List smart battery sessions for a device.
 
         Returns a list of all smart battery sessions for a device.
@@ -1445,126 +1419,121 @@ class FrankEnergie:
             },
         )
 
-        response = await self._query(query)
-
-        mock_response = {'data': {'smartBatterySessions': {'deviceId': 'cm3mockyl0000tc3nhygweghn', 'periodEndDate': '2025-03-05', 'periodEpexResult': -2.942766199999732, 'periodFrankSlim': 1.20423240187929, 'periodImbalanceResult': 1.7713489102796198, 'periodStartDate': '2025-02-26', 'periodTotalResult': 0.03281511215917776, 'periodTradeIndex': 15, 'periodTradingResult': 2.97558131215891, 'sessions': [{'cumulativeTradingResult': 0.28038336264503827, 'date': '2025-02-26', 'tradingResult': 0.28038336264503827}, {'cumulativeTradingResult': 0.4106682080427912, 'date': '2025-02-27', 'tradingResult': 0.13028484539775292}, {'cumulativeTradingResult': 0.9406592591022027, 'date': '2025-02-28', 'tradingResult': 0.5299910510594116}, {'cumulativeTradingResult': 1.11818115465891, 'date': '2025-03-01', 'tradingResult': 0.17752189555670733}, {'cumulativeTradingResult': 1.8727723946589099, 'date': '2025-03-02', 'tradingResult': 0.7545912399999999}, {'cumulativeTradingResult': 2.38716782965891, 'date': '2025-03-03', 'tradingResult': 0.5143954350000001}, {'cumulativeTradingResult': 2.5980938146589097, 'date': '2025-03-04', 'tradingResult': 0.21092598499999982}, {'cumulativeTradingResult': 2.97558131215891, 'date': '2025-03-05', 'tradingResult': 0.3774874975}], 'totalTradingResult': 55.14711599931087}}}
-        mock_response = {"data": {
-                        "smartBatterySessions": {
-                        "deviceId": "cm3mockyl0000tc3nhygweghn",
-                        "fairUsePolicyVerified": False,
-                        "periodEndDate": "2025-07-14",
-                        "periodEpexResult": -27.08788163827556,
-                        "periodFrankSlim": 9.829589864560651,
-                        "periodImbalanceResult": 82.051806755679,
-                        "periodStartDate": "2025-07-01",
-                        "periodTotalResult": 64.79351498196408,
-                        "periodTradeIndex": 72,
-                        "periodTradingResult": 91.88139662023964,
-                        "sessions": [
-                            {
-                            "cumulativeResult": 642.6859216849974,
-                            "date": "2025-07-01",
-                            "result": 5.530381924,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 11
-                            },
-                            {
-                            "cumulativeResult": 650.4153791904641,
-                            "date": "2025-07-02",
-                            "result": 7.72945750546675,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 125
-                            },
-                            {
-                            "cumulativeResult": 656.4380804304641,
-                            "date": "2025-07-03",
-                            "result": 6.022701240000001,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 6
-                            },
-                            {
-                            "cumulativeResult": 660.2747142008642,
-                            "date": "2025-07-04",
-                            "result": 3.836633770399999,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 37
-                            },
-                            {
-                            "cumulativeResult": 664.5093663068641,
-                            "date": "2025-07-05",
-                            "result": 4.2346521059999995,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 16
-                            },
-                            {
-                            "cumulativeResult": 674.5431836355311,
-                            "date": "2025-07-06",
-                            "result": 10.033817328667,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 361
-                            },
-                            {
-                            "cumulativeResult": 683.6324345535311,
-                            "date": "2025-07-07",
-                            "result": 9.089250918000001,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": -6
-                            },
-                            {
-                            "cumulativeResult": 692.9073872853883,
-                            "date": "2025-07-08",
-                            "result": 9.274952731857148,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 86
-                            },
-                            {
-                            "cumulativeResult": 700.9413248353883,
-                            "date": "2025-07-09",
-                            "result": 8.03393755,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 1
-                            },
-                            {
-                            "cumulativeResult": 709.570350711077,
-                            "date": "2025-07-10",
-                            "result": 8.62902587568875,
-                            "status": "COMPLETE_PRELIMINARY",
-                            "tradeIndex": None
-                            },
-                            {
-                            "cumulativeResult": 719.058522523077,
-                            "date": "2025-07-11",
-                            "result": 9.488171812000003,
-                            "status": "COMPLETE_PRELIMINARY",
-                            "tradeIndex": None
-                            },
-                            {
-                            "cumulativeResult": 723.3513938190771,
-                            "date": "2025-07-12",
-                            "result": 4.292871296,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 32
-                            },
-                            {
-                            "cumulativeResult": 726.802228441237,
-                            "date": "2025-07-13",
-                            "result": 3.4508346221600004,
-                            "status": "COMPLETE_FINAL",
-                            "tradeIndex": 122
-                            },
-                            {
-                            "cumulativeResult": 729.0369363812371,
-                            "date": "2025-07-14",
-                            "result": 2.23470794,
-                            "status": "ACTIVE",
-                            "tradeIndex": None
-                            }
-                        ]
-                        }
-                    }
-                    }
+        try:
+            _LOGGER.debug("Querying smart battery sessions for device_id: %s", device_id)
+            response = await self._query(query)
+        except Exception as e:
+            _LOGGER.error("Failed to query smart battery sessions: %s", e)
+            return None
 
         return SmartBatterySessions.from_dict(response)
+
+    ENODE_VEHICLES_QUERY = """
+        query EnodeVehicles {
+            enodeVehicles {
+                canSmartCharge
+                chargeSettings {
+                    calculatedDeadline
+                    deadline
+                    hourFriday
+                    hourMonday
+                    hourSaturday
+                    hourSunday
+                    hourThursday
+                    hourTuesday
+                    hourWednesday
+                    id
+                    isSmartChargingEnabled
+                    isSolarChargingEnabled
+                    maxChargeLimit
+                    minChargeLimit
+                }
+                chargeState {
+                    batteryCapacity
+                    batteryLevel
+                    chargeLimit
+                    chargeRate
+                    chargeTimeRemaining
+                    isCharging
+                    isFullyCharged
+                    isPluggedIn
+                    lastUpdated
+                    powerDeliveryState
+                    range
+                }
+                id
+                information {
+                    brand
+                    model
+                    vin
+                    year
+                }
+                interventions {
+                    description
+                    title
+                }
+                isReachable
+                lastSeen
+            }
+        }
+        """
+    ENODE_VEHICLES_OPERATIONNAME = "EnodeVehicles"
+    ENODE_VEHICLES_VARIABLES = {}
+
+    async def enode_vehicles(self) -> EnodeVehicles | None:
+        """Get the users enode vehicles.
+        For this to work, the user must have a enode vehicle connected to their account and smart-trading must be enabled.
+
+        Returns a list of all enode vehicles.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+
+        query = FrankEnergieQuery(
+            self.ENODE_VEHICLES_QUERY,
+            self.ENODE_VEHICLES_OPERATIONNAME,
+            self.ENODE_VEHICLES_VARIABLES,
+        )
+
+        try: 
+            _LOGGER.debug("Querying enode vehicles")
+            response = await self._query(query)
+            # return response["data"]["enodeVehicles"]
+        except Exception as e:
+            _LOGGER.error("Failed to query enode vehicles: %s", e)
+            return None
+    
+        # Handle empty or missing response data
+        if not response:
+            _LOGGER.warning("Empty or missing GraphQL response for 'enodeVehicles'")
+            return None
+
+        if response.get("errors"):
+            _LOGGER.error("Error response for 'enodeVehicles': %s", response)
+            return None
+
+        if not response.get("data"):
+            _LOGGER.warning("Empty or missing GraphQL response for 'enodeVehicles'")
+            #return {}
+            return None
+
+        _LOGGER.debug("Response data for 'enodeVehicles': %s", response)
+        # vehicles_data = response.get("data", {}).get("enodeVehicles", {})
+        vehicles_data = response["data"]["enodeVehicles"]
+
+        if not vehicles_data:
+            _LOGGER.debug("No enode vehicles found")
+            return EnodeVehicles([])
+
+        try:
+            # enode_vehicles = [EnodeVehicles.from_dict(v) for v in vehicles_data]
+            enode_vehicles = vehicles_data
+        except (KeyError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to parse enode vehicles: %s", err)
+            return EnodeVehicles([])
+
+        return EnodeVehicles(enode_vehicles)
+
 
     @property
     def is_authenticated(self) -> bool:
