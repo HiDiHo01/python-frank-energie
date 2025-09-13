@@ -16,7 +16,6 @@ classifiers = [
 ]
 packages = [
     { include = "frank_energie" },
-    { include = "python_frank_energie" },
 ]
 
 [tool.poetry.dependencies]
