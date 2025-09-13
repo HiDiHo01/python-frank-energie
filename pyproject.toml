@@ -35,7 +35,7 @@ PyJWT = "^2.10.1"
 
 # Crypto
 cryptography = ">=44.0.1,<46.0.0"
-cffi = "^1.17.1"
+cffi = "^2.0.0"
 
 # Testing
 syrupy = "^4.9.1"
