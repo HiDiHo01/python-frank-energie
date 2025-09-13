@@ -15,7 +15,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 packages = [
-    { include = "frank_energie" },
+    { include = "python-frank-energie" },
 ]
 
 [tool.poetry.dependencies]
