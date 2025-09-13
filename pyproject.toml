@@ -15,6 +15,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 packages = [
+    { include = "frank_energie" },
     { include = "python_frank_energie" },
 ]
 
@@ -129,6 +130,9 @@ max-attributes=20
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report html"
+
+[tool.setuptools]
+packages = ["frank_energie"]
 
 [tool.vulture]
 min_confidence = 80
