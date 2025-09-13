@@ -37,11 +37,11 @@ jobs:
 
       - name: Run pytest with coverage
         run: |
-          pytest \
+          PYTHONPATH=. pytest \
             --asyncio-mode=auto \
             --disable-warnings \
             --maxfail=1 \
-            --cov=custom_components.frank_energie \
+            --cov=frank_energie \
             --cov-report=xml \
             tests/
 
