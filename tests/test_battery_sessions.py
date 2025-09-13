@@ -2,9 +2,7 @@ import pytest
 from datetime import datetime, timezone, date
 
 # Import the function or class you are testing
-from python_frank_energie.models.battery import BatterySession
-# from python_frank_energie.parsers.battery import parse_sessions  # adjust based on your repo
-
+from python_frank_energie import FrankEnergie
 
 def test_parse_smart_battery_sessions(smart_battery_sessions: dict):
     """Validate parsing of smartBatterySessions.json fixture."""
