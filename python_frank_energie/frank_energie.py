@@ -25,7 +25,7 @@ from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehi
                      MarketPrices, Me, MonthInsights, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites)
 
-VERSION = "2025.8.3"
+VERSION = "2025.9.30"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -33,7 +33,7 @@ if sys.platform == "win32":
 class FrankEnergieQuery:
     """Represents a GraphQL query for the FrankEnergie API."""
 
-    def __init__(self, query: str, operation_name: str, variables: Optional[dict[str, Any]] = None) -> None:
+    def __init__(self, query: str, operation_name: str, variables: dict[str, Any] | None = None) -> None:
         if variables is not None and not isinstance(variables, dict):
             raise TypeError("The 'variables' argument must be a dictionary if provided.")
 
@@ -116,7 +116,7 @@ class FrankEnergie:
 
     async def _query(self,
                      query: FrankEnergieQuery,
-                     extra_headers: Optional[dict[str, str]] = None
+                     extra_headers: dict[str, str] | None = None
     ) -> dict[str, Any]:
         """Send a query to the FrankEnergie API.
 
@@ -142,6 +142,10 @@ class FrankEnergie:
 
         if extra_headers:
             headers.update(extra_headers)
+
+        self._last_query = query
+        self._last_variables = query.variables
+        self._operation_name = query.operation_name
 
         # print(f"Request: POST {self.DATA_URL}")
         # print(f"Request headers: {headers}")
@@ -217,7 +221,7 @@ class FrankEnergie:
             self._frank_energie_diagnostic_sensor.update_diagnostic_data(
                 diagnostic_data)
 
-    def _handle_errors(self, response: dict[str, Any]) -> None:
+    def _handle_errors(self, response: dict[str, object]) -> None:
         """Catch common error messages and raise a more specific exception.
 
         Args:
@@ -243,8 +247,11 @@ class FrankEnergie:
             elif message == "user-error:auth-required":
                 raise AuthRequiredException("Authentication required")
             elif message == "Graphql validation error":
+                _LOGGER.error("Request failed %s", self)
+                _LOGGER.error("Request query %s", getattr(self, "query", "<unknown>")),
+                _LOGGER.error("Graphql validation error: %s %s (%s)", message, path, response)
                 raise FrankEnergieException(
-                    "Request failed: Graphql validation error")
+                    "Request failed: Graphql validation error — check query and variables.")
             elif message.startswith("No marketprices found for segment"):
                 # raise FrankEnergieException("Request failed: %s", error["message"])
                 return
@@ -1399,15 +1406,12 @@ class FrankEnergie:
                         periodTradeIndex
                         periodTradingResult
                         sessions {
-                            cumulativeTradingResult
                             cumulativeResult
                             date
-                            tradingResult
                             result
                             status
                             tradeIndex
                         }
-                        totalTradingResult
                     }
                     }
                 """,
@@ -1422,6 +1426,7 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Querying smart battery sessions for device_id: %s", device_id)
             response = await self._query(query)
+            _LOGGER.debug("SmartBatterySessions Response: %s", response)
         except Exception as e:
             _LOGGER.error("Failed to query smart battery sessions: %s", e)
             return None

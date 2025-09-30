@@ -18,13 +18,17 @@ from dateutil.parser import parse
 from pydantic import BaseModel, EmailStr
 
 from .exceptions import AuthException, RequestException
-from .time_periods import TimePeriod
+try:
+    from .time_periods import TimePeriod
+except ImportError:
+    # Fallback to absolute import if relative import fails
+    from python_frank_energie.time_periods import TimePeriod
 
 DEFAULT_ROUND = 6
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-VERSION = "2025.5.23"
+VERSION = "2025.9.30"
 FETCH_TOMORROW_HOUR_UTC = 12
 
 @dataclass
@@ -887,6 +891,7 @@ class Contract:
             tariff_chart_id=data.get("tariffChartId", {}),
         )
 
+
 @dataclass
 class Connection:
     """Represents a connection to the energy grid."""
@@ -1424,7 +1429,7 @@ class ChargeSettings:
     """Represents the charge settings for an enode charger."""
     calculated_deadline: datetime
     capacity: float
-    deadline: Optional[datetime]
+    deadline: datetime | None
     hour_friday: int
     hour_monday: int
     hour_saturday: int
@@ -1433,28 +1438,76 @@ class ChargeSettings:
     hour_tuesday: int
     hour_wednesday: int
     id: str
-    initial_charge: float
-    initial_charge_timestamp: datetime
+    initial_charge: float # EnodeChargers
+    initial_charge_timestamp: datetime # EnodeChargers
     is_smart_charging_enabled: bool
     is_solar_charging_enabled: bool
-    max_charge_limit: float
-    min_charge_limit: float
+    max_charge_limit: int
+    min_charge_limit: int
 
 
 @dataclass
 class ChargeState:
     """Represents the charge state for an enode charger."""
-    battery_capacity: Optional[float]
-    battery_level: Optional[float]
-    charge_limit: Optional[float]
-    charge_rate: Optional[float]
-    charge_time_remaining: Optional[float]
+    battery_capacity: float
+    battery_level: int
+    charge_limit: int
+    charge_rate: float | None
+    charge_time_remaining: int | None
     is_charging: bool
-    is_fully_charged: Optional[bool]
+    is_fully_charged: bool
     is_plugged_in: bool
     last_updated: datetime
     power_delivery_state: str
-    range: Optional[float]
+    range: int
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'ChargeState':
+        """
+        Create a ChargeState instance from a dictionary.
+
+        Args:
+            data: Dictionary containing charge state information.
+
+        Returns:
+            ChargeState: Parsed ChargeState instance.
+
+        Raises:
+            ValueError: If required fields are missing or invalid.
+        """
+        if not isinstance(data, dict):
+            raise ValueError("Expected data to be a dictionary.")
+
+        # Convert timestamp to timezone-aware datetime
+        last_updated_raw = data.get("lastUpdated")
+        if not last_updated_raw:
+            raise ValueError("'lastUpdated' is required and cannot be empty.")
+
+        if isinstance(last_updated_raw, str):
+            try:
+                last_updated = datetime.fromisoformat(last_updated_raw)
+                if last_updated.tzinfo is None:
+                    last_updated = last_updated.replace(tzinfo=timezone.utc)
+            except ValueError as err:
+                raise ValueError("Invalid datetime format for 'last_updated'.") from err
+        elif isinstance(last_updated_raw, datetime):
+            last_updated = last_updated_raw if last_updated_raw.tzinfo else last_updated_raw.replace(tzinfo=timezone.utc)
+        else:
+            raise ValueError("'last_updated' must be a string or datetime instance.")
+
+        return cls(
+            battery_capacity=float(data["batteryCapacity"]),
+            battery_level=int(data["batteryLevel"]),
+            charge_limit=int(data["chargeLimit"]),
+            charge_rate=int(data["chargeRate"]) if data.get("chargeRate") is not None else None,
+            charge_time_remaining=int(data["chargeTimeRemaining"]) if data.get("chargeTimeRemaining") is not None else None,
+            is_charging=bool(data["isCharging"]),
+            is_fully_charged=bool(data["isFullyCharged"]),
+            is_plugged_in=bool(data["isPluggedIn"]),
+            last_updated=last_updated,
+            power_delivery_state=str(data["powerDeliveryState"]),
+            range=int(data["range"]),
+        )
 
 
 @dataclass
@@ -2944,7 +2997,7 @@ class Session:
 
     date: datetime
     status: str
-    trading_result: float
+    # trading_result: float
     trade_index: int | None
     result: float
     cumulative_result: float
@@ -2961,7 +3014,7 @@ class Session:
                 status=str(payload["status"]),
                 trade_index=payload.get("tradeIndex"),
                 result=float(payload["result"]),
-                trading_result=float(payload["tradingResult"]),
+                # trading_result=float(payload["tradingResult"]),
                 cumulative_result=float(payload["cumulativeResult"]),
                 cumulative_trading_result=float(payload["cumulativeTradingResult"]),
             )
@@ -3117,12 +3170,10 @@ class SmartBatterySession:
     """A trading session for a smart battery."""
 
     date: date
-    trading_result: float
-    cumulative_trading_result: float
-    cumulative_result: float
-    result: float
+    cumulative_result: float | None
+    result: float | None
     status: str
-    tradeIndex: int | None
+    trade_index: int | None = None
 
     @staticmethod
     def from_dict(payload: dict[str, Any]) -> "SmartBatterySession":
@@ -3131,12 +3182,10 @@ class SmartBatterySession:
         try:
             return SmartBatterySession(
                 date=datetime.fromisoformat(payload["date"]).astimezone(timezone.utc),
-                trading_result=payload["tradingResult"],
-                cumulative_trading_result=payload["cumulativeTradingResult"],
                 cumulative_result=payload["cumulativeResult"],
                 result=payload["result"],
                 status=payload["status"],
-                tradeIndex=payload["tradeIndex"],
+                trade_index=payload.get("tradeIndex"),
             )
         except KeyError as exc:
             raise ValueError("Missing expected field in session: %s" % exc) from exc
@@ -3159,7 +3208,7 @@ class SmartBatterySessions:
     period_epex_result: float
     period_frank_slim: float
     sessions: list[SmartBatterySession]
-    total_trading_result: float
+    # total_trading_result: float
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> 'SmartBatterySessions':
@@ -3194,7 +3243,7 @@ class SmartBatterySessions:
                 SmartBatterySession.from_dict(session)
                 for session in smart_battery_session_data.get("sessions", [])
             ],
-            total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
+            # total_trading_result=float(smart_battery_session_data.get("totalTradingResult")),
         )
 
     def __iter__(self) -> Iterator:
@@ -3206,8 +3255,8 @@ class SmartBatterySessions:
     def __getitem__(self, index: int) -> SmartBatterySession:
         return self.sessions[index]
 
-    def __str__(self) -> str:
-        return f"SmartBatterySessions({self.device_id}, {len(self.sessions)} sessions, total_result={self.total_trading_result})"
+    # def __str__(self) -> str:
+    #     return f"SmartBatterySessions({self.device_id}, {len(self.sessions)} sessions, total_result={self.total_trading_result})"
     
 @dataclass
 class SmartBatterySummary:
