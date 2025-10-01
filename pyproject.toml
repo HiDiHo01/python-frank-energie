@@ -34,7 +34,7 @@ pytz = "^2025.2"
 PyJWT = "^2.10.1"
 
 # Crypto
-cryptography = ">=44.0.1,<46.0.0"
+cryptography = ">=44.0.1,<47.0.0"
 cffi = "^2.0.0"
 
 # Testing
