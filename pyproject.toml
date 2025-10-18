@@ -23,7 +23,7 @@ python = ">=3.10,<4.0"
 
 # Core dependencies
 aiohttp = ">=3.8.4,<6.0.0"
-propcache = ">=0.3.0,<0.4.0"
+propcache = ">=0.3.0,<0.5.0"
 requests = "^2.32.4"
 
 # Time/date handling
@@ -59,7 +59,7 @@ pre-commit-hooks = ">=5,<7"
 pylint = "^3.3.3"
 pytest = "^8.4.0"
 pytest-asyncio = ">=0.24,<1.3"
-pytest-cov = "^6.0.0"
+pytest-cov = ">=6,<8"
 pyupgrade = "^3.19.0"
 tox = "^4.0"
 flake8-simplify = ">=0.21,<0.23"
