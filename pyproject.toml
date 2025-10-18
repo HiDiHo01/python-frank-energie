@@ -23,7 +23,7 @@ python = ">=3.10,<4.0"
 
 # Core dependencies
 aiohttp = ">=3.8.4,<6.0.0"
-propcache = ">=0.3.0,<0.4.0"
+propcache = ">=0.3.0,<0.5.0"
 requests = "^2.32.4"
 
 # Time/date handling
