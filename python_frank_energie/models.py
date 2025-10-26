@@ -1714,7 +1714,16 @@ class Price:
     market_price_including_tax: float = 0.0
     market_price_including_tax_and_markup: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Ensure that date_from is timezone-aware and normalized to UTC."""
+        if self.date_from.tzinfo is None or self.date_from.tzinfo.utcoffset(self.date_from) is None:
+            raise ValueError("date_from must be timezone-aware (include tzinfo).")
+
+        # Log warning if not UTC, but convert safely
+        if self.date_from.tzinfo != timezone.utc:
+            _LOGGER.debug("Normalizing date_from from %s to UTC.", self.date_from.tzinfo)
+            self.date_from = self.date_from.astimezone(timezone.utc)
+
         """Initialize energy_type if provided in data.
         This method sets the energy tax price based on the energy type.
         This tax is for The Netherlands and may change yearly.
@@ -1839,7 +1848,7 @@ class Price:
         return self.date_from.hour > datetime.now(timezone.utc).hour
 
     @property
-    def for_today(self) -> bool:
+    def old_for_today(self) -> bool:
         """Whether this price entry is for the current day."""
         now = datetime.now(timezone.utc).astimezone(
         )  # Convert to local timezone
@@ -1848,7 +1857,24 @@ class Price:
         return self.date_from >= day_start and self.date_till <= day_end
 
     @property
-    def for_tomorrow(self) -> bool:
+    def for_today(self) -> bool:
+        """Return whether this price entry starts during the current local day (DST-safe).
+
+        This ensures correct detection of the last hour (23:00–00:00),
+        even when the interval ends on the next day or during DST changes.
+        """
+        local_tz = ZoneInfo("Europe/Amsterdam")
+
+        # Huidige lokale kalenderdag
+        today_local = datetime.now(timezone.utc).astimezone(local_tz).date()
+
+        # Datum waarop deze prijs start
+        date_from_local = self.date_from.astimezone(local_tz).date()
+
+        return date_from_local == today_local
+
+    @property
+    def old_for_tomorrow(self) -> bool:
         """Whether this price entry is for tomorrow."""
         now = datetime.now(timezone.utc).astimezone(
         )  # Convert to local timezone
@@ -1857,6 +1883,37 @@ class Price:
             hour=0, minute=0, second=0, microsecond=0)
         tomorrow_end = tomorrow_start + timedelta(days=1)
         return tomorrow_start <= self.date_from < tomorrow_end
+
+    @property
+    def o_for_tomorrow(self) -> bool:
+        """Return whether this price entry is for tomorrow.
+
+        Ensures timezone-aware comparison between the current local day
+        and the date of this price entry.
+        """
+        local_tz = datetime.now(timezone.utc).astimezone().tzinfo
+        now_local = datetime.now(local_tz)
+        tomorrow_local = (now_local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_after_tomorrow = tomorrow_local + timedelta(days=1)
+
+        # Convert self.date_from to local timezone if it's UTC
+        date_local = self.date_from.astimezone(local_tz)
+
+        return tomorrow_local <= date_local < day_after_tomorrow
+
+    @property
+    def for_tomorrow(self) -> bool:
+        """Return whether this price entry is for tomorrow (DST-safe)."""
+        local_tz = ZoneInfo("Europe/Amsterdam")
+
+        # Huidige lokale datum (met juiste DST status)
+        today_local = datetime.now(timezone.utc).astimezone(local_tz).date()
+        tomorrow_local = today_local + timedelta(days=1)
+
+        # Datum van deze prijs in lokale tijd
+        date_local = self.date_from.astimezone(local_tz).date()
+
+        return date_local == tomorrow_local
 
     @property
     def for_upcoming(self) -> bool:
