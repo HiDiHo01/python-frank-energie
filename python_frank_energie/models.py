@@ -547,6 +547,35 @@ class PeriodUsageAndCosts:
         except (ValueError, TypeError) as e:
             raise ValueError(f"Fout bij conversie van PeriodUsageAndCosts data: {e}, data: {data}") from e
 
+@dataclass(slots=True)
+class ContractPriceResolutionState:
+    """State for price resolution settings."""
+
+    activeOption: str = None
+    availableOptions: list[str] = field(default_factory=list)
+    changeRequestEffectiveDate: Optional[date | str] = None
+    isChangeRequestPossible: bool = None
+    upcomingChange: Optional[date | str] = None
+    upcomingChangeEffectiveDate: Optional[date | str] = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> 'ContractPriceResolutionState':
+        """Create an instance from raw API dictionary."""
+        """Parse a dictionary into a ContractPriceResolutionState, converting dates."""
+        def parse_date(value: str | None) -> Optional[date]:
+            if value is None:
+                return None
+            return date.fromisoformat(value)
+        
+        return cls(
+            activeOption=data.get("activeOption"),
+            availableOptions=data.get("availableOptions", []),
+            changeRequestEffectiveDate=parse_date(data.get("changeRequestEffectiveDate")),
+            isChangeRequestPossible=data.get("isChangeRequestPossible"),
+            upcomingChange=parse_date(data.get("upcomingChange")),
+            upcomingChangeEffectiveDate=parse_date(data.get("upcomingChangeEffectiveDate")),
+        )
+
 @dataclass
 class UserSites:
     """UserSites data."""
@@ -620,6 +649,81 @@ class UserSites:
                 )
         return sites_as_dict
 
+@dataclass
+class InviteLink:
+    """InviteLink data."""
+    id: str
+    fromName: str
+    slug: str
+    treesAmountPerConnection: int
+    discountPerConnection: float
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> 'InviteLink':
+        """Parse the response from the InviteLink query."""
+        _LOGGER.debug("InviteLink %s", data)
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        if 'errors' in data:
+            raise RequestException(data['errors'][0]['message'])
+
+        payload = data.get("data", {}).get("me").get("InviteLinkUser")
+        if not payload:
+            raise RequestException("Unexpected InviteLink response")
+
+        return InviteLink(
+            id=payload.get("id"),
+            fromName=payload.get("fromName"),
+            slug=payload.get("slug"),
+            treesAmountPerConnection=payload.get("treesAmountPerConnection"),
+            discountPerConnection=payload.get("discountPerConnection"),
+        )
+
+
+@dataclass
+class PushNotificationPriceAlert:
+    """Push notification price alert data."""
+
+    id: str
+    is_enabled: bool
+    type: str
+    weekdays: list[int]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> 'PushNotificationPriceAlert':
+        """Create a PushNotificationPriceAlert from a dictionary."""
+        return cls(
+            id=str(data.get("id")),
+            is_enabled=bool(data.get("isEnabled")),
+            type=str(data.get("type")),
+            weekdays=list(data.get("weekdays", [])),
+        )
+
+    @staticmethod
+    def from_response(data: dict[str, object]) -> list['PushNotificationPriceAlert']:
+        """Parse the GraphQL response from the PushNotificationPriceAlerts query."""
+        _LOGGER.debug("Parsing PushNotificationPriceAlerts response: %s", data)
+
+        if "errors" in data:
+            error_msg = data["errors"][0].get("message", "Unknown error")
+            raise RequestException(error_msg)
+
+        payload = (
+            data.get("data", {})
+            .get("me", {})
+            .get("PushNotificationPriceAlerts")
+        )
+
+        if not payload or not isinstance(payload, list):
+            raise RequestException("Unexpected or missing PushNotificationPriceAlerts data")
+
+        alerts = [PushNotificationPriceAlert.from_dict(alert) for alert in payload]
+        _LOGGER.debug("Parsed %d PushNotificationPriceAlerts", len(alerts))
+
+        return alerts
+
 
 @dataclass
 class Me:
@@ -632,11 +736,14 @@ class Me:
     advancedPaymentAmount: float
     treesCount: int
     hasInviteLink: bool
+    InviteLinkUser: InviteLink
     hasCO2Compensation: bool
+    createdAt: str
     updatedAt: str
     addressHasMultipleSites: bool
     meterReadingExportPeriods: list['MeterReadingExportPeriod']
     smartCharging: dict
+    PushNotificationPriceAlerts: list[PushNotificationPriceAlert] = field(default_factory=list)
 
     @staticmethod
     def from_dict(data: dict[str, str]) -> 'Me':
@@ -653,6 +760,22 @@ class Me:
         if not payload:
             raise RequestException("Unexpected response")
 
+        invite_link_user = (
+            InviteLink.from_dict(payload["InviteLinkUser"])
+            if payload.get("InviteLinkUser")
+            else None
+        )
+
+        push_notification_price_alerts = [
+            PushNotificationPriceAlert.from_dict(alert)
+            for alert in payload.get("PushNotificationPriceAlerts", [])
+        ]
+
+        meter_periods = [
+            MeterReadingExportPeriod.from_dict(period)
+            for period in payload.get("meterReadingExportPeriods", [])
+        ]
+
         return Me(
             id=payload.get("id"),
             email=payload.get("email"),
@@ -661,10 +784,13 @@ class Me:
             advancedPaymentAmount=payload.get("advancedPaymentAmount"),
             treesCount=payload.get("treesCount"),
             hasInviteLink=payload.get("hasInviteLink"),
+            InviteLinkUser=invite_link_user,
+            PushNotificationPriceAlerts=push_notification_price_alerts,
             hasCO2Compensation=payload.get("hasCO2Compensation"),
+            createdAt=payload.get("createdAt"),
             updatedAt=payload.get("updatedAt"),
             addressHasMultipleSites=payload.get("addressHasMultipleSites"),
-            meterReadingExportPeriods=payload.get("meterReadingExportPeriods"),
+            meterReadingExportPeriods=meter_periods,
             smartCharging=payload.get("smartCharging"),
         )
 
@@ -1839,13 +1965,18 @@ class Price:
 
     @property
     def for_now(self) -> bool:
-        """Whether this price entry is for the current hour."""
+        """Return True when the current UTC time falls within this price interval."""
         return self.date_from <= datetime.now(timezone.utc) < self.date_till
 
     @property
-    def for_future(self) -> bool:
+    def for_future_hour(self) -> bool:
         """Whether this price entry is for and hour after the current one."""
         return self.date_from.hour > datetime.now(timezone.utc).hour
+
+    @property
+    def for_future(self) -> bool:
+        """Return True if this price interval starts after the current UTC time."""
+        return self.date_from > datetime.now(timezone.utc)
 
     @property
     def old_for_today(self) -> bool:
@@ -2084,6 +2215,8 @@ class PriceData:
     elec_nexthour: float = None
     gas_unit: str = None
     elec_unit: str = None
+    gas_resolution: str = None
+    elec_resolution: str = None
 
     """" 
     PriceDataAvg = namedtuple('PriceDataAvg', [
@@ -2131,6 +2264,25 @@ class PriceData:
     def previous_hour(self) -> Optional['Price']:
         """ Price that was the previous hour applicable. """
         return next((hour for hour in self.price_data if hour.for_previous_hour), None)
+
+    @property
+    def current(self) -> Optional['Price']:
+        """Return the price entry that is currently active (interval-based).
+
+        Works with any resolution (PT15M, PT30M, PT60M) by checking whether
+        the current time is within [date_from, date_till) in local time.
+        """
+        local_tz = ZoneInfo("Europe/Amsterdam")
+        now_local = datetime.now(timezone.utc).astimezone(local_tz)
+
+        for price in self.price_data:
+            start = price.date_from.astimezone(local_tz)
+            end = price.date_till.astimezone(local_tz)
+
+            if start <= now_local < end:
+                return price
+
+        return None
 
     @property
     def current_hour(self) -> Optional['Price']:
@@ -2963,8 +3115,13 @@ class MarketPrices:
             return None
 
         # Get market prices from the payload
-        market_prices_electricity = payload.get("marketPricesElectricity", {})
-        market_prices_gas = payload.get("marketPricesGas", {})
+        market_prices =  payload.get("marketPrices", {})
+        market_prices_electricity = market_prices.get("electricityPrices", {})
+        if payload.get("marketPricesElectricity", {}):
+            market_prices_electricity = payload.get("marketPricesElectricity", {})
+        market_prices_gas = market_prices.get("gasPrices", {})
+        if payload.get("marketPricesGas", {}):
+            market_prices_gas = payload.get("marketPricesGas", {})
 
         return MarketPrices(
             electricity=PriceData(market_prices_electricity,

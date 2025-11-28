@@ -23,9 +23,9 @@ from .exceptions import (AuthException, AuthRequiredException,
                          RequestException)
 from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehicles, Invoices,
                      MarketPrices, Me, MonthInsights, MonthSummary,
-                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites)
+                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites, ContractPriceResolutionState)
 
-VERSION = "2025.9.30"
+VERSION = "2025.11.12"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -134,7 +134,11 @@ class FrankEnergie:
             # "User-Agent": self.generate_system_user_agent(), # not working properly
         headers = {
             "Content-Type": "application/json",
-            "Accept": "application/json"
+            "Accept": "application/json",
+            "x-graphql-client-version": "4.13.3",
+            "x-graphql-client-name": "frank-app",
+            "x-graphql-client-os": "ios/26.0.1",
+            "skip-graphcdn": "1"
         }
 
         if self._auth is not None and self._auth.authToken is not None:
@@ -789,6 +793,52 @@ class FrankEnergie:
         response = await self._query(query)
         return UserSites.from_dict(response)
 
+    async def contract_price_resolution_state(self, connection_id: str | None = None) -> ContractPriceResolutionState:
+        """
+        Fetch the contract price resolution state for a given connection.
+
+        Args:
+            connection_id: The ID of the connection to query. Must not be None.
+
+        Raises:
+            AuthRequiredException: If authentication has not been performed.
+            ValueError: If connection_id is None.
+
+        Returns:
+            ContractPriceResolutionState: Parsed response from the API.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+
+        if connection_id is None:
+            raise ValueError("connection_id must be provided")
+
+        query = FrankEnergieQuery(
+            """
+            query ContractPriceResolutionState($connectionId: String!) {
+                contractPriceResolutionState(connectionId: $connectionId) {
+                    activeOption
+                    availableOptions
+                    changeRequestEffectiveDate
+                    isChangeRequestPossible
+                    upcomingChange
+                    upcomingChangeEffectiveDate
+                }
+            }
+            """,
+            "ContractPriceResolutionState",
+            {"connectionId": connection_id},
+        )
+
+        try:
+            _LOGGER.debug("Fetching contract price resolution state for connection ID: %s", connection_id)
+            response = await self._query(query)
+            # extract the actual field returned by the API
+            data = response["data"]["contractPriceResolutionState"]
+            return ContractPriceResolutionState.from_dict(data)
+        except Exception as e:
+            _LOGGER.error("Failed to fetch contract price resolution state: %s", e)
+            return None
     # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
     # query UserSmartCharging {\\n  userSmartCharging {\\n    isActivated\\n    provider\\n    userCreatedAt\\n    userId\\n    isAvailableInCountry\\n    needsSubscription\\n    subscription {\\n      startDate\\n      endDate\\n      id\\n      proposition {\\n        product\\n        countryCode\\n      }\\n    }\\n  }\\n}\\n\",\"operationName\":\"UserSmartCharging\"}
     # {\"query\":\"query AppVersion {\\n  appVersion {\\n    ios {\\n      version\\n    }\\n    android {\\n      version\\n    }\\n  }\\n}\\n\",\"operationName\":\"AppVersion\"}"
@@ -982,6 +1032,7 @@ class FrankEnergie:
                     electricityPrices {
                         from
                         till
+                        resolution
                         marketPrice
                         marketPriceTax
                         sourcingMarkupPrice
@@ -992,6 +1043,7 @@ class FrankEnergie:
                     gasPrices {
                         from
                         till
+                        resolution
                         marketPrice
                         marketPriceTax
                         sourcingMarkupPrice
@@ -1009,8 +1061,8 @@ class FrankEnergie:
         response = await self._query(query, extra_headers=headers)
         return MarketPrices.from_be_dict(response)
 
-    async def prices(
-        self, start_date: Optional[date] | None = None, end_date: Optional[date] | None = None
+    async def o_prices(
+        self, start_date: Optional[date] | None = None, end_date: Optional[date] | None = None, resolution: Optional[str] | None = None
     ) -> MarketPrices:
         """Get market prices."""
         if not start_date:
@@ -1024,6 +1076,7 @@ class FrankEnergie:
                 marketPricesElectricity(startDate: $startDate, endDate: $endDate) {
                     from
                     till
+                    resolution
                     marketPrice
                     marketPriceTax
                     sourcingMarkupPrice
@@ -1034,6 +1087,7 @@ class FrankEnergie:
                 marketPricesGas(startDate: $startDate, endDate: $endDate) {
                     from
                     till
+                    resolution
                     marketPrice
                     marketPriceTax
                     sourcingMarkupPrice
@@ -1046,7 +1100,81 @@ class FrankEnergie:
             }
             """,
             "MarketPrices",
-            {"startDate": str(start_date), "endDate": str(end_date)},
+            {"startDate": str(start_date), "endDate": str(end_date), "resolution": "PT15M"},
+        )
+        response = await self._query(query)
+        return MarketPrices.from_dict(response)
+
+    async def prices(
+        self, start_date: Optional[date] | None = None, end_date: Optional[date] | None = None, resolution: Optional[str] | None = None
+    ) -> MarketPrices:
+        """Get market prices."""
+        if not start_date:
+            start_date = date.today()
+
+        query = FrankEnergieQuery(
+            """
+            query MarketPrices($date: String!, $resolution: PriceResolution!) {\n
+                marketPrices(date: $date, resolution: $resolution) {\n
+                    averageElectricityPrices {\n
+                        averageMarketPrice\n
+                        averageMarketPricePlus\n
+                        averageAllInPrice\n
+                        perUnit\n
+                        isWeighted\n
+                        __typename\n
+                    }\n
+                    electricityPrices {\n
+                        from\n
+                        till\n
+                        resolution\n
+                        marketPrice\n
+                        marketPriceTax\n
+                        sourcingMarkupPrice\n
+                        energyTaxPrice\n
+                        marketPricePlus\n
+                        allInPrice\n
+                        perUnit\n
+                        marketPricePlusComponents {\n
+                            name\n
+                            value\n
+                            __typename\n
+                        }\n
+                        allInPriceComponents {\n
+                            name\n
+                            value\n
+                            __typename\n
+                        }\n
+                        __typename\n
+                    }\n
+                    gasPrices {\n
+                        from\n
+                        till\n
+                        resolution\n
+                        marketPrice\n
+                        marketPriceTax\n
+                        sourcingMarkupPrice\n
+                        energyTaxPrice\n
+                        marketPricePlus\n
+                        allInPrice\n
+                        perUnit\n
+                        marketPricePlusComponents {\n
+                            name\n
+                            value\n
+                            __typename\n
+                        }\n
+                        __typename\n
+                        allInPriceComponents {\n
+                            name\n
+                            value\n
+                            __typename\n
+                        }\n
+                    }\n
+                }\n
+            }\n
+            """,
+            "MarketPrices",
+            {"date": str(start_date), "resolution": resolution},
         )
         response = await self._query(query)
         return MarketPrices.from_dict(response)
@@ -1083,6 +1211,7 @@ class FrankEnergie:
                         date
                         from
                         till
+                        resolution
                         marketPrice
                         marketPricePlus
                         marketPriceTax
@@ -1105,6 +1234,7 @@ class FrankEnergie:
                         date
                         from
                         till
+                        resolution
                         marketPrice
                         marketPricePlus
                         marketPriceTax
@@ -1114,10 +1244,12 @@ class FrankEnergie:
                         allInPriceComponents {
                             name
                             value
+                            __typename
                         }
                         marketPricePlusComponents {
                             name
                             value
+                            __typename
                         }
                         __typename
                     }
@@ -1126,10 +1258,11 @@ class FrankEnergie:
             }
             """,
             "MarketPrices",
-            {"date": str(start_date), "siteReference": site_reference},
+            {"date": str(start_date), "siteReference": site_reference, "resolution": "PT15M"},
         )
         response = await self._query(query)
         return MarketPrices.from_userprices_dict(response)
+
 
     async def period_usage_and_costs(self,
                                      site_reference: str,
@@ -1538,7 +1671,6 @@ class FrankEnergie:
             return EnodeVehicles([])
 
         return EnodeVehicles(enode_vehicles)
-
 
     @property
     def is_authenticated(self) -> bool:
