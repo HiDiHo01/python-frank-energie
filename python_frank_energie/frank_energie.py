@@ -438,18 +438,19 @@ class FrankEnergie:
         )
 
         try:
-          response = await self._query(query)
+            response = await self._query(query)
 
-          # API returns None or empty when the contract is new
-          if response is None or response.get("monthSummary") is None:
-            return MonthSummary.from_dict({})
+            # API returns None or empty when the contract is new
+            if response is None or response.get("monthSummary") is None:
+                _LOGGER.debug("No month summary data available.")
+                return MonthSummary.from_dict({})
 
-          return MonthSummary.from_dict(response)
+            return MonthSummary.from_dict(response)
 
         except AuthException as exc:
             # Frank Energie returns 401 for new contracts with no history
             return MonthSummary.from_dict({})
-      
+
         except Exception as exc:
             raise FrankEnergieException(
                 "Failed to fetch month summary: %s" % exc
@@ -1768,4 +1769,5 @@ class FrankEnergie:
 
 # Print the result
 # print("Introspection Result:", introspection_result)
+
 
