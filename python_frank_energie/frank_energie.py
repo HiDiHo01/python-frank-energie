@@ -438,12 +438,22 @@ class FrankEnergie:
         )
 
         try:
-            response = await self._query(query)
-            return MonthSummary.from_dict(response)
-        except Exception as e:
+          response = await self._query(query)
+
+          # API returns None or empty when the contract is new
+          if response is None or response.get("monthSummary") is None:
+            return MonthSummary.from_dict({})
+
+          return MonthSummary.from_dict(response)
+
+        except AuthException as exc:
+            # Frank Energie returns 401 for new contracts with no history
+            return MonthSummary.from_dict({})
+      
+        except Exception as exc:
             raise FrankEnergieException(
-              f"Failed to fetch month summary: {e}"
-              ) from e
+                "Failed to fetch month summary: %s" % exc
+            ) from exc
 
     async def enode_chargers(self, site_reference: str, start_date: date) -> dict[str, EnodeChargers]:
         """Retrieve the enode charger information for the specified site reference.
@@ -1758,3 +1768,4 @@ class FrankEnergie:
 
 # Print the result
 # print("Introspection Result:", introspection_result)
+
