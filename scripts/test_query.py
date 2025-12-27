@@ -51,7 +51,7 @@ async def execute_query():
     try:
         async with FrankEnergie() as frank_energie:
             _LOGGER.info("Fetching market prices for date range %s to %s", current_date, tomorrow)
-            market_prices = await frank_energie.prices(current_date, tomorrow)
+            market_prices = await frank_energie.prices(current_date, tomorrow, "PT15M")
 
             if not market_prices:
                 _LOGGER.warning("No market prices available for the given date range.")
