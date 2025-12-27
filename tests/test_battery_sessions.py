@@ -2,11 +2,14 @@ import pytest
 from datetime import datetime, timezone, date
 
 # Import the function or class you are testing
-from python_frank_energie import FrankEnergie
-from python_frank_energie.models.battery import BatterySession, parse_sessions
+from python_frank_energie import BatterySession, parse_sessions
 
 def test_parse_smart_battery_sessions(smart_battery_sessions: dict):
-    """Validate parsing of smartBatterySessions.json fixture."""
+    """Validate parsing of smartBatterySessions.json fixture into BatterySession objects."""
+    assert "data" in smart_battery_sessions, "Missing 'data' root key in fixture."
+    assert (
+        "smartBatterySessions" in smart_battery_sessions["data"]
+    ), "Missing 'smartBatterySessions' key inside 'data'."
     # Extract sessions from data
     data = smart_battery_sessions["data"]["smartBatterySessions"]
 
