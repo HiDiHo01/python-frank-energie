@@ -128,7 +128,7 @@ ignore-imports = true
 max-attributes=20
 
 [tool.pytest.ini_options]
-addopts = "--cov --cov-report html"
+addopts = "--asyncio-mode=auto --cov --cov-report html"
 
 [tool.setuptools]
 packages = ["frank_energie"]
