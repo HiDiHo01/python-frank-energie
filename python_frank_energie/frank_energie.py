@@ -60,8 +60,8 @@ def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
 class FrankEnergie:
     """FrankEnergie API client."""
 
-    DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
-    # DATA_URL = "https://graphql.frankenergie.nl/"
+    # DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
+    DATA_URL = "https://graphql.frankenergie.nl/"
 
     def __init__(
         self,
@@ -74,6 +74,10 @@ class FrankEnergie:
         self._session: Optional[ClientSession] = clientsession
         self._close_session: bool = clientsession is None
         self._auth: Optional[Authentication] = None
+        self._last_query: Optional[FrankEnergieQuery] = None
+        self._last_variables: Optional[dict[str, object]] = None
+        self._operation_name: Optional[str] = None
+        self._site_reference: Optional[str] = None
 
         if auth_token or refresh_token:
             self._auth = Authentication(auth_token, refresh_token, version)
@@ -117,7 +121,7 @@ class FrankEnergie:
     async def _query(self,
                      query: FrankEnergieQuery,
                      extra_headers: dict[str, str] | None = None
-    ) -> dict[str, Any]:
+    ) -> dict[str, object]:
         """Send a query to the FrankEnergie API.
 
         Args:
@@ -141,7 +145,7 @@ class FrankEnergie:
             "skip-graphcdn": "1"
         }
 
-        if self._auth is not None and self._auth.authToken is not None:
+        if self._auth and self._auth.authToken:
             headers["Authorization"] = f"Bearer {self._auth.authToken}"
 
         if extra_headers:
@@ -151,25 +155,19 @@ class FrankEnergie:
         self._last_variables = query.variables
         self._operation_name = query.operation_name
 
-        # print(f"Request: POST {self.DATA_URL}")
-        # print(f"Request headers: {headers}")
-        _LOGGER.debug("Request headers: %s", headers)
-        # print(f"Request payload: {query}")
-        # print(f"Request payload: {query.to_dict()}")
-        if isinstance(query, dict):
-            _LOGGER.debug("Request payload: %s", query)
+        payload: dict[str, object]
+        if hasattr(query, "to_dict") and callable(query.to_dict):
+            payload = query.to_dict()
         else:
-            _LOGGER.debug("Request payload: %s", query.to_dict())
+            raise TypeError(
+                "Query object must implement to_dict() to be JSON serializable."
+            )
+
+        _LOGGER.debug("Request payload: %s", payload)
 
         await self._ensure_session()
 
         try:
-            if hasattr(query, "to_dict") and callable(query.to_dict):
-                payload = query.to_dict()
-            else:
-                _LOGGER.error("Query object does not implement to_dict() method: %s", query)
-                # print(f"Query object does not implement to_dict() method: {query}")
-                raise TypeError("Query object must implement a to_dict() method to be JSON serializable.", query)
             async with self._session.post(
                 self.DATA_URL,
                 json=payload,
@@ -177,14 +175,15 @@ class FrankEnergie:
                 timeout=30
             ) as resp:
                 resp.raise_for_status()
-                response: dict[str, Any] = await resp.json()
+                response: dict[str, object] = await resp.json()
 
             # self._process_diagnostic_data(response)
             if not response:
-                _LOGGER.debug("No response data.")
+                _LOGGER.debug("Empty API-response retrieved.")
                 return {}
 
             logging.debug("Response body: %s", response)
+
             self._handle_errors(response)
 
             # print(f"Response status code: {response.status}")
@@ -214,7 +213,11 @@ class FrankEnergie:
             traceback.print_exc()
             raise error
 
-    def _process_diagnostic_data(self, response: dict[str, Any]) -> None:
+        finally:
+            # Zorg dat foutlogging altijd correcte context krijgt
+            self._operation_name = None
+
+    def _process_diagnostic_data(self, response: dict[str, object]) -> None:
         """Process the diagnostic data and update the sensor state.
 
         Args:
@@ -241,9 +244,14 @@ class FrankEnergie:
         if not errors:
             return
 
+        active_query = getattr(self, "_operation_name", "<unknown>")
+
         for error in errors:
-            message = error["message"]
-            path = error["path"] if "path" in error else None
+            message: str = error.get("message", "")
+            path: object | None = error.get("path")
+            ext: dict[str, object] | None = error.get("extensions")  # GraphQL extension metadata
+
+            # Known authentication errors
             if message == "user-error:password-invalid":
                 raise AuthException("Invalid password")
             elif message == "user-error:auth-not-authorised":
@@ -251,11 +259,15 @@ class FrankEnergie:
             elif message == "user-error:auth-required":
                 raise AuthRequiredException("Authentication required")
             elif message == "Graphql validation error":
-                _LOGGER.error("Request failed %s", self)
-                _LOGGER.error("Request query %s", getattr(self, "query", "<unknown>")),
-                _LOGGER.error("Graphql validation error: %s %s (%s)", message, path, response)
+                _LOGGER.error("Graphql validation error - query %s: %s %s (%s)",
+                              active_query,
+                              message,
+                              path,
+                              response,
+                              )
                 raise FrankEnergieException(
-                    "Request failed: Graphql validation error — check query and variables.")
+                    f"Request failed for '{active_query}': Graphql validation error — check query and variables."
+                    )
             elif message.startswith("No marketprices found for segment"):
                 # raise FrankEnergieException("Request failed: %s", error["message"])
                 return
@@ -280,6 +292,9 @@ class FrankEnergie:
             else:
                 _LOGGER.error("Unhandled error: %s", message)
                 _LOGGER.error("Unhandled error in GraphQL response: %s", error)
+
+            if ext:
+                _LOGGER.debug("GraphQL extensions: %s", ext)
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
@@ -439,22 +454,11 @@ class FrankEnergie:
 
         try:
             response = await self._query(query)
-
-            # API returns None or empty when the contract is new
-            if response is None or response.get("monthSummary") is None:
-                _LOGGER.debug("No month summary data available.")
-                return MonthSummary.from_dict({})
-
             return MonthSummary.from_dict(response)
-
-        except AuthException as exc:
-            # Frank Energie returns 401 for new contracts with no history
-            return MonthSummary.from_dict({})
-
-        except Exception as exc:
+        except Exception as e:
             raise FrankEnergieException(
-                "Failed to fetch month summary: %s" % exc
-            ) from exc
+              f"Failed to fetch month summary: {e}"
+              ) from e
 
     async def enode_chargers(self, site_reference: str, start_date: date) -> dict[str, EnodeChargers]:
         """Retrieve the enode charger information for the specified site reference.
@@ -579,32 +583,41 @@ class FrankEnergie:
         if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
+        if not site_reference:
+            _LOGGER.warning("No site reference available, skipping invoice fetch")
+            return
+
         query = FrankEnergieQuery(
             """
             query Invoices($siteReference: String!) {
                 invoices(siteReference: $siteReference) {
                     allInvoices {
-                        StartDate
-                        PeriodDescription
-                        TotalAmount
+                        id
+                        invoiceDate
+                        startDate
+                        periodDescription
+                        totalAmount
                         __typename
                     }
                     previousPeriodInvoice {
-                        StartDate
-                        PeriodDescription
-                        TotalAmount
+                        id
+                        startDate
+                        periodDescription
+                        totalAmount
                         __typename
                     }
                     currentPeriodInvoice {
-                        StartDate
-                        PeriodDescription
-                        TotalAmount
+                        id
+                        startDate
+                        periodDescription
+                        totalAmount
                         __typename
                     }
                     upcomingPeriodInvoice {
-                        StartDate
-                        PeriodDescription
-                        TotalAmount
+                        id
+                        startDate
+                        periodDescription
+                        totalAmount
                         __typename
                     }
                 __typename
@@ -1769,5 +1782,3 @@ class FrankEnergie:
 
 # Print the result
 # print("Introspection Result:", introspection_result)
-
-

@@ -152,6 +152,7 @@ class Invoice:
     """Represents invoice information, including the start date, period
     description, and total amount."""
 
+    id: str
     StartDate: datetime
     PeriodDescription: str
     TotalAmount: float
@@ -185,10 +186,11 @@ class Invoice:
             return [Invoice.from_dict(item) for item in data]
 
         return Invoice(
-            StartDate=parse(data.get("StartDate")).astimezone(
+            id=data.get("id"),
+            StartDate=parse(data.get("startDate")).astimezone(
                 pytz.timezone('Europe/Amsterdam')),
-            PeriodDescription=data.get("PeriodDescription"),
-            TotalAmount=float(data.get("TotalAmount")),
+            PeriodDescription=data.get("periodDescription"),
+            TotalAmount=float(data.get("totalAmount")),
         )
 
 
