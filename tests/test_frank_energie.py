@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import aiohttp
 import pytest_socket
 import pytest
+pytestmark = pytest.mark.enable_socket
+
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
