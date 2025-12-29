@@ -10,6 +10,9 @@ jobs:
   tests:
     runs-on: ubuntu-latest
 
+    env:
+      PYTEST_DISABLE_SOCKET: true
+
     strategy:
       fail-fast: false
       matrix:
@@ -44,8 +47,6 @@ jobs:
             --cov=frank_energie \
             --cov-report=xml \
             tests/
-        env:
-          PYTEST_DISABLE_SOCKET: true
 
       - name: Upload coverage report
         uses: codecov/codecov-action@v5
