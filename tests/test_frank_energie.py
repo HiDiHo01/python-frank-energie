@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 import aiohttp
 import pytest
-pytestmark = pytest.mark.enable_socket
 
 from syrupy.assertion import SnapshotAssertion
 
