@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 import aiohttp
+import pytest_socket
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -31,9 +32,8 @@ async def test_init_with_authentication():
 #
 # Login tests
 #
-
-
 @pytest.mark.asyncio
+@pytest.mark.allow_socket  # <-- add this marker
 async def test_login(aresponses):
     """Test login."""
     aresponses.add(
