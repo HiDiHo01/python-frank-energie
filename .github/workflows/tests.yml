@@ -30,6 +30,9 @@ jobs:
       - name: Install Poetry (if you use poetry)
         run: pip install poetry
 
+      - name: Uninstall pytest-socket
+        run: pip uninstall -y pytest-socket || true
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
