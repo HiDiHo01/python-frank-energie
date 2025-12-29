@@ -34,7 +34,6 @@ async def test_init_with_authentication():
 # Login tests
 #
 @pytest.mark.asyncio
-@pytest.mark.enable_socket
 async def test_login(aresponses):
     """Test login."""
     aresponses.add(
