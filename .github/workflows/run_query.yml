@@ -56,7 +56,7 @@ jobs:
           poetry run /home/runner/work/python-frank-energie/python-frank-energie/.venv/bin/python /home/runner/work/python-frank-energie/python-frank-energie/scripts/test_query.py
 
       - name: Upload Log Artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: frank-energie-logs-${{ matrix.python-version }}
           path: logs/output_${{ matrix.python-version }}.log
