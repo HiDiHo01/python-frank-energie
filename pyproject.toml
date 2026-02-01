@@ -46,7 +46,7 @@ six = "^1.17.0"
 [tool.poetry.group.dev.dependencies]
 colorama = "^0.4.6"
 iniconfig = "^2.1.0"
-packaging = ">=24.2,<26.0"
+packaging = ">=24.2,<27.0"
 pluggy = "^1.6.0"
 aresponses = "^3.0.0"
 black = ">=24.8,<26.0"
