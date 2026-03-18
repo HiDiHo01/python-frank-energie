@@ -3148,10 +3148,20 @@ class MarketPrices:
         if not data:
             return cls(PriceData(), PriceData())
 
+        # data.get("data") can return None when the BE API has not yet
+        # published tomorrow's prices (typically before ~14:00 CET).
+        data_inner = data.get("data")
+        if not data_inner:
+            _LOGGER.debug(
+                "BE market prices: 'data' key is absent or null "
+                "(prices likely not yet published). Returning empty prices."
+            )
+            return cls(PriceData(), PriceData())
+
         try:
-            payload = data.get("data").get("marketPrices", {})
-        except KeyError as err:
-                    raise ValueError(f"Invalid response format: %s" % err) from err
+            payload = data_inner.get("marketPrices", {})
+        except (KeyError, AttributeError) as err:
+            raise ValueError(f"Invalid response format: %s" % err) from err
 
         # electricity_data = data.get("electricityPrices", {})
         # gas_data = data.get("gasPrices", {})
