@@ -4,6 +4,7 @@
 # python-frank-energie
 
 Asyncio package to communicate with Frank Energie. This package is created to be used with https://github.com/HiDiHo01/home-assistant-frank_energie.
+The python-frank-energie repository is a well-structured, modern Python library. It effectively leverages asynchronous programming, dataclasses for robust data modeling, and Poetry for packaging. The extensive test suite with mocked GraphQL responses and the automated CI/CD pipeline demonstrate a high standard of software engineering, making it a reliable foundation for the Home Assistant integration it serves.
 
 ## Disclaimer
 
