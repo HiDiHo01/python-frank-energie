@@ -26,7 +26,7 @@ except ImportError:
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-VERSION = "2026.02.13"
+VERSION = "2026.3.22"
 DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 12
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
