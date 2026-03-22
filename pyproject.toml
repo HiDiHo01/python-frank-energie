@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2025.12.29"
+version = "2026.3.22"
 description = "Asynchronous Python client for the Frank Energie"
 authors = ["HiDiHo01"]
 maintainers = ["HiDiHo01"]
@@ -10,7 +10,7 @@ homepage = "https://github.com/HiDiHo01/python-frank-energie"
 repository = "https://github.com/HiDiHo01/python-frank-energie"
 documentation = "https://github.com/HiDiHo01/python-frank-energie"
 classifiers = [
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
 ]
