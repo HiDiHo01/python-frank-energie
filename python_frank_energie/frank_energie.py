@@ -26,7 +26,7 @@ from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehi
                      MarketPrices, Me, MonthInsights, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites, ContractPriceResolutionState)
 
-VERSION = "2025.11.12"
+VERSION = "2026.3.22"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
