@@ -840,7 +840,7 @@ class Me:
     # @staticmethod
     # def from_dict(data: dict[str, str]) -> 'Me':
     @classmethod
-    def from_dict(cls, data: Mapping[str, object]) -> Me:
+    def from_dict(cls, data: Mapping[str, object]) -> 'Me':
         """Parse the response from the me query."""
         _LOGGER.debug("User %s", data)
 
