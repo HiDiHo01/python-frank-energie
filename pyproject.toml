@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2026.3.22"
+version = "2026.4.8"
 description = "Asynchronous Python client for the Frank Energie"
 authors = ["HiDiHo01"]
 maintainers = ["HiDiHo01"]
@@ -10,67 +10,58 @@ homepage = "https://github.com/HiDiHo01/python-frank-energie"
 repository = "https://github.com/HiDiHo01/python-frank-energie"
 documentation = "https://github.com/HiDiHo01/python-frank-energie"
 classifiers = [
-    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 packages = [
     { include = "python_frank_energie" },
 ]
+keywords = [
+  "home-assistant",
+  "energy",
+  "async",
+  "asyncio",
+  "api",
+  "frank-energie"
+]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<4.0"
+python = ">=3.12,<4.0"
 
 # Core dependencies
-aiohttp = ">=3.8.4,<6.0.0"
-propcache = ">=0.3.0,<0.5.0"
-requests = ">=2.32.5"
+aiohttp = ">=3.9.0,<4.0.0"
 
 # Time/date handling
-python-dateutil = ">=2.9.0, <3.0.0"
+# python-dateutil = ">=2.9.0, <3.0.0"
 
 # JWT-related
 PyJWT = "^2.10.1"
 
 # Crypto
 cryptography = ">=44.0.1,<47.0.0"
-cffi = "^2.0.0"
 
-# Testing
-syrupy = ">=4.9.1,<6.0.0"
-
-# Compatibility
-six = "^1.17.0"
+typing-extensions = ">=4.10.0"
 
 [tool.poetry.group.dev.dependencies]
 colorama = "^0.4.6"
 iniconfig = "^2.1.0"
 packaging = ">=24.2,<27.0"
-pluggy = "^1.6.0"
 aresponses = "^3.0.0"
 black = ">=24.8,<27.0"
 blacken-docs = "^1.19.1"
-flake8 = "^4.0.1"
-flake8-docstrings = "^1.5.0"
 pre-commit = ">=3.8,<5.0"
-isort = ">=5.13.2,<9.0.0"
 pre-commit-hooks = ">=5,<7"
-pylint = ">=3.3.3,<5.0.0"
 pytest = ">=8.4,<10.0"
 pytest-asyncio = ">=0.24,<1.4"
 pytest-cov = ">=6,<8"
-pyupgrade = "^3.19.0"
-tox = "^4.0"
-flake8-simplify = ">=0.21,<0.31"
+ruff = "^0.15.9"
+syrupy = ">=4.9.1,<6.0.0"
 vulture = "^2.12"
-flake8-bandit = "^3.0.0"
-flake8-bugbear = "^23.3.12"
-flake8-builtins = ">=2.5,<4.0"
-flake8-comprehensions = "^3.16.0"
-flake8-eradicate = "^1.2.1"
-flake8-markdown = "^0.3.0"
 freezegun = "^1.5.1"
-darglint = "^1.8.1"
 safety = "^3.2.7"
 codespell = "^2.3.0"
 bandit = "^1.8.2"
@@ -80,57 +71,33 @@ bandit = "^1.8.2"
 Changelog = "https://github.com/HiDiHo01/python-frank-energie/releases"
 
 [tool.black]
-target-version = ['py310']
+target-version = ['py312']
 line-length = 120
 
-[tool.coverage.paths]
+[tool.coverage.run]
+branch = true
 source = ["python_frank_energie"]
+omit = ["tests/*"]
 
 [tool.coverage.report]
 show_missing = true
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
-[tool.coverage.run]
-branch = true
-source = ["python_frank_energie"]
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-
-[tool.pylint.BASIC]
-good-names = [
-    "_",
-    "ex",
-    "fp",
-    "i",
-    "id",
-    "j",
-    "k",
-    "on",
-    "Run",
-    "T",
-]
-
-[tool.pylint."MESSAGES CONTROL"]
-disable= [
-    "too-few-public-methods",
-    "duplicate-code",
-    "format",
-    "unsubscriptable-object",
-]
-
-[tool.pylint.SIMILARITIES]
-ignore-imports = true
-
-[tool.pylint.DESIGN]
-max-attributes=20
-
 [tool.pytest.ini_options]
-addopts = "--asyncio-mode=auto --cov --cov-report html"
+addopts = "--asyncio-mode=auto --cov --cov-report=html --strict-markers"
 
-[tool.setuptools]
-packages = ["frank_energie"]
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+select = ["E", "F", "W", "B", "I", "UP", "ASYNC"]
+extend-select = ["D401", "SIM", "C4", "TCH"]
+ignore = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["python_frank_energie"]
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = false
 
 [tool.vulture]
 min_confidence = 80
@@ -138,5 +105,5 @@ paths = ["python_frank_energie", "tests"]
 verbose = true
 
 [build-system]
-requires = ["setuptools", "poetry-core>=1.0.0"]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
