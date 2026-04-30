@@ -52,7 +52,8 @@ jobs:
       - name: Execute Frank Energie Query
         run: |
           set -e
-          poetry run /home/runner/work/python-frank-energie/python-frank-energie/.venv/bin/python /home/runner/work/python-frank-energie/python-frank-energie/scripts/test_query.py
+          mkdir -p logs
+          poetry run /home/runner/work/python-frank-energie/python-frank-energie/.venv/bin/python /home/runner/work/python-frank-energie/python-frank-energie/scripts/test_query.py > logs/output_${{ matrix.python-version }}.log 2>&1
 
       - name: Upload Log Artifact
         uses: actions/upload-artifact@v7
