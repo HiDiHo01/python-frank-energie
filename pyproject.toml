@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2026.4.8"
+version = "2026.4.30"
 description = "Asynchronous Python client for the Frank Energie"
 authors = ["HiDiHo01"]
 maintainers = ["HiDiHo01"]
@@ -35,14 +35,11 @@ python = ">=3.12,<4.0"
 # Core dependencies
 aiohttp = ">=3.9.0,<4.0.0"
 
-# Time/date handling
-# python-dateutil = ">=2.9.0, <3.0.0"
-
 # JWT-related
 PyJWT = "^2.10.1"
 
 # Crypto
-cryptography = ">=44.0.1,<47.0.0"
+cryptography = ">=47.0.0,<48.0.0"
 
 typing-extensions = ">=4.10.0"
 
