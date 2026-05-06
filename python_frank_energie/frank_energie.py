@@ -8,12 +8,10 @@ import re
 import time
 from typing import Any, Optional
 import logging
-from urllib import response
 
 _LOGGER = logging.getLogger(__name__)
 
 import aiohttp
-import requests
 import sys
 import platform
 from aiohttp import ClientResponse, ClientSession, ClientError, ClientTimeout, ClientResponseError
@@ -95,11 +93,11 @@ class FrankEnergie:
             self._session = None
             self._close_session = False
 
-    @property
-    def auth(self) -> Optional[Authentication]:
-        """Backwards compatibility for integrations accessing .auth directly."""
-        _LOGGER.error("Using .auth directly is deprecated. Use .is_authenticated instead.")
-        return self._auth
+    # @property
+    # def auth(self) -> Optional[Authentication]:
+    #     """Backwards compatibility for integrations accessing .auth directly."""
+    #     _LOGGER.error("Using .auth directly is deprecated. Use .is_authenticated instead.")
+    #     return self._auth
 
     @property
     def is_authenticated(self) -> bool:
@@ -192,7 +190,6 @@ class FrankEnergie:
 
                 response: dict[str, object] = await resp.json()
 
-            # self._process_diagnostic_data(response)
             if not response:
                 _LOGGER.debug(
                     "Empty API response received for operation [%s]",
@@ -255,32 +252,15 @@ class FrankEnergie:
                 err,
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
-        # except Exception as error:
-        #     _LOGGER.exception("Unexpected error during query: %s", error)
-        #    raise FrankEnergieException("Unexpected error occurred.") from error
         except Exception as error:
             _LOGGER.exception(
                 "Unexpected error during GraphQL operation [%s]",
                 self._operation_name,
             )
-            import traceback
-            traceback.print_exc()
-            raise error
-
+            raise FrankEnergieException(f"Unexpected error: {error}") from error
         finally:
             # Zorg dat foutlogging altijd correcte context krijgt
             self._operation_name = None
-
-    def _process_diagnostic_data(self, response: dict[str, object]) -> None:
-        """Process the diagnostic data and update the sensor state.
-
-        Args:
-            response: The API response as a dictionary.
-        """
-        diagnostic_data = response.get("diagnostic_data")
-        if diagnostic_data:
-            self._frank_energie_diagnostic_sensor.update_diagnostic_data(
-                diagnostic_data)
 
     def _handle_errors(self, response: dict[str, object]) -> None:
         """
@@ -2068,37 +2048,3 @@ class FrankEnergie:
             _exc_info: Exec type.
         """
         await self.close()
-
-    def introspect_schema(self):
-        query = """
-            query IntrospectionQuery {
-                __schema {
-                    types {
-                        name
-                        fields {
-                            name
-                        }
-                    }
-                }
-            }
-        """
-
-        response = requests.post(self.DATA_URL, json={
-                                 'query': query}, timeout=10)
-        response.raise_for_status()
-        result = response.json()
-        return result
-
-    def get_diagnostic_data(self):
-        # Implement the logic to fetch diagnostic data from the FrankEnergie API
-        # and return the data as needed for the diagnostic sensor
-        return "Diagnostic data"
-
-
-# frank_energie_instance = FrankEnergie()
-
-# Call the introspect_schema method on the instance
-# introspection_result = frank_energie_instance.introspect_schema()
-
-# Print the result
-# print("Introspection Result:", introspection_result)
