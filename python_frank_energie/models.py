@@ -34,7 +34,7 @@ except ImportError:
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-VERSION = "2026.5.4"
+VERSION = "2026.5.10"
 DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 12
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
@@ -1774,8 +1774,8 @@ class MonthSummary:
     _id: str
     actualCostsUntilLastMeterReadingDate: float
     expectedCostsUntilLastMeterReadingDate: float
-    expectedCosts: float
-    expectedCostsPerDay: float
+    expectedCosts: float | None
+    expectedCostsPerDay: float | None
     lastMeterReadingDate: str
     CostsPerDayTillNow: float
     meterReadingDayCompleteness: int
@@ -1783,7 +1783,6 @@ class MonthSummary:
     typename: str
 
     @staticmethod
-    # def from_dict(data: dict[str, object]) -> 'MonthSummary | None':
     def from_dict(data: Mapping[str, object]) -> 'MonthSummary | None':
         """Parse the response from the monthSummary query."""
         _LOGGER.debug("MonthSummary model %s", data)
@@ -1808,7 +1807,7 @@ class MonthSummary:
         last_reading = payload.get("lastMeterReadingDate")
         actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")
 
-        if not isinstance(expected_costs, (int, float)):
+        if not isinstance(expected_costs, (int, float, type(None))):
             raise RequestException("Invalid expectedCosts")
 
         if not isinstance(actual_costs, (int, float)):
@@ -1817,8 +1816,12 @@ class MonthSummary:
         if not isinstance(last_reading, str):
             raise RequestException("Invalid lastMeterReadingDate")
 
-        expected_costs_per_day = MonthSummary.calculate_expected_costs_per_day(
-            expected_costs, last_reading)
+        if not expected_costs is None:
+            expected_costs_per_day = MonthSummary.calculate_expected_costs_per_day(
+                expected_costs, last_reading)
+        else:
+            expected_costs_per_day = None
+
         costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(actual_costs, last_reading)
 
         return MonthSummary(
@@ -1837,7 +1840,7 @@ class MonthSummary:
         )
 
     @staticmethod
-    def calculate_expected_costs_per_day(expected_costs: float, lastMeterReadingDate: str) -> float:
+    def calculate_expected_costs_per_day(expected_costs: float, lastMeterReadingDate: str) -> float | None:
         """Calculate the expected costs per day."""
         last_meter_reading_date = datetime.strptime(
             lastMeterReadingDate, '%Y-%m-%d').replace(tzinfo=timezone.utc)
@@ -1851,7 +1854,7 @@ class MonthSummary:
         return expected_costs / days_in_month
 
     @staticmethod
-    def calculate_costs_per_day_till_now(costs_till_now: float, lastMeterReadingDate: str) -> float:
+    def old_calculate_costs_per_day_till_now(costs_till_now: float, lastMeterReadingDate: str) -> float:
         """Calculate the costs per day this month till now."""
         last_meter_reading_date = datetime.strptime(
             lastMeterReadingDate, '%Y-%m-%d').replace(tzinfo=timezone.utc)
@@ -1861,13 +1864,23 @@ class MonthSummary:
             return costs_till_now / days_till_last_reading
         return costs_till_now  # return the cost on the fist day
 
+    @staticmethod
+    def calculate_costs_per_day_till_now(costs_till_now: float, lastMeterReadingDate: str) -> float:
+        """Calculate the costs per day this month till now."""
+        last_meter_reading_date = datetime.strptime(
+            lastMeterReadingDate, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        days_elapsed = last_meter_reading_date.day - 1  # reading covers completed days
+        if days_elapsed > 0:
+            return costs_till_now / days_elapsed
+        return costs_till_now  # day 1: no completed days yet
+
     @property
     def differenceUntilLastMeterReadingDate(self) -> float:
         """The difference between the expected costs and the actual costs."""
         return self.actualCostsUntilLastMeterReadingDate - self.expectedCostsUntilLastMeterReadingDate
 
     @property
-    def differenceUntilLastMeterReadingDateAvg(self) -> float:
+    def old_differenceUntilLastMeterReadingDateAvg(self) -> float:
         """The difference between the expected costs and the actual costs per day."""
         last_meter_reading_date = datetime.strptime(
             self.lastMeterReadingDate, '%Y-%m-%d').replace(tzinfo=timezone.utc)
@@ -1876,6 +1889,14 @@ class MonthSummary:
             return self.differenceUntilLastMeterReadingDate / days_till_last_reading
         return self.differenceUntilLastMeterReadingDate
 
+    @property
+    def differenceUntilLastMeterReadingDateAvg(self) -> float:
+        last_meter_reading_date = datetime.strptime(
+            self.lastMeterReadingDate, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        days_elapsed = last_meter_reading_date.day - 1
+        if days_elapsed > 0:
+            return self.differenceUntilLastMeterReadingDate / days_elapsed
+        return self.differenceUntilLastMeterReadingDate
 
 @dataclass
 class ChargeSettings:

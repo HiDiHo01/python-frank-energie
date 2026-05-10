@@ -24,7 +24,7 @@ from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehi
                      MarketPrices, Me, MonthInsights, MonthSummary,
                      PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites, ContractPriceResolutionState)
 
-VERSION = "2026.3.22"
+VERSION = "2026.5.10"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -252,12 +252,13 @@ class FrankEnergie:
                 err,
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
-        except Exception as error:
-            _LOGGER.exception(
-                "Unexpected error during GraphQL operation [%s]",
-                self._operation_name,
-            )
-            raise FrankEnergieException(f"Unexpected error: {error}") from error
+        # except Exception as error:
+        #     _LOGGER.exception(
+        #         "Unexpected error during GraphQL operation [%s]: %s",
+        #         self._operation_name,
+        #         error,
+        #     )
+        #     raise FrankEnergieException(f"Unexpected error: {error}") from error
         finally:
             # Zorg dat foutlogging altijd correcte context krijgt
             self._operation_name = None
@@ -390,7 +391,6 @@ class FrankEnergie:
 
         try:
             response = await self._query(query)
-            # auth_data = None
             if response is not None:
                 data = response["data"]
                 if data is not None:
@@ -1550,7 +1550,7 @@ class FrankEnergie:
             }
             """,
             "MarketPrices",
-            {"date": str(start_date), "siteReference": str(site_reference), "resolution": str(resolution)},
+            {"date": str(start_date), "siteReference": str(site_reference)}
         )
         response = await self._query(query)
         return MarketPrices.from_userprices_dict(response, user_country)
