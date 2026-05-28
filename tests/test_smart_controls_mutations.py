@@ -407,6 +407,14 @@ async def test_enode_update_charger_charge_settings_sends_correct_operation_name
     assert called_query.variables["input"] == VALID_CHARGER_INPUT
 
 
+@pytest.mark.asyncio
+async def test_enode_update_charger_charge_settings_returns_false_on_exception():
+    api = _make_api()
+    with patch.object(api, "_query", new=AsyncMock(side_effect=ConnectionError)):
+        result = await api.enode_update_charger_charge_settings(VALID_CHARGER_INPUT)
+    assert result is False
+
+
 # ---------------------------------------------------------------------------
 # enode_enable_smart_charging
 # ---------------------------------------------------------------------------
@@ -476,6 +484,15 @@ async def test_enode_disable_smart_charging_returns_true_on_success():
     with patch.object(api, "_query", new=AsyncMock(return_value=mock_response)):
         result = await api.enode_disable_smart_charging()
     assert result is True
+
+
+@pytest.mark.asyncio
+async def test_enode_disable_smart_charging_returns_false_when_mutation_returns_false():
+    api = _make_api()
+    mock_response = {"data": {"enodeDisableSmartCharging": False}}
+    with patch.object(api, "_query", new=AsyncMock(return_value=mock_response)):
+        result = await api.enode_disable_smart_charging()
+    assert result is False
 
 
 @pytest.mark.asyncio
@@ -598,6 +615,17 @@ async def test_logout_returns_true_and_clears_auth():
         result = await api.logout("install-123")
     assert result is True
     assert api._auth is None
+
+
+@pytest.mark.asyncio
+async def test_logout_returns_false_when_mutation_returns_false_and_does_not_clear_auth():
+    api = _make_api()
+    assert api.is_authenticated
+    mock_response = {"data": {"logout": False}}
+    with patch.object(api, "_query", new=AsyncMock(return_value=mock_response)):
+        result = await api.logout("install-123")
+    assert result is False
+    assert api.is_authenticated
 
 
 @pytest.mark.asyncio

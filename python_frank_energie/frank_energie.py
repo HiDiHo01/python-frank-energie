@@ -375,7 +375,7 @@ class FrankEnergie:
         context_name: str,
     ) -> T | None:
         """Helper to check auth, query the API, handle logging, and parse the response."""
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         try:
@@ -1753,7 +1753,6 @@ class FrankEnergie:
 
         return SmartBatteries(batteries)
 
-
     async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails | None:
         """Retrieve smart battery details and summary."""
         if self._auth is None:
@@ -2137,7 +2136,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2154,6 +2153,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling smart trading")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable smart trading")
             return False
@@ -2175,7 +2176,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2192,6 +2193,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling smart feed-in")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable smart feed-in")
             return False
@@ -2221,7 +2224,7 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             ValueError: If ``input_data`` is missing the required ``id`` field.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         if "id" not in input_data:
@@ -2240,6 +2243,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating vehicle charge settings for id=%s", input_data.get("id"))
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update vehicle charge settings")
             return False
@@ -2269,7 +2274,7 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             ValueError: If ``input_data`` is missing the required ``id`` field.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         if "id" not in input_data:
@@ -2288,6 +2293,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating charger charge settings for id=%s", input_data.get("id"))
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update charger charge settings")
             return False
@@ -2309,7 +2316,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2326,6 +2333,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Enabling Enode smart charging")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to enable Enode smart charging")
             return False
@@ -2347,7 +2356,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2362,6 +2371,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling Enode smart charging")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable Enode smart charging")
             return False
@@ -2370,7 +2381,7 @@ class FrankEnergie:
             _LOGGER.warning("Error response when disabling Enode smart charging: %s", response)
             return False
 
-        return True
+        return bool(response.get("data", {}).get("enodeDisableSmartCharging", False))
 
     async def disable_smart_hvac(self) -> bool:
         """Disable smart HVAC for the authenticated user.
@@ -2383,7 +2394,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2400,6 +2411,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling smart HVAC")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable smart HVAC")
             return False
@@ -2429,7 +2442,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2451,6 +2464,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating smart HVAC settings for device %s", device_id)
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update smart HVAC settings for device %s", device_id)
             return False
@@ -2487,7 +2502,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2509,6 +2524,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating smart battery settings for device %s", device_id)
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update smart battery settings for device %s", device_id)
             return False
@@ -2535,7 +2552,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2549,10 +2566,12 @@ class FrankEnergie:
         )
 
         try:
-            _LOGGER.debug("Bulk-updating all vehicle charge settings")
+            _LOGGER.debug("Bulk updating Enode vehicle charge settings")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
-            _LOGGER.exception("Failed to bulk-update vehicle charge settings")
+            _LOGGER.exception("Failed to bulk update vehicle charge settings")
             return False
 
         if not response or response.get("errors"):
@@ -2575,7 +2594,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2591,6 +2610,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Logging out installation %s", installation_id)
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to log out installation %s", installation_id)
             return False
@@ -2599,8 +2620,10 @@ class FrankEnergie:
             _LOGGER.warning("Error response when logging out: %s", response)
             return False
 
-        self._auth = None
-        return True
+        ok = bool(response.get("data", {}).get("logout", False))
+        if ok:
+            self._auth = None
+        return ok
 
     async def update_user_settings(self, input_data: dict[str, Any]) -> bool:
         """Update user-level app settings.
@@ -2619,7 +2642,7 @@ class FrankEnergie:
         Raises:
             AuthRequiredException: If the client is not authenticated.
         """
-        if self._auth is None:
+        if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         query = FrankEnergieQuery(
@@ -2644,6 +2667,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating user settings")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update user settings")
             return False
