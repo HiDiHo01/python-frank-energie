@@ -1,5 +1,5 @@
-from __future__ import annotations
 """Data models enable parsing and processing of the Frank Energie API responses in a structured manner."""
+from __future__ import annotations
 # python_frank_energie/models.py
 
 """ Important Design Rule
