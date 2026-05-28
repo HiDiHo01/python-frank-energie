@@ -873,7 +873,8 @@ class Me:
 
         errors = data.get("errors")
         if errors:
-            message = getattr(errors[0], "get", lambda k, d=None: "Unknown error")("message")
+            message = getattr(errors[0], "get", lambda k, *args: "Unknown error")("message")
+
             raise RequestException(message)
 
         raw_data = data.get("data")
