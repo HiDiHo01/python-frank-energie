@@ -44,8 +44,6 @@ jobs:
             name: Check End of Files
           - id: fix-byte-order-marker
             name: Check UTF-8 byte order marker
-          - id: flake8
-            name: Enforcing style guide with flake8
           - id: isort
             name: Check imports are sorted
           - id: poetry
@@ -54,17 +52,20 @@ jobs:
             name: Check for upgradable syntax
           - id: pytest
             name: Test with pytest
+          - id: ruff
+            name: Lint with ruff
           - id: trailing-whitespace
             name: Trim Trailing Whitespace
           - id: vulture
             name: Find unused code
+
     steps:
       - name: Check out code from GitHub
-        uses: actions/checkout@v6
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Python 3.13
         id: python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.5.0
         with:
           python-version: "3.13"
 
@@ -72,7 +73,7 @@ jobs:
         run: echo "PIP_CACHE_DIR=$(pip cache dir)" >> $GITHUB_ENV
 
       - name: Restore cached Python PIP packages
-        uses: actions/cache@v5
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e5684 # v4.2.3
         with:
           path: ${{ env.PIP_CACHE_DIR }}
           key: pip-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-${{ hashFiles('poetry.lock') }}
@@ -80,23 +81,26 @@ jobs:
             pip-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-
             pip-${{ runner.os }}-v1-
 
-      - name: 🏗 Install workflow dependencies
+      - name: Install workflow dependencies
         run: |
           pip install poetry
           poetry config virtualenvs.create true
           poetry config virtualenvs.in-project true
 
       - name: Restore cached Python virtual environment
-        id: cached-poetry-dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e5684 # v4.2.3
         with:
           path: .venv
-          key: >-
-            venv-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-${{ hashFiles('poetry.lock') }}
+          key: venv-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-${{ hashFiles('poetry.lock') }}
+          restore-keys: |
             venv-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-
+            venv-${{ runner.os }}-v1-
 
       - name: Install Python dependencies
         run: poetry install --no-interaction --with=dev
+
+      - name: Check poetry.lock is up to date
+        run: poetry check --lock
 
       - name: Run pre-commit migrate-config
         run: poetry run pre-commit migrate-config
@@ -104,42 +108,5 @@ jobs:
       - name: Install pre-commit hooks
         run: poetry run pre-commit install
 
-      - name: Run pre-commit for ${{ matrix.id }}
+      - name: Run ${{ matrix.name }}
         run: poetry run pre-commit run ${{ matrix.id }} --all-files --hook-stage manual
-
-      - name: Regenerate poetry.lock if needed
-        run: |
-          if git diff --quiet pyproject.toml; then
-            echo "No changes in pyproject.toml, skipping poetry.lock regeneration."
-          else
-            echo "pyproject.toml has changed, regenerating poetry.lock..."
-            poetry lock
-            if git diff --quiet poetry.lock; then
-              echo "No changes to poetry.lock."
-            else
-              echo "::warning:: poetry.lock needs updating!"
-            fi
-          fi
-
-      - name: Commit updated poetry.lock
-        if: success()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "github-actions@github.com"
-          
-          if git diff --quiet poetry.lock; then
-            echo "No changes in poetry.lock, skipping commit."
-            exit 0
-          fi
-      
-          git add poetry.lock
-          git commit -m "CI: Regenerate poetry.lock"
-          
-          git push origin HEAD:${GITHUB_REF##*/} || {
-            echo "::error:: Failed to push updated poetry.lock. You may need to push manually."
-            exit 1
-          }
-
-
