@@ -10,10 +10,10 @@ import pytest
 from python_frank_energie import FrankEnergie
 from python_frank_energie.exceptions import AuthRequiredException
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_api() -> FrankEnergie:
     """Return an authenticated FrankEnergie instance."""

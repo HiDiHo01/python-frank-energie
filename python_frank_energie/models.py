@@ -14,11 +14,10 @@ This split is what keeps the model maintainable.
 import calendar
 import logging
 from collections import defaultdict
-from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from statistics import mean
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -27,6 +26,9 @@ from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, EmailStr
 
 from .exceptions import AuthException, RequestException
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Mapping
 
 try:
     from .time_periods import TimePeriod
@@ -112,10 +114,9 @@ class Authentication:
         """Parse the response from the login or renewToken mutation."""
         _LOGGER.debug("Authentication response keys: %s", list(data.keys()))
 
-        if errors := data.get("errors"):
-            if isinstance(errors, list) and errors:
-                message = errors[0].get("message") if isinstance(errors[0], dict) else None
-                raise AuthException(message or "Unknown authentication error")
+        if (errors := data.get("errors")) and isinstance(errors, list) and errors:
+            message = errors[0].get("message") if isinstance(errors[0], dict) else None
+            raise AuthException(message or "Unknown authentication error")
 
         # --- Validate root data ---
         root = data.get("data")
@@ -399,10 +400,7 @@ class Invoices:
 
     def calculate_average_costs_per_month(self, year: int = None) -> float | None:
         """Calculate the average costs per month."""
-        if year is None:
-            invoices = self.all_periods_invoices
-        else:
-            invoices = self.get_invoices_for_year(year)
+        invoices = self.all_periods_invoices if year is None else self.get_invoices_for_year(year)
 
         invoices_count = 0
         total_costs = 0.0
@@ -2315,7 +2313,7 @@ class Price:
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
-        return "%s -> %s: %.4f %s" % (
+        return "{} -> {}: {:.4f} {}".format(
             self.date_from.isoformat() if self.date_from else "N/A",
             self.date_till.isoformat() if self.date_till else "N/A",
             self.total,
@@ -2841,11 +2839,11 @@ class PriceData:
 
     @property
     def upcoming_min(self) -> Price | None:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        return min(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def upcoming_max(self) -> Price | None:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        return max(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def old_elec_previoushour(self):
@@ -3099,7 +3097,6 @@ class PriceData:
     def calculate_stats(data):
         print(data)
         electricity_prices = data.MarketPrices.electricity
-        gas_prices = data.MarketPrices.gas
 
         # Calculate total market price and total market price tax and the total price
         total_market_price = sum(price.market_price for price in electricity_prices)
@@ -3114,10 +3111,10 @@ class PriceData:
         # Find the minimum and maximum prices
         min_market_price = min(price.market_price for price in electricity_prices)
         max_market_price = max(price.market_price for price in electricity_prices)
-        min_market_price_with_tax = min(price.market_price_with_tax for price in electricity_prices)
-        max_market_price_with_tax = max(price.market_price_with_tax for price in electricity_prices)
-        min_total_price = min(price.total for price in electricity_prices)
-        max_total_price = max(price.total for price in electricity_prices)
+        min(price.market_price_with_tax for price in electricity_prices)
+        max(price.market_price_with_tax for price in electricity_prices)
+        min(price.total for price in electricity_prices)
+        max(price.total for price in electricity_prices)
 
         # Find the time interval with the highest market price
         max_market_price_interval = max(electricity_prices, key=lambda x: x["marketPrice"])
@@ -3197,7 +3194,7 @@ class PriceData:
     @property
     def all_avg(self):
         """Get the average of all prices."""
-        all_prices = [price for price in self.price_data]
+        all_prices = list(self.price_data)
 
         if not all_prices:
             return None
@@ -3266,7 +3263,7 @@ class PriceData:
         now = datetime.now(UTC).astimezone()
         tomorrow = now + timedelta(days=1)
         tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow_end = tomorrow_start + timedelta(days=1)
+        tomorrow_start + timedelta(days=1)
 
         # tomorrow_prices = [
         #     price for price in self.price_data
@@ -3408,7 +3405,7 @@ class PriceData:
 
     @property
     def old_upcoming_min(self) -> Price:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
+        return min(list(self.upcoming), key=lambda hour: hour.total)
 
     @property
     def upcoming_min(self) -> Price | None:
@@ -3432,7 +3429,7 @@ class PriceData:
 
     @property
     def old_upcoming_max(self) -> Price:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
+        return max(list(self.upcoming), key=lambda hour: hour.total)
 
     @property
     def upcoming_max(self) -> Price | None:
@@ -3580,7 +3577,7 @@ class Old_PriceData:
     elec_resolution: str | None = None
     resolution_minutes: int = 60
 
-    """" 
+    """"
     PriceDataAvg = namedtuple('PriceDataAvg', [
         'values', 'total', 'market_price_with_tax_and_markup',
         'market_markup_price', 'market_price_with_tax',
@@ -3784,11 +3781,11 @@ class Old_PriceData:
 
     @property
     def upcoming_min(self) -> Price | None:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        return min(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def upcoming_max(self) -> Price | None:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        return max(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def old_elec_previoushour(self):
@@ -4042,7 +4039,6 @@ class Old_PriceData:
     def calculate_stats(data):
         print(data)
         electricity_prices = data.MarketPrices.electricity
-        gas_prices = data.MarketPrices.gas
 
         # Calculate total market price and total market price tax and the total price
         total_market_price = sum(price.market_price for price in electricity_prices)
@@ -4057,10 +4053,10 @@ class Old_PriceData:
         # Find the minimum and maximum prices
         min_market_price = min(price.market_price for price in electricity_prices)
         max_market_price = max(price.market_price for price in electricity_prices)
-        min_market_price_with_tax = min(price.market_price_with_tax for price in electricity_prices)
-        max_market_price_with_tax = max(price.market_price_with_tax for price in electricity_prices)
-        min_total_price = min(price.total for price in electricity_prices)
-        max_total_price = max(price.total for price in electricity_prices)
+        min(price.market_price_with_tax for price in electricity_prices)
+        max(price.market_price_with_tax for price in electricity_prices)
+        min(price.total for price in electricity_prices)
+        max(price.total for price in electricity_prices)
 
         # Find the time interval with the highest market price
         max_market_price_interval = max(electricity_prices, key=lambda x: x["marketPrice"])
@@ -4140,7 +4136,7 @@ class Old_PriceData:
     @property
     def all_avg(self):
         """Get the average of all prices."""
-        all_prices = [price for price in self.price_data]
+        all_prices = list(self.price_data)
 
         if not all_prices:
             return None
@@ -4209,7 +4205,7 @@ class Old_PriceData:
         now = datetime.now(UTC).astimezone()
         tomorrow = now + timedelta(days=1)
         tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow_end = tomorrow_start + timedelta(days=1)
+        tomorrow_start + timedelta(days=1)
 
         # tomorrow_prices = [
         #     price for price in self.price_data
@@ -4351,7 +4347,7 @@ class Old_PriceData:
 
     @property
     def old_upcoming_min(self) -> Price:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
+        return min(list(self.upcoming), key=lambda hour: hour.total)
 
     @property
     def upcoming_min(self) -> Price | None:
@@ -4375,7 +4371,7 @@ class Old_PriceData:
 
     @property
     def old_upcoming_max(self) -> Price:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
+        return max(list(self.upcoming), key=lambda hour: hour.total)
 
     @property
     def upcoming_max(self) -> Price | None:
@@ -4757,9 +4753,9 @@ class Session:
                 cumulative_trading_result=float(payload["cumulativeTradingResult"]),
             )
         except KeyError as exc:
-            raise RequestException("Missing expected field in session: %s" % exc) from exc
+            raise RequestException(f"Missing expected field in session: {exc}") from exc
         except ValueError as exc:
-            raise RequestException("Invalid data format in session payload: %s" % exc) from exc
+            raise RequestException(f"Invalid data format in session payload: {exc}") from exc
 
 
 # @dataclass
@@ -4939,10 +4935,9 @@ class SmartBattery:
 
         capacity_value = data.get("capacity")
 
-        capacity: float | None = None
         if capacity_value is not None:
             try:
-                capacity = float(capacity_value)
+                float(capacity_value)
             except (TypeError, ValueError):
                 _LOGGER.debug(
                     "Invalid battery capacity received for device %s: %s",
@@ -5015,9 +5010,9 @@ class SmartBatterySession:
                 trade_index=payload.get("tradeIndex"),
             )
         except KeyError as exc:
-            raise ValueError("Missing expected field in session: %s" % exc) from exc
+            raise ValueError(f"Missing expected field in session: {exc}") from exc
         except ValueError as exc:
-            raise ValueError("Invalid data format in session payload: %s" % exc) from exc
+            raise ValueError(f"Invalid data format in session payload: {exc}") from exc
 
 
 @dataclass
@@ -5195,7 +5190,7 @@ class old_SmartBatteryDetails:
         )
 
         summary_data = data.get("smartBatterySummary", {})
-        last_update = datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
+        datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
 
         smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
 
@@ -5354,7 +5349,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
         dt = datetime.fromisoformat(value.rstrip("Z"))
         return dt.replace(tzinfo=ZoneInfo("UTC"))
     except ValueError as err:
-        raise ValueError("Invalid datetime string: %s" % value) from err
+        raise ValueError(f"Invalid datetime string: {value}") from err
 
 
 def test_parse_datetime(value: object) -> datetime | None:
@@ -5372,13 +5367,13 @@ def test_parse_datetime(value: object) -> datetime | None:
         return None
 
     if not isinstance(value, str):
-        raise ValueError("Expected string for datetime parsing, got: %s" % type(value).__name__)
+        raise ValueError(f"Expected string for datetime parsing, got: {type(value).__name__}")
 
     try:
         dt = parse_datetime(value)
     except (ValueError, TypeError) as err:
         _LOGGER.debug("Failed to parse datetime string '%s': %s", value, err)
-        raise ValueError("Invalid datetime string: %s" % value) from err
+        raise ValueError(f"Invalid datetime string: {value}") from err
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ZoneInfo("UTC"))

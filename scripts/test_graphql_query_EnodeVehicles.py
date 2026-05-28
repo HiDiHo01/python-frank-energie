@@ -116,11 +116,12 @@ class FrankEnergieQuery:
 @dataclass
 class Authentication:
     """Authentication data."""
+
     authToken: str
     refreshToken: str
 
     @staticmethod
-    def from_dict(data: dict[str, str]) -> 'Authentication':
+    def from_dict(data: dict[str, str]) -> "Authentication":
         """Parse authentication response from the API."""
         _LOGGER.debug("Authentication response: %s", data)
 
@@ -243,7 +244,7 @@ async def main():
                 raise AuthException("Authentication failed")
             print("Authentication successful!")
 
-#             if self._auth.auth_token_valid():
+            #             if self._auth.auth_token_valid():
             start_date = str(date.today().replace(day=1))  # Eerste dag van de maand
             data = await client.test_query(SITE_REFERENCE, start_date)
 
@@ -253,7 +254,87 @@ async def main():
         except Exception as e:
             print(f"Error: {e}")
 
-        data = {'data': {'enodeVehicles': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-07-23T05:00:00.000Z', 'deadline': '2025-06-13T10:00:00.000Z', 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cmbf6o4080omz95248nylyc7r', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 100, 'minChargeLimit': 30}, 'chargeState': {'batteryCapacity': 86.5, 'batteryLevel': 49, 'chargeLimit': 100, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': False, 'isPluggedIn': False, 'lastUpdated': '2025-07-22T10:53:42.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': 173}, 'id': 'cmbf6o4080omz95248nylyc7r', 'information': {'brand': 'Audi', 'model': 'e-tron', 'vin': 'WAUZZZGE9PB016244', 'year': 2023}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-07-22T14:13:36.722Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-07-23T05:00:00.000Z', 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cmaoye3x2203favu7d4icx7io', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 100, 'minChargeLimit': 75}, 'chargeState': {'batteryCapacity': 28.9, 'batteryLevel': 63, 'chargeLimit': 100, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': False, 'isPluggedIn': True, 'lastUpdated': '2025-07-22T13:01:54.000Z', 'powerDeliveryState': 'PLUGGED_IN:STOPPED', 'range': 98}, 'id': 'cmaoye3x2203favu7d4icx7io', 'information': {'brand': 'MINI', 'model': 'Cooper', 'vin': 'WMW11DJ0702S08837', 'year': 2021}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-07-22T14:12:24.999Z'}]}}
+        data = {
+            "data": {
+                "enodeVehicles": [
+                    {
+                        "canSmartCharge": True,
+                        "chargeSettings": {
+                            "calculatedDeadline": "2025-07-23T05:00:00.000Z",
+                            "deadline": "2025-06-13T10:00:00.000Z",
+                            "hourFriday": 420,
+                            "hourMonday": 420,
+                            "hourSaturday": 420,
+                            "hourSunday": 420,
+                            "hourThursday": 420,
+                            "hourTuesday": 420,
+                            "hourWednesday": 420,
+                            "id": "cmbf6o4080omz95248nylyc7r",
+                            "isSmartChargingEnabled": True,
+                            "isSolarChargingEnabled": False,
+                            "maxChargeLimit": 100,
+                            "minChargeLimit": 30,
+                        },
+                        "chargeState": {
+                            "batteryCapacity": 86.5,
+                            "batteryLevel": 49,
+                            "chargeLimit": 100,
+                            "chargeRate": None,
+                            "chargeTimeRemaining": None,
+                            "isCharging": False,
+                            "isFullyCharged": False,
+                            "isPluggedIn": False,
+                            "lastUpdated": "2025-07-22T10:53:42.000Z",
+                            "powerDeliveryState": "UNPLUGGED",
+                            "range": 173,
+                        },
+                        "id": "cmbf6o4080omz95248nylyc7r",
+                        "information": {"brand": "Audi", "model": "e-tron", "vin": "WAUZZZGE9PB016244", "year": 2023},
+                        "interventions": [],
+                        "isReachable": True,
+                        "lastSeen": "2025-07-22T14:13:36.722Z",
+                    },
+                    {
+                        "canSmartCharge": True,
+                        "chargeSettings": {
+                            "calculatedDeadline": "2025-07-23T05:00:00.000Z",
+                            "deadline": None,
+                            "hourFriday": 420,
+                            "hourMonday": 420,
+                            "hourSaturday": 420,
+                            "hourSunday": 420,
+                            "hourThursday": 420,
+                            "hourTuesday": 420,
+                            "hourWednesday": 420,
+                            "id": "cmaoye3x2203favu7d4icx7io",
+                            "isSmartChargingEnabled": True,
+                            "isSolarChargingEnabled": False,
+                            "maxChargeLimit": 100,
+                            "minChargeLimit": 75,
+                        },
+                        "chargeState": {
+                            "batteryCapacity": 28.9,
+                            "batteryLevel": 63,
+                            "chargeLimit": 100,
+                            "chargeRate": None,
+                            "chargeTimeRemaining": None,
+                            "isCharging": False,
+                            "isFullyCharged": False,
+                            "isPluggedIn": True,
+                            "lastUpdated": "2025-07-22T13:01:54.000Z",
+                            "powerDeliveryState": "PLUGGED_IN:STOPPED",
+                            "range": 98,
+                        },
+                        "id": "cmaoye3x2203favu7d4icx7io",
+                        "information": {"brand": "MINI", "model": "Cooper", "vin": "WMW11DJ0702S08837", "year": 2021},
+                        "interventions": [],
+                        "isReachable": True,
+                        "lastSeen": "2025-07-22T14:12:24.999Z",
+                    },
+                ]
+            }
+        }
+
 
 if __name__ == "__main__":
     asyncio.run(main())

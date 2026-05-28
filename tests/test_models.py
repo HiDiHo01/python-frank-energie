@@ -93,9 +93,7 @@ def test_me_error_message():
 
 def test_month_summary_with_expected_parameters(snapshot: SnapshotAssertion):
     """Test MonthSummary.from_dict with expected parameters."""
-    month_summary = MonthSummary.from_dict(
-        json.loads(load_fixtures("month_summary.json"))
-    )
+    month_summary = MonthSummary.from_dict(json.loads(load_fixtures("month_summary.json")))
     assert month_summary
     assert month_summary == snapshot
 
@@ -129,9 +127,7 @@ def test_month_summary_error_message():
 
 def test_market_prices_with_expected_parameters():
     """Test MarketPrices.from_dict with expected parameters."""
-    market_prices = MarketPrices.from_dict(
-        json.loads(load_fixtures("market_prices.json"))
-    )
+    market_prices = MarketPrices.from_dict(json.loads(load_fixtures("market_prices.json")))
 
     assert market_prices
     assert len(market_prices.electricity.price_data) == 24
@@ -157,9 +153,7 @@ def test_market_prices_error_message():
 @freeze_time("2022-11-21 14:15:00")
 def test_market_prices_pricedata_current_hour():
     """Test functionality of MarketPrices.price_data."""
-    market_prices = MarketPrices.from_dict(
-        json.loads(load_fixtures("market_prices.json"))
-    )
+    market_prices = MarketPrices.from_dict(json.loads(load_fixtures("market_prices.json")))
 
     assert market_prices.electricity.current_hour.market_price == 1.14
     assert market_prices.electricity.current_hour.market_price_tax == 2.14
@@ -179,9 +173,7 @@ def test_market_prices_pricedata_current_hour():
 @freeze_time("2022-11-21 14:15:00")
 def test_market_prices_pricedata_next_hour():
     """Test functionality of MarketPrices.price_data."""
-    market_prices = MarketPrices.from_dict(
-        json.loads(load_fixtures("market_prices.json"))
-    )
+    market_prices = MarketPrices.from_dict(json.loads(load_fixtures("market_prices.json")))
 
     future_prices = market_prices.electricity.get_future_prices()
     assert len(future_prices) == 9

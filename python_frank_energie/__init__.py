@@ -1,4 +1,5 @@
 """Frank Energie API library."""
+
 # python_frank_energie/__init__.py
 from .authentication import Authentication
 from .domain import CountryCode, EnergyType, Resolution
@@ -11,22 +12,18 @@ __version__ = "2026.3.21"
 __all__ = [
     # Core client
     "FrankEnergie",
-
     # Authentication
     "Authentication",
-
     # Domain
     "CountryCode",
     "Resolution",
     "EnergyType",
-
     # Models
     "Invoices",
     "MarketPrices",
     "Price",
     "PriceData",
     "PeriodUsageAndCosts",
-
     # Exceptions
     "AuthException",
     "ConnectionException",
