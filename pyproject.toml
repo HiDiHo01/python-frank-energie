@@ -44,6 +44,10 @@ cryptography = ">=44.0.1"
 
 typing-extensions = ">=4.10.0"
 
+pydantic = ">=2.0.0"
+# Security: CVE-2024-3651
+idna = ">=3.7"
+
 [tool.poetry.group.dev.dependencies]
 colorama = "^0.4.6"
 iniconfig = "^2.1.0"
