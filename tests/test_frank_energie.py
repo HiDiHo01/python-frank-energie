@@ -1,10 +1,9 @@
 """Test for Frank Energie."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiohttp
 import pytest
-
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
@@ -317,7 +316,7 @@ async def test_prices(aresponses):
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session)
         prices = await api.prices(
-            datetime.now(timezone.utc), datetime.now(timezone.utc)
+            datetime.now(UTC), datetime.now(UTC)
         )
         await api.close()
 
@@ -347,7 +346,7 @@ async def test_user_prices(aresponses):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
-        prices = await api.user_prices(datetime.now(timezone.utc), "1234AB 10")
+        prices = await api.user_prices(datetime.now(UTC), "1234AB 10")
         await api.close()
 
     assert prices.electricity is not None
@@ -363,16 +362,16 @@ async def test_user_prices(aresponses):
 #
 
 # Import additional required modules for comprehensive testing
-from unittest.mock import patch, AsyncMock
 from datetime import timedelta
-from python_frank_energie.frank_energie import FrankEnergieQuery, sanitize_query, VERSION
+from unittest.mock import AsyncMock, patch
+
 from python_frank_energie.exceptions import (
-    SmartTradingNotEnabledException,
-    SmartChargingNotEnabledException,
     FrankEnergieException,
     NetworkError,
+    SmartChargingNotEnabledException,
+    SmartTradingNotEnabledException,
 )
-
+from python_frank_energie.frank_energie import VERSION, FrankEnergieQuery, sanitize_query
 
 #
 # FrankEnergieQuery class tests
@@ -836,7 +835,7 @@ class TestFrankEnergieValidationHelpers:
         """Test _validate_not_future_date with valid date."""
         client = FrankEnergie()
 
-        yesterday = datetime.now(timezone.utc).date() - timedelta(days=1)
+        yesterday = datetime.now(UTC).date() - timedelta(days=1)
 
         # Should not raise any exception
         client._validate_not_future_date(yesterday)
@@ -845,7 +844,7 @@ class TestFrankEnergieValidationHelpers:
         """Test _validate_not_future_date with future date."""
         client = FrankEnergie()
 
-        tomorrow = datetime.now(timezone.utc).date() + timedelta(days=1)
+        tomorrow = datetime.now(UTC).date() + timedelta(days=1)
 
         with pytest.raises(ValueError, match="De 'start_date' mag niet in de toekomst liggen"):
             client._validate_not_future_date(tomorrow)
@@ -872,7 +871,7 @@ class TestFrankEnergieValidationHelpers:
         """Test _validate_start_date_format with future date."""
         client = FrankEnergie()
 
-        future_date = (datetime.now(timezone.utc).date() + timedelta(days=30)).isoformat()
+        future_date = (datetime.now(UTC).date() + timedelta(days=30)).isoformat()
 
         with pytest.raises(ValueError, match="De 'start_date' mag niet in de toekomst liggen"):
             client._validate_start_date_format(future_date)
@@ -1182,8 +1181,8 @@ class TestFrankEnergieWindowsPlatformHandling:
 
     def test_frank_energie_windows_event_loop_policy(self):
         """Test Windows event loop policy is set."""
-        import sys
         import asyncio
+        import sys
 
         original_platform = sys.platform
         try:
@@ -1191,6 +1190,7 @@ class TestFrankEnergieWindowsPlatformHandling:
             with patch('asyncio.set_event_loop_policy') as mock_set_policy:
                 # Re-import the module to trigger the Windows check
                 import importlib
+
                 import python_frank_energie.frank_energie
                 importlib.reload(python_frank_energie.frank_energie)
 
@@ -1347,7 +1347,7 @@ async def test_prices_with_default_dates():
 @pytest.mark.asyncio
 async def test_be_prices_with_default_dates():
     """Test Belgian prices method with default date handling."""
-    from datetime import datetime, timezone
+    from datetime import datetime
     client = FrankEnergie()
 
     mock_response = {
@@ -1365,7 +1365,7 @@ async def test_be_prices_with_default_dates():
         query_obj = call_args[0][0]
         variables = query_obj.variables
 
-        utc_today = datetime.now(timezone.utc).date()
+        utc_today = datetime.now(UTC).date()
 
         assert variables["date"] == str(utc_today)
 

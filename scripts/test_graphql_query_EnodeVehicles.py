@@ -4,8 +4,8 @@ import asyncio
 import logging
 import os
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, date, datetime, timezone
+from typing import Any
 
 import aiohttp
 import jwt
@@ -99,7 +99,7 @@ class AuthException(FrankEnergieException):
 
 
 class FrankEnergieQuery:
-    def __init__(self, query: str, operation_name: str, variables: Optional[dict[str, Any]] = None):
+    def __init__(self, query: str, operation_name: str, variables: dict[str, Any] | None = None):
         self.query = query
         self.operation_name = operation_name
         self.variables = variables if variables is not None else {}
@@ -137,11 +137,11 @@ class Authentication:
         )
 
     @staticmethod
-    def _extract_payload(data: dict) -> Optional[dict]:
+    def _extract_payload(data: dict) -> dict | None:
         """Extract the login or renewToken payload from the data dictionary."""
         return data.get("data", {}).get("login") or data.get("data", {}).get("renewToken")
 
-    def auth_token_valid(self, tz: timezone = timezone.utc) -> bool:
+    def auth_token_valid(self, tz: timezone = UTC) -> bool:
         """Check if the authentication token is still valid."""
         try:
             auth_data = jwt.decode(
@@ -164,10 +164,10 @@ class FrankEnergie:
 
     DATA_URL = GRAPHQL_URL
 
-    def __init__(self, session: Optional[ClientSession] = None):
+    def __init__(self, session: ClientSession | None = None):
         """Initialize the FrankEnergie client."""
         self._session = session or ClientSession()
-        self._auth: Optional[Authentication] = None
+        self._auth: Authentication | None = None
 
     def _handle_errors(self, response: dict[str, Any]) -> None:
         """Handle errors in the API response."""
@@ -193,7 +193,7 @@ class FrankEnergie:
             self._handle_errors(response)
             return response
 
-        except (asyncio.TimeoutError, ClientError) as error:
+        except (TimeoutError, ClientError) as error:
             _LOGGER.error("Request failed: %s", error, exc_info=True)
             raise FrankEnergieException(f"Request failed: {error}") from error
 
@@ -216,7 +216,7 @@ class FrankEnergie:
                 return self._auth
             else:
                 raise AuthException("Login response doesn't contain expected data.")
-        except (ClientError, asyncio.TimeoutError) as error:
+        except (TimeoutError, ClientError) as error:
             raise AuthException(f"Login failed: {error}")
 
     async def test_query(self, site_reference: str, start_date: date) -> dict:

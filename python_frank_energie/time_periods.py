@@ -1,4 +1,5 @@
 from enum import Enum
+
 # time_periods.py
 
 class TimePeriod(Enum):
@@ -46,7 +47,7 @@ class TimePeriod(Enum):
     def __str__(self):
         return self.value
 
-    #not in use    
+    #not in use
     def get_prices_for_time_period(self, price_data, time_period: 'TimePeriod'):
         if time_period == TimePeriod.TODAY:
             return [hour for hour in price_data if hour.for_today]

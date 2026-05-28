@@ -20,7 +20,7 @@ def load_fixtures(filename: str) -> str:
     fixture_path: Final[str] = os.path.join(fixtures_dir, filename)
 
     if not os.path.exists(fixture_path):
-        raise FileNotFoundError(f"Fixture file not found: %s" % fixture_path)
+        raise FileNotFoundError("Fixture file not found: %s" % fixture_path)
 
     with open(fixture_path, encoding="utf-8") as file:
         return file.read()

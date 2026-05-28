@@ -1,6 +1,6 @@
 """Tests for Frank Energie Smart batteries implementation."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aiohttp
 import pytest
@@ -53,7 +53,7 @@ async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion):
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
         sessions = await api.smart_battery_sessions(
-            "device_id", datetime.now(timezone.utc), datetime.now(timezone.utc)
+            "device_id", datetime.now(UTC), datetime.now(UTC)
         )
         await api.close()
 

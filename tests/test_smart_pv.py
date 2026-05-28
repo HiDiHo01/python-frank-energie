@@ -81,3 +81,27 @@ async def test_user_smart_feed_in(aresponses, snapshot: SnapshotAssertion):
 
     assert feed_in is not None
     assert feed_in == snapshot
+
+
+@pytest.mark.asyncio
+@pytest.mark.allow_socket
+async def test_enode_vehicles_parsing(aresponses, snapshot: SnapshotAssertion):
+    """Test enode_vehicles parsing method."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=load_fixtures("enode_vehicles.json"),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")
+        vehicles = await api.enode_vehicles()
+        await api.close()
+
+    assert vehicles is not None
+    assert vehicles == snapshot
