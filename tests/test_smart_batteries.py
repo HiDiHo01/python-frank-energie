@@ -52,9 +52,7 @@ async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
-        sessions = await api.smart_battery_sessions(
-            "device_id", datetime.now(UTC), datetime.now(UTC)
-        )
+        sessions = await api.smart_battery_sessions("device_id", datetime.now(UTC), datetime.now(UTC))
         await api.close()
 
     assert sessions is not None

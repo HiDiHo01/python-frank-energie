@@ -59,5 +59,6 @@ async def main() -> None:
 
         await frank.close()
 
+
 if __name__ == "__main__":
     asyncio.run(main())

@@ -9,6 +9,7 @@ Test script to query the Frank Energie API for electricity and gas market prices
 This module provides a simple way to verify that the API connection is working
 and to retrieve current market prices for debugging or testing purposes.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -70,22 +71,28 @@ async def execute_query():
 
             # Log electricity prices
             _LOGGER.info("Electricity Prices:")
-            if hasattr(electricity_prices, 'all') and electricity_prices.all:
+            if hasattr(electricity_prices, "all") and electricity_prices.all:
                 for price in electricity_prices.all:
                     _LOGGER.info(
                         "From: %s, Till: %s, Market Price: %.4f, Total: %.4f",
-                        price.date_from, price.date_till, price.market_price, price.total
+                        price.date_from,
+                        price.date_till,
+                        price.market_price,
+                        price.total,
                     )
             else:
                 _LOGGER.warning("No electricity price details available.")
 
             # Log gas prices
             _LOGGER.info("Gas Prices:")
-            if hasattr(gas_prices, 'all') and gas_prices.all:
+            if hasattr(gas_prices, "all") and gas_prices.all:
                 for price in gas_prices.all:
                     _LOGGER.info(
                         "From: %s, Till: %s, Market Price: %.4f, Total: %.4f",
-                        price.date_from, price.date_till, price.market_price, price.total
+                        price.date_from,
+                        price.date_till,
+                        price.market_price,
+                        price.total,
                     )
             else:
                 _LOGGER.warning("No gas price details available.")

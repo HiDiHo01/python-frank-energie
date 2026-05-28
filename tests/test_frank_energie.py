@@ -315,9 +315,7 @@ async def test_prices(aresponses):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session)
-        prices = await api.prices(
-            datetime.now(UTC), datetime.now(UTC)
-        )
+        prices = await api.prices(datetime.now(UTC), datetime.now(UTC))
         await api.close()
 
     assert prices.electricity is not None
@@ -377,6 +375,7 @@ from python_frank_energie.frank_energie import VERSION, FrankEnergieQuery, sanit
 # FrankEnergieQuery class tests
 #
 
+
 class TestFrankEnergieQueryClass:
     """Test cases for FrankEnergieQuery class functionality."""
 
@@ -431,11 +430,7 @@ class TestFrankEnergieQueryClass:
         frank_query = FrankEnergieQuery(query, operation_name, variables)
         result = frank_query.to_dict()
 
-        expected = {
-            "query": query,
-            "operationName": operation_name,
-            "variables": variables
-        }
+        expected = {"query": query, "operationName": operation_name, "variables": variables}
         assert result == expected
 
     def test_frank_energie_query_to_dict_empty_variables(self):
@@ -446,11 +441,7 @@ class TestFrankEnergieQueryClass:
         frank_query = FrankEnergieQuery(query, operation_name)
         result = frank_query.to_dict()
 
-        expected = {
-            "query": query,
-            "operationName": operation_name,
-            "variables": {}
-        }
+        expected = {"query": query, "operationName": operation_name, "variables": {}}
         assert result == expected
 
 
@@ -458,16 +449,13 @@ class TestFrankEnergieQueryClass:
 # sanitize_query function tests
 #
 
+
 class TestSanitizeQueryFunction:
     """Test cases for sanitize_query function."""
 
     def test_sanitize_query_with_password(self):
         """Test sanitize_query masks password in variables."""
-        query = FrankEnergieQuery(
-            "mutation Login",
-            "Login",
-            {"email": "test@example.com", "password": "secret123"}
-        )
+        query = FrankEnergieQuery("mutation Login", "Login", {"email": "test@example.com", "password": "secret123"})
 
         result = sanitize_query(query)
 
@@ -476,11 +464,7 @@ class TestSanitizeQueryFunction:
 
     def test_sanitize_query_without_password(self):
         """Test sanitize_query with no password in variables."""
-        query = FrankEnergieQuery(
-            "query Test",
-            "Test",
-            {"email": "test@example.com", "user_id": "123"}
-        )
+        query = FrankEnergieQuery("query Test", "Test", {"email": "test@example.com", "user_id": "123"})
 
         result = sanitize_query(query)
 
@@ -501,6 +485,7 @@ class TestSanitizeQueryFunction:
 # Authentication and session management tests
 #
 
+
 class TestFrankEnergieAuthenticationExtended:
     """Extended authentication-related functionality tests."""
 
@@ -508,7 +493,7 @@ class TestFrankEnergieAuthenticationExtended:
         """Test auth property triggers deprecation warning."""
         client = FrankEnergie()
 
-        with patch('python_frank_energie.frank_energie._LOGGER') as mock_logger:
+        with patch("python_frank_energie.frank_energie._LOGGER") as mock_logger:
             client.auth
             mock_logger.error.assert_called_once_with(
                 "Using .auth directly is deprecated. Use .is_authenticated instead."
@@ -517,6 +502,7 @@ class TestFrankEnergieAuthenticationExtended:
     def test_frank_energie_is_authenticated_false_no_token(self):
         """Test is_authenticated returns False when auth exists but no token."""
         from python_frank_energie.authentication import Authentication
+
         client = FrankEnergie()
         client._auth = Authentication(None, "refresh_token")
 
@@ -546,7 +532,7 @@ class TestFrankEnergieAuthenticationExtended:
         """Test login with None response from query."""
         client = FrankEnergie()
 
-        with patch.object(client, '_query', return_value=None):
+        with patch.object(client, "_query", return_value=None):
             result = await client.login("test@example.com", "password")
             assert result is None
 
@@ -555,15 +541,17 @@ class TestFrankEnergieAuthenticationExtended:
 # System utility function tests
 #
 
+
 class TestFrankEnergieSystemUtilities:
     """Test system utility functions."""
 
     def test_frank_energie_generate_system_user_agent(self):
         """Test system user agent generation."""
-        with patch('platform.system', return_value='Darwin'), \
-             patch('sys.platform', 'darwin'), \
-             patch('platform.release', return_value='20.6.0'):
-
+        with (
+            patch("platform.system", return_value="Darwin"),
+            patch("sys.platform", "darwin"),
+            patch("platform.release", return_value="20.6.0"),
+        ):
             user_agent = FrankEnergie.generate_system_user_agent()
 
             expected = f"FrankEnergie/{VERSION} Darwin/20.6.0 darwin"
@@ -571,10 +559,11 @@ class TestFrankEnergieSystemUtilities:
 
     def test_frank_energie_generate_system_user_agent_windows(self):
         """Test system user agent generation for Windows."""
-        with patch('platform.system', return_value='Windows'), \
-             patch('sys.platform', 'win32'), \
-             patch('platform.release', return_value='10'):
-
+        with (
+            patch("platform.system", return_value="Windows"),
+            patch("sys.platform", "win32"),
+            patch("platform.release", return_value="10"),
+        ):
             user_agent = FrankEnergie.generate_system_user_agent()
 
             expected = f"FrankEnergie/{VERSION} Windows/10 win32"
@@ -582,10 +571,11 @@ class TestFrankEnergieSystemUtilities:
 
     def test_frank_energie_generate_system_user_agent_linux(self):
         """Test system user agent generation for Linux."""
-        with patch('platform.system', return_value='Linux'), \
-             patch('sys.platform', 'linux'), \
-             patch('platform.release', return_value='5.4.0'):
-
+        with (
+            patch("platform.system", return_value="Linux"),
+            patch("sys.platform", "linux"),
+            patch("platform.release", return_value="5.4.0"),
+        ):
             user_agent = FrankEnergie.generate_system_user_agent()
 
             expected = f"FrankEnergie/{VERSION} Linux/5.4.0 linux"
@@ -596,6 +586,7 @@ class TestFrankEnergieSystemUtilities:
 # Session management tests
 #
 
+
 class TestFrankEnergieSessionManagement:
     """Test session management functionality."""
 
@@ -604,7 +595,7 @@ class TestFrankEnergieSessionManagement:
         """Test _ensure_session creates new session when none exists."""
         client = FrankEnergie()
 
-        with patch('aiohttp.ClientSession') as mock_session_class:
+        with patch("aiohttp.ClientSession") as mock_session_class:
             mock_session = AsyncMock(spec=aiohttp.ClientSession)
             mock_session_class.return_value = mock_session
 
@@ -643,7 +634,7 @@ class TestFrankEnergieSessionManagement:
         """Test async context manager functionality."""
         client = FrankEnergie()
 
-        with patch.object(client, 'close') as mock_close:
+        with patch.object(client, "close") as mock_close:
             async with client as ctx_client:
                 assert ctx_client is client
             mock_close.assert_called_once()
@@ -652,6 +643,7 @@ class TestFrankEnergieSessionManagement:
 #
 # Error handling tests
 #
+
 
 class TestFrankEnergieErrorHandling:
     """Test comprehensive error handling functionality."""
@@ -675,11 +667,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_invalid_password(self):
         """Test _handle_errors with invalid password error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "user-error:password-invalid"}
-            ]
-        }
+        response = {"errors": [{"message": "user-error:password-invalid"}]}
 
         with pytest.raises(AuthException, match="Invalid password"):
             client._handle_errors(response)
@@ -687,11 +675,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_not_authorized(self):
         """Test _handle_errors with not authorized error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "user-error:auth-not-authorised"}
-            ]
-        }
+        response = {"errors": [{"message": "user-error:auth-not-authorised"}]}
 
         with pytest.raises(AuthException, match="Not authorized"):
             client._handle_errors(response)
@@ -699,11 +683,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_auth_required(self):
         """Test _handle_errors with auth required error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "user-error:auth-required"}
-            ]
-        }
+        response = {"errors": [{"message": "user-error:auth-required"}]}
 
         with pytest.raises(AuthRequiredException, match="Authentication required"):
             client._handle_errors(response)
@@ -711,11 +691,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_graphql_validation(self):
         """Test _handle_errors with GraphQL validation error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "Graphql validation error"}
-            ]
-        }
+        response = {"errors": [{"message": "Graphql validation error"}]}
 
         with pytest.raises(FrankEnergieException, match="Request failed: Graphql validation error"):
             client._handle_errors(response)
@@ -723,11 +699,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_smart_trading_not_enabled(self):
         """Test _handle_errors with smart trading not enabled error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "user-error:smart-trading-not-enabled"}
-            ]
-        }
+        response = {"errors": [{"message": "user-error:smart-trading-not-enabled"}]}
 
         with pytest.raises(SmartTradingNotEnabledException):
             client._handle_errors(response)
@@ -735,11 +707,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_smart_charging_not_enabled(self):
         """Test _handle_errors with smart charging not enabled error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "user-error:smart-charging-not-enabled"}
-            ]
-        }
+        response = {"errors": [{"message": "user-error:smart-charging-not-enabled"}]}
 
         with pytest.raises(SmartChargingNotEnabledException):
             client._handle_errors(response)
@@ -747,11 +715,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_no_marketprices_found(self):
         """Test _handle_errors with no market prices found (should not raise)."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "No marketprices found for segment ABC"}
-            ]
-        }
+        response = {"errors": [{"message": "No marketprices found for segment ABC"}]}
 
         # Should not raise any exception
         client._handle_errors(response)
@@ -759,11 +723,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_no_connections_found(self):
         """Test _handle_errors with no connections found error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "No connections found for user 123"}
-            ]
-        }
+        response = {"errors": [{"message": "No connections found for user 123"}]}
 
         with pytest.raises(FrankEnergieException, match="Request failed: No connections found for user 123"):
             client._handle_errors(response)
@@ -771,11 +731,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_request_not_supported_in_country(self):
         """Test _handle_errors with request not supported in country error."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "request-error:request-not-supported-in-country"}
-            ]
-        }
+        response = {"errors": [{"message": "request-error:request-not-supported-in-country"}]}
 
         with pytest.raises(FrankEnergieException, match="Request not supported in the user's country"):
             client._handle_errors(response)
@@ -783,12 +739,7 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_multiple_errors(self):
         """Test _handle_errors with multiple errors in response."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "user-error:password-invalid"},
-                {"message": "user-error:auth-required"}
-            ]
-        }
+        response = {"errors": [{"message": "user-error:password-invalid"}, {"message": "user-error:auth-required"}]}
 
         # Should raise the first error encountered
         with pytest.raises(AuthException, match="Invalid password"):
@@ -801,7 +752,7 @@ class TestFrankEnergieErrorHandling:
             "errors": [
                 {
                     "message": "'Base' niet aanwezig in prijzen verzameling",
-                    "path": ["marketPrices", "electricityPrices", 0]
+                    "path": ["marketPrices", "electricityPrices", 0],
                 }
             ]
         }
@@ -812,14 +763,10 @@ class TestFrankEnergieErrorHandling:
     def test_frank_energie_handle_errors_unhandled_error(self):
         """Test _handle_errors with unhandled error message."""
         client = FrankEnergie()
-        response = {
-            "errors": [
-                {"message": "Some unknown error message"}
-            ]
-        }
+        response = {"errors": [{"message": "Some unknown error message"}]}
 
         # Should not raise exception but should log error
-        with patch('python_frank_energie.frank_energie._LOGGER') as mock_logger:
+        with patch("python_frank_energie.frank_energie._LOGGER") as mock_logger:
             client._handle_errors(response)
             mock_logger.error.assert_called()
 
@@ -827,6 +774,7 @@ class TestFrankEnergieErrorHandling:
 #
 # Validation helper method tests
 #
+
 
 class TestFrankEnergieValidationHelpers:
     """Test validation helper methods."""
@@ -852,6 +800,7 @@ class TestFrankEnergieValidationHelpers:
     def test_frank_energie_validate_start_date_format_valid_formats(self):
         """Test _validate_start_date_format with valid formats."""
         from datetime import date
+
         client = FrankEnergie()
 
         # Valid formats should not raise exceptions
@@ -887,6 +836,7 @@ class TestFrankEnergieValidationHelpers:
 #
 # API endpoint authentication requirement tests
 #
+
 
 class TestFrankEnergieAPIEndpointsAuth:
     """Test API endpoint methods with authentication requirements."""
@@ -951,6 +901,7 @@ class TestFrankEnergieAPIEndpointsAuth:
     async def test_frank_energie_user_prices_not_authenticated(self):
         """Test user prices when not authenticated."""
         from datetime import date
+
         client = FrankEnergie()
 
         with pytest.raises(AuthRequiredException):
@@ -1000,6 +951,7 @@ class TestFrankEnergieAPIEndpointsAuth:
     async def test_frank_energie_smart_battery_sessions_not_authenticated(self):
         """Test smart battery sessions when not authenticated."""
         from datetime import date
+
         client = FrankEnergie()
 
         with pytest.raises(AuthRequiredException):
@@ -1009,6 +961,7 @@ class TestFrankEnergieAPIEndpointsAuth:
     async def test_frank_energie_smart_battery_sessions_empty_device_id(self):
         """Test smart battery sessions with empty device ID."""
         from datetime import date
+
         client = FrankEnergie(auth_token="test_token")
 
         with pytest.raises(ValueError, match="Missing required device_id"):
@@ -1018,6 +971,7 @@ class TestFrankEnergieAPIEndpointsAuth:
     async def test_frank_energie_enode_chargers_not_authenticated_returns_empty(self):
         """Test enode chargers when not authenticated returns empty dict."""
         from datetime import date
+
         client = FrankEnergie()
 
         result = await client.enode_chargers("site_ref_123", date.today())
@@ -1029,27 +983,23 @@ class TestFrankEnergieAPIEndpointsAuth:
 # Utility method tests
 #
 
+
 class TestFrankEnergieUtilityMethods:
     """Test utility and miscellaneous methods."""
 
     def test_frank_energie_introspect_schema(self):
         """Test schema introspection method."""
         from unittest.mock import Mock
+
         client = FrankEnergie()
 
         mock_response = Mock()
         mock_response.json.return_value = {
-            "data": {
-                "__schema": {
-                    "types": [
-                        {"name": "Query", "fields": [{"name": "me"}]}
-                    ]
-                }
-            }
+            "data": {"__schema": {"types": [{"name": "Query", "fields": [{"name": "me"}]}]}}
         }
         mock_response.raise_for_status.return_value = None
 
-        with patch('requests.post') as mock_post:
+        with patch("requests.post") as mock_post:
             mock_post.return_value.__enter__.return_value = mock_response
 
             result = client.introspect_schema()
@@ -1077,6 +1027,7 @@ class TestFrankEnergieUtilityMethods:
 #
 # Edge cases and robustness tests
 #
+
 
 class TestFrankEnergieEdgeCasesAndRobustness:
     """Test edge cases and robustness scenarios."""
@@ -1108,7 +1059,7 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 
         query = FrankEnergieQuery("query { test }", "Test")
 
-        with patch('python_frank_energie.frank_energie._LOGGER') as mock_logger:
+        with patch("python_frank_energie.frank_energie._LOGGER") as mock_logger:
             result = await client._query(query)
 
             assert result == {}
@@ -1128,9 +1079,7 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 
         query = FrankEnergieQuery("query { test }", "Test", {"param": "value"})
 
-        with patch('python_frank_energie.frank_energie._LOGGER') as mock_logger, \
-             patch.object(client, '_handle_errors'):
-
+        with patch("python_frank_energie.frank_energie._LOGGER") as mock_logger, patch.object(client, "_handle_errors"):
             await client._query(query)
 
             # Verify logging calls
@@ -1145,18 +1094,12 @@ class TestFrankEnergieEdgeCasesAndRobustness:
     async def test_frank_energie_smart_battery_sessions_date_formatting(self):
         """Test smart battery sessions with proper date formatting."""
         from datetime import date
+
         client = FrankEnergie(auth_token="test_token")
 
-        mock_response = {
-            "data": {
-                "smartBatterySessions": {
-                    "deviceId": "battery_123",
-                    "sessions": []
-                }
-            }
-        }
+        mock_response = {"data": {"smartBatterySessions": {"deviceId": "battery_123", "sessions": []}}}
 
-        with patch.object(client, '_query', return_value=mock_response) as mock_query:
+        with patch.object(client, "_query", return_value=mock_response) as mock_query:
             start_date = date(2023, 1, 1)
             end_date = date(2023, 1, 31)
 
@@ -1176,6 +1119,7 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 # Platform-specific tests
 #
 
+
 class TestFrankEnergieWindowsPlatformHandling:
     """Test Windows-specific platform handling."""
 
@@ -1186,12 +1130,13 @@ class TestFrankEnergieWindowsPlatformHandling:
 
         original_platform = sys.platform
         try:
-            sys.platform = 'win32'
-            with patch('asyncio.set_event_loop_policy') as mock_set_policy:
+            sys.platform = "win32"
+            with patch("asyncio.set_event_loop_policy") as mock_set_policy:
                 # Re-import the module to trigger the Windows check
                 import importlib
 
                 import python_frank_energie.frank_energie
+
                 importlib.reload(python_frank_energie.frank_energie)
 
                 # Verify Windows event loop policy was set
@@ -1203,6 +1148,7 @@ class TestFrankEnergieWindowsPlatformHandling:
 #
 # Error handling and robustness tests for API methods
 #
+
 
 @pytest.mark.asyncio
 async def test_month_summary_exception_handling(aresponses):
@@ -1233,17 +1179,17 @@ async def test_enode_chargers_empty_response_handling():
     client = FrankEnergie(auth_token="test_token")
 
     # Test with None response
-    with patch.object(client, '_query', return_value=None):
+    with patch.object(client, "_query", return_value=None):
         result = await client.enode_chargers("site_ref_123", datetime.now().date())
         assert result == {}
 
     # Test with empty data
-    with patch.object(client, '_query', return_value={"data": None}):
+    with patch.object(client, "_query", return_value={"data": None}):
         result = await client.enode_chargers("site_ref_123", datetime.now().date())
         assert result == {}
 
     # Test with missing enodeChargers key
-    with patch.object(client, '_query', return_value={"data": {}}):
+    with patch.object(client, "_query", return_value={"data": {}}):
         result = await client.enode_chargers("site_ref_123", datetime.now().date())
         assert result == {}
 
@@ -1254,17 +1200,17 @@ async def test_smart_batteries_error_handling():
     client = FrankEnergie(auth_token="test_token")
 
     # Test with empty response
-    with patch.object(client, '_query', return_value=None):
+    with patch.object(client, "_query", return_value=None):
         result = await client.smart_batteries()
         assert len(result.batteries) == 0
 
     # Test with error response
-    with patch.object(client, '_query', return_value={"errors": [{"message": "Some error"}]}):
+    with patch.object(client, "_query", return_value={"errors": [{"message": "Some error"}]}):
         result = await client.smart_batteries()
         assert len(result.batteries) == 0
 
     # Test with missing data
-    with patch.object(client, '_query', return_value={"data": None}):
+    with patch.object(client, "_query", return_value={"data": None}):
         result = await client.smart_batteries()
         assert len(result.batteries) == 0
 
@@ -1274,14 +1220,12 @@ async def test_smart_battery_details_incomplete_response():
     """Test smart battery details with incomplete response."""
     client = FrankEnergie(auth_token="test_token")
 
-    mock_response = {
-        "data": {
-            "smartBattery": {"id": "battery_123"}
-        }
-    }
+    mock_response = {"data": {"smartBattery": {"id": "battery_123"}}}
 
-    with patch.object(client, '_query', return_value=mock_response), \
-         pytest.raises(FrankEnergieException, match="Incomplete response data"):
+    with (
+        patch.object(client, "_query", return_value=mock_response),
+        pytest.raises(FrankEnergieException, match="Incomplete response data"),
+    ):
         await client.smart_battery_details("battery_123")
 
 
@@ -1290,8 +1234,10 @@ async def test_period_usage_and_costs_exception_handling():
     """Test period usage and costs exception handling."""
     client = FrankEnergie(auth_token="test_token")
 
-    with patch.object(client, '_query', side_effect=NetworkError("Network error")), \
-         pytest.raises(FrankEnergieException, match="Kon verbruik en kosten niet ophalen"):
+    with (
+        patch.object(client, "_query", side_effect=NetworkError("Network error")),
+        pytest.raises(FrankEnergieException, match="Kon verbruik en kosten niet ophalen"),
+    ):
         await client.period_usage_and_costs("site_ref_123", "2023-01")
 
 
@@ -1303,7 +1249,8 @@ def test_frank_energie_version_constant():
     assert len(VERSION) > 0
     # VERSION should follow semver pattern
     import re
-    version_pattern = r'^\d{4}\.\d{1,2}\.\d{1,2}$'
+
+    version_pattern = r"^\d{4}\.\d{1,2}\.\d{1,2}$"
     assert re.match(version_pattern, VERSION), f"VERSION '{VERSION}' should follow YYYY.M.D pattern"
 
 
@@ -1322,16 +1269,12 @@ def test_frank_energie_is_smart_charging_attribute():
 async def test_prices_with_default_dates():
     """Test prices method with default date handling."""
     from datetime import date, timedelta
+
     client = FrankEnergie()
 
-    mock_response = {
-        "data": {
-            "marketPricesElectricity": [],
-            "marketPricesGas": []
-        }
-    }
+    mock_response = {"data": {"marketPricesElectricity": [], "marketPricesGas": []}}
 
-    with patch.object(client, '_query', return_value=mock_response) as mock_query:
+    with patch.object(client, "_query", return_value=mock_response) as mock_query:
         await client.prices()
         call_args = mock_query.call_args
         query_obj = call_args[0][0]
@@ -1348,18 +1291,12 @@ async def test_prices_with_default_dates():
 async def test_be_prices_with_default_dates():
     """Test Belgian prices method with default date handling."""
     from datetime import datetime
+
     client = FrankEnergie()
 
-    mock_response = {
-        "data": {
-            "marketPrices": {
-                "electricityPrices": [],
-                "gasPrices": []
-            }
-        }
-    }
+    mock_response = {"data": {"marketPrices": {"electricityPrices": [], "gasPrices": []}}}
 
-    with patch.object(client, '_query', return_value=mock_response) as mock_query:
+    with patch.object(client, "_query", return_value=mock_response) as mock_query:
         await client.be_prices()
         call_args = mock_query.call_args
         query_obj = call_args[0][0]
@@ -1374,18 +1311,12 @@ async def test_be_prices_with_default_dates():
 async def test_user_prices_date_validation():
     """Test user prices method date validation and formatting."""
     from datetime import date
+
     client = FrankEnergie(auth_token="test_token")
 
-    mock_response = {
-        "data": {
-            "customerMarketPrices": {
-                "electricityPrices": [],
-                "gasPrices": []
-            }
-        }
-    }
+    mock_response = {"data": {"customerMarketPrices": {"electricityPrices": [], "gasPrices": []}}}
 
-    with patch.object(client, '_query', return_value=mock_response) as mock_query:
+    with patch.object(client, "_query", return_value=mock_response) as mock_query:
         start_date = date(2023, 1, 1)
         await client.user_prices("site_ref", start_date)
 

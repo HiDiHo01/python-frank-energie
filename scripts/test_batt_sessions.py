@@ -23,7 +23,7 @@ async def analyze_smart_batteries(api: FrankEnergie) -> None:
         logging.error(f"⚠️ Could not fetch smart batteries: {e}")
         return
 
-    if not batteries or not hasattr(batteries, 'smart_batteries'):
+    if not batteries or not hasattr(batteries, "smart_batteries"):
         logging.warning("❌ No smart batteries found.")
         return
 
@@ -75,9 +75,7 @@ async def analyze_smart_batteries(api: FrankEnergie) -> None:
         logging.info(f"📉 **Total EPEX Result:** €{sessions.period_epex_result:.2f}")
         logging.info(f"💡 **Total Trade Index:** {sessions.period_trade_index:.4f}")
 
-        highest_profit_session = max(
-            sessions.sessions, key=lambda s: getattr(s, "result", 0), default=None
-        )
+        highest_profit_session = max(sessions.sessions, key=lambda s: getattr(s, "result", 0), default=None)
         if highest_profit_session:
             logging.info(
                 f"🔥 **Best Trading Session:** {highest_profit_session.date} | Profit: €{highest_profit_session.trading_result:.2f}"

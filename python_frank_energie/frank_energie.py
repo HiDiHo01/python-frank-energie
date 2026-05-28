@@ -330,7 +330,7 @@ class FrankEnergie:
                     response,
                 )
                 raise FrankEnergieException(
-                    "Request failed for '%s': GraphQL validation error — check query and variables." % active_query
+                    f"Request failed for '{active_query}': GraphQL validation error — check query and variables."
                 )
 
             # --- Expected "no data" cases (not failures) ---
@@ -356,7 +356,7 @@ class FrankEnergie:
 
             # --- Critical errors ---
             elif message.startswith("No connections found for user"):
-                raise FrankEnergieException("Request failed: %s" % message)
+                raise FrankEnergieException(f"Request failed: {message}")
             elif message == "request-error:request-not-supported-in-country":
                 _LOGGER.error("Request not supported in user's country: %s", error_obj)
                 continue
@@ -645,7 +645,7 @@ class FrankEnergie:
         try:
             return MonthInsights.from_dict(response_dict)
         except Exception as exc:
-            raise FrankEnergieException("Failed to parse MonthInsights response: %s" % exc) from exc
+            raise FrankEnergieException(f"Failed to parse MonthInsights response: {exc}") from exc
 
     async def enode_chargers(self, site_reference: str, start_date: date) -> dict[str, EnodeChargers]:
         """Retrieve the enode charger information for the specified site reference.
@@ -2417,9 +2417,7 @@ class FrankEnergie:
 
         return bool(response.get("data", {}).get("smartHvacDisable", {}).get("success", False))
 
-    async def smart_hvac_update_settings(
-        self, device_id: str, settings: dict[str, Any]
-    ) -> bool:
+    async def smart_hvac_update_settings(self, device_id: str, settings: dict[str, Any]) -> bool:
         """Update settings for a smart HVAC device.
 
         Calls the ``SmartHvacUpdateSettings`` GraphQL mutation.
@@ -2474,9 +2472,7 @@ class FrankEnergie:
     # Smart controls — API stubs for future use (not yet used by HA)
     # -------------------------------------------------------------------------
 
-    async def smart_battery_update_settings(
-        self, device_id: str, settings: dict[str, Any]
-    ) -> bool:
+    async def smart_battery_update_settings(self, device_id: str, settings: dict[str, Any]) -> bool:
         """Update settings for a smart battery device.
 
         Calls the ``SmartBatteryUpdateSettings`` GraphQL mutation.
@@ -2682,7 +2678,7 @@ class FrankEnergie:
                 if date_obj > datetime.now(UTC).date():
                     raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
             except ValueError as e:
-                raise ValueError("De 'start_date' heeft geen geldig datumformaat: %s" % e)
+                raise ValueError(f"De 'start_date' heeft geen geldig datumformaat: {e}")
 
     async def __aenter__(self):
         """Async enter.

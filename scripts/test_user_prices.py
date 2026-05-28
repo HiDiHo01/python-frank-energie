@@ -66,7 +66,6 @@ async def main() -> None:
             gas_prices = user_prices.gas
 
     # prices_today = prices or user_prices
-    prices_today = user_prices
     # logger.info("energy_type: ", prices_today.energy_type)
 
     # Access electricity price data
@@ -82,6 +81,7 @@ async def main() -> None:
         logger.info(gas_prices)
 
     await frank.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

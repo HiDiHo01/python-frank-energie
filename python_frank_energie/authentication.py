@@ -25,7 +25,7 @@ class Authentication:
     refreshToken: str
 
     @staticmethod
-    def from_dict(data: dict[str, str]) -> 'Authentication':
+    def from_dict(data: dict[str, str]) -> "Authentication":
         """Parse the response from the login or renewToken mutation.
 
         Args:
@@ -47,10 +47,7 @@ class Authentication:
         if not payload or "authToken" not in payload or "refreshToken" not in payload:
             raise AuthException("Unexpected response: Missing or incomplete payload")
 
-        return Authentication(
-            authToken=payload["authToken"],
-            refreshToken=payload["refreshToken"]
-        )
+        return Authentication(authToken=payload["authToken"], refreshToken=payload["refreshToken"])
 
     @staticmethod
     def _extract_payload(data: dict) -> dict | None:
@@ -74,11 +71,7 @@ class Authentication:
             True if the token has not expired; otherwise, False.
         """
         try:
-            decoded = jwt.decode(
-                self.authToken,
-                algorithms=["HS256"],
-                options={"verify_signature": False}
-            )
+            decoded = jwt.decode(self.authToken, algorithms=["HS256"], options={"verify_signature": False})
         except jwt.DecodeError as err:
             _LOGGER.warning("Failed to decode authToken: %s", err)
             return False
@@ -105,5 +98,6 @@ class AuthenticationResult:
         authToken: The current valid auth token.
         refreshToken: The token used to refresh the auth token.
     """
+
     authToken: str
     refreshToken: str
