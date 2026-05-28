@@ -3,6 +3,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
+
 from python_frank_energie import FrankEnergie
 from python_frank_energie.exceptions import AuthException
 

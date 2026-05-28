@@ -3,8 +3,7 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime, timezone
 
 import jwt
 
@@ -54,7 +53,7 @@ class Authentication:
         )
 
     @staticmethod
-    def _extract_payload(data: dict) -> Optional[dict]:
+    def _extract_payload(data: dict) -> dict | None:
         """Extract the login or renewToken payload from the response.
 
         Args:
@@ -65,7 +64,7 @@ class Authentication:
         """
         return data.get("data", {}).get("login") or data.get("data", {}).get("renewToken")
 
-    def auth_token_valid(self, tz: timezone = timezone.utc) -> bool:
+    def auth_token_valid(self, tz: timezone = UTC) -> bool:
         """Check if authToken is still valid according to the expiration timestamp.
 
         Args:
@@ -92,7 +91,7 @@ class Authentication:
             _LOGGER.warning("Token does not contain 'exp' field")
             return False
 
-        return datetime.fromtimestamp(expiry, tz=timezone.utc) > datetime.now(tz=tz)
+        return datetime.fromtimestamp(expiry, tz=UTC) > datetime.now(tz=tz)
 
     def __repr__(self) -> str:
         return "Authentication(authToken=***, refreshToken=***)"

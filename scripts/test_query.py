@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 # Filename: test_query.py
 # Project: python-frank-energie
 # Created Date: 2025-4-4
@@ -15,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from python_frank_energie import FrankEnergie
 
@@ -45,7 +44,7 @@ async def execute_query():
             5 - Unexpected error occurred
     """
     # current_date = datetime.now().date()
-    current_date = datetime.now(timezone.utc).date()
+    current_date = datetime.now(UTC).date()
     tomorrow = current_date + timedelta(days=1)
 
     try:

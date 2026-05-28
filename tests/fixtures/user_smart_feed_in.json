@@ -1,0 +1,12 @@
+{
+  "data": {
+    "userSmartFeedIn": {
+      "hasAcceptedTerms": true,
+      "isActivated": true,
+      "isAppOnboardingAvailable": true,
+      "isAvailableInCountry": true,
+      "userCreatedAt": "2026-05-28T10:00:00.000Z",
+      "userId": "user-123"
+    }
+  }
+}

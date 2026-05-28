@@ -1,0 +1,48 @@
+{
+  "data": {
+    "enodeVehicles": [
+      {
+        "canSmartCharge": true,
+        "chargeSettings": {
+          "calculatedDeadline": "2026-05-28T05:00:00.000Z",
+          "deadline": "2026-05-28T10:00:00.000Z",
+          "hourFriday": 420,
+          "hourMonday": 420,
+          "hourSaturday": 420,
+          "hourSunday": 420,
+          "hourThursday": 420,
+          "hourTuesday": 420,
+          "hourWednesday": 420,
+          "id": "setting-123",
+          "isSmartChargingEnabled": true,
+          "isSolarChargingEnabled": false,
+          "maxChargeLimit": 100,
+          "minChargeLimit": 30
+        },
+        "chargeState": {
+          "batteryCapacity": 86.5,
+          "batteryLevel": 49,
+          "chargeLimit": 100,
+          "chargeRate": null,
+          "chargeTimeRemaining": null,
+          "isCharging": false,
+          "isFullyCharged": false,
+          "isPluggedIn": false,
+          "lastUpdated": "2026-05-28T10:53:42.000Z",
+          "powerDeliveryState": "UNPLUGGED",
+          "range": 173
+        },
+        "id": "vehicle-123",
+        "information": {
+          "brand": "Audi",
+          "model": "e-tron",
+          "vin": "WAUZZZGE9PB016244",
+          "year": 2023
+        },
+        "interventions": [],
+        "isReachable": true,
+        "lastSeen": "2026-05-28T14:13:36.722Z"
+      }
+    ]
+  }
+}

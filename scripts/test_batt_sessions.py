@@ -1,10 +1,11 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from dotenv import load_dotenv
+
 from python_frank_energie import FrankEnergie
 
 logging.basicConfig(level=logging.NOTSET, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -54,7 +55,7 @@ async def analyze_smart_batteries(api: FrankEnergie) -> None:
         # logging.info(f"🔄 self_consumption_trading_allowed: {battery_details.settings.self_consumption_trading_allowed}")
 
         # Define time period (last 7 days)
-        end_date = datetime.now(timezone.utc).date()
+        end_date = datetime.now(UTC).date()
         start_date = end_date - timedelta(days=1)
 
         logging.info("🔹 Fetching Battery Trading Sessions...")
