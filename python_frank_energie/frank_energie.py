@@ -20,9 +20,10 @@ from .authentication import Authentication
 from .exceptions import (AuthException, AuthRequiredException,
                          FrankEnergieException, NetworkError,
                          RequestException)
-from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehicles, Invoices,
+from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehicle, EnodeVehicles, Invoices,
                      MarketPrices, Me, MonthInsights, MonthSummary,
-                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites, ContractPriceResolutionState)
+                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites, ContractPriceResolutionState,
+                     SmartPvSystem, SmartPvSystems, SmartPvSystemSummary, UserSmartFeedInStatus, FeedInSession, SmartFeedInSessionData)
 
 VERSION = "2026.5.10"
 
@@ -1908,6 +1909,148 @@ class FrankEnergie:
 
         return SmartBatterySessions.from_dict(response)
 
+    SMART_PV_SYSTEMS_QUERY = """
+        query SmartPvSystems {
+            smartPvSystems {
+                brand
+                connectionEAN
+                createdAt
+                deletedAt
+                displayName
+                externalReference
+                id
+                inverterSerialNumbers
+                model
+                onboardingStatus
+                provider
+                steeringStatus
+                updatedAt
+            }
+        }
+    """
+    SMART_PV_SYSTEMS_OPERATIONNAME = "SmartPvSystems"
+    SMART_PV_SYSTEMS_VARIABLES = {}
+
+    SMART_PV_SYSTEM_SUMMARY_QUERY = """
+        query SmartPvSystemSummary($deviceId: String!) {
+            smartPvSystemSummary(deviceId: $deviceId) {
+                operationalStatus
+                operationalStatusTimestamp
+                steeringStatus
+                totalBonus
+            }
+        }
+    """
+    SMART_PV_SYSTEM_SUMMARY_OPERATIONNAME = "SmartPvSystemSummary"
+
+    USER_SMART_FEED_IN_QUERY = """
+        query UserSmartFeedIn {
+            userSmartFeedIn {
+                hasAcceptedTerms
+                isActivated
+                isAppOnboardingAvailable
+                isAvailableInCountry
+                userCreatedAt
+                userId
+            }
+        }
+    """
+    USER_SMART_FEED_IN_OPERATIONNAME = "UserSmartFeedIn"
+    USER_SMART_FEED_IN_VARIABLES = {}
+
+    async def smart_pv_systems(self) -> SmartPvSystems | None:
+        """Get the users smart PV systems.
+
+        Returns a collection of smart PV systems.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+
+        query = FrankEnergieQuery(
+            self.SMART_PV_SYSTEMS_QUERY,
+            self.SMART_PV_SYSTEMS_OPERATIONNAME,
+            self.SMART_PV_SYSTEMS_VARIABLES,
+        )
+
+        try:
+            _LOGGER.debug("Querying smart PV systems")
+            response = await self._query(query)
+        except Exception as e:
+            _LOGGER.error("Failed to query smart PV systems: %s", e)
+            return None
+
+        if not response or response.get("errors") or not response.get("data"):
+            _LOGGER.warning("Empty, missing, or error response for 'smartPvSystems'")
+            return None
+
+        try:
+            return SmartPvSystems.from_dict(response)
+        except (KeyError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to parse smart PV systems: %s", err)
+            return SmartPvSystems([])
+
+    async def smart_pv_system_summary(self, device_id: str) -> SmartPvSystemSummary | None:
+        """Get the summary for a specific smart PV system.
+
+        Returns summary data for the PV system.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+
+        query = FrankEnergieQuery(
+            self.SMART_PV_SYSTEM_SUMMARY_QUERY,
+            self.SMART_PV_SYSTEM_SUMMARY_OPERATIONNAME,
+            {"deviceId": device_id},
+        )
+
+        try:
+            _LOGGER.debug("Querying smart PV system summary for device_id: %s", device_id)
+            response = await self._query(query)
+        except Exception as e:
+            _LOGGER.error("Failed to query smart PV system summary: %s", e)
+            return None
+
+        if not response or response.get("errors") or not response.get("data"):
+            _LOGGER.warning("Empty, missing, or error response for 'smartPvSystemSummary'")
+            return None
+
+        try:
+            return SmartPvSystemSummary.from_dict(response)
+        except (KeyError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to parse smart PV system summary: %s", err)
+            return None
+
+    async def user_smart_feed_in(self) -> UserSmartFeedInStatus | None:
+        """Get the users smart feed-in service status.
+
+        Returns user smart feed-in status.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+
+        query = FrankEnergieQuery(
+            self.USER_SMART_FEED_IN_QUERY,
+            self.USER_SMART_FEED_IN_OPERATIONNAME,
+            self.USER_SMART_FEED_IN_VARIABLES,
+        )
+
+        try:
+            _LOGGER.debug("Querying user smart feed-in status")
+            response = await self._query(query)
+        except Exception as e:
+            _LOGGER.error("Failed to query user smart feed-in status: %s", e)
+            return None
+
+        if not response or response.get("errors") or not response.get("data"):
+            _LOGGER.warning("Empty, missing, or error response for 'userSmartFeedIn'")
+            return None
+
+        try:
+            return UserSmartFeedInStatus.from_dict(response)
+        except (KeyError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to parse user smart feed-in status: %s", err)
+            return None
+
     ENODE_VEHICLES_QUERY = """
         query EnodeVehicles {
             enodeVehicles {
@@ -2006,8 +2149,7 @@ class FrankEnergie:
             return EnodeVehicles([])
 
         try:
-            # enode_vehicles = [EnodeVehicles.from_dict(v) for v in vehicles_data]
-            enode_vehicles = vehicles_data
+            enode_vehicles = [EnodeVehicle.from_dict(v) for v in vehicles_data]
         except (KeyError, ValueError, TypeError) as err:
             _LOGGER.error("Failed to parse enode vehicles: %s", err)
             return EnodeVehicles([])

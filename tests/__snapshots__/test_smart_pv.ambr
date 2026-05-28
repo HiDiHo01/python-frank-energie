@@ -1,0 +1,10 @@
+# serializer version: 1
+# name: test_smart_pv_system_summary
+  SmartPvSystemSummary(operational_status='OPERATIONAL', operational_status_timestamp=datetime.datetime(2026, 5, 28, 14, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')), steering_status='STEERING', total_bonus=12.34)
+# ---
+# name: test_smart_pv_systems
+  SmartPvSystems(systems=[SmartPvSystem(id='pv-123', brand='SolarEdge', connection_ean='871687123456789012', created_at=datetime.datetime(2026, 5, 28, 10, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')), deleted_at=None, display_name='Tuin PV', external_reference='ext-123', inverter_serial_numbers=['SE123456'], model='SE3000', onboarding_status='COMPLETED', provider='SolarEdge', steering_status='ACTIVE', updated_at=datetime.datetime(2026, 5, 28, 12, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')))])
+# ---
+# name: test_user_smart_feed_in
+  UserSmartFeedInStatus(has_accepted_terms=True, is_activated=True, is_app_onboarding_available=True, is_available_in_country=True, user_created_at=datetime.datetime(2026, 5, 28, 10, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')), user_id='user-123')
+# ---

@@ -1,0 +1,21 @@
+{
+  "data": {
+    "smartPvSystems": [
+      {
+        "id": "pv-123",
+        "brand": "SolarEdge",
+        "connectionEAN": "871687123456789012",
+        "createdAt": "2026-05-28T10:00:00.000Z",
+        "deletedAt": null,
+        "displayName": "Tuin PV",
+        "externalReference": "ext-123",
+        "inverterSerialNumbers": ["SE123456"],
+        "model": "SE3000",
+        "onboardingStatus": "COMPLETED",
+        "provider": "SolarEdge",
+        "steeringStatus": "ACTIVE",
+        "updatedAt": "2026-05-28T12:00:00.000Z"
+      }
+    ]
+  }
+}

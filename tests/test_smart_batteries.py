@@ -53,7 +53,7 @@ async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion):
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
         sessions = await api.smart_battery_sessions(
-            "device_id", datetime.now(datetime.UTC), datetime.now(datetime.UTC)
+            "device_id", datetime.now(timezone.utc), datetime.now(timezone.utc)
         )
         await api.close()
 

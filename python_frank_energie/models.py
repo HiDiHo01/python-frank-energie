@@ -39,6 +39,28 @@ DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 12
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 
+class DictLikeMixin:
+    """Mixin to allow dataclasses to be accessed like dictionaries for backwards compatibility."""
+
+    def __getitem__(self, key: str) -> Any:
+        # Convert camelCase to snake_case
+        snake_key = "".join(["_" + c.lower() if c.isupper() else c for c in key]).lstrip("_")
+        if hasattr(self, snake_key):
+            return getattr(self, snake_key)
+        if hasattr(self, key):
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __contains__(self, key: str) -> bool:
+        snake_key = "".join(["_" + c.lower() if c.isupper() else c for c in key]).lstrip("_")
+        return hasattr(self, snake_key) or hasattr(self, key)
+
 T = TypeVar("T")
 
 def _require(data: dict[str, object], key: str) -> T:
@@ -1899,7 +1921,7 @@ class MonthSummary:
         return self.differenceUntilLastMeterReadingDate
 
 @dataclass
-class ChargeSettings:
+class ChargeSettings(DictLikeMixin):
     """Represents the charge settings for an enode charger."""
     calculated_deadline: datetime
     capacity: float
@@ -1921,7 +1943,7 @@ class ChargeSettings:
 
 
 @dataclass
-class ChargeState:
+class ChargeState(DictLikeMixin):
     """Represents the charge state for an enode charger."""
     battery_capacity: float
     battery_level: int
@@ -1985,7 +2007,7 @@ class ChargeState:
 
 
 @dataclass
-class VehicleInformation:
+class VehicleInformation(DictLikeMixin):
     brand: str
     model: str
     vin: str
@@ -2003,7 +2025,7 @@ class VehicleInformation:
 
 
 @dataclass
-class VehicleIntervention:
+class VehicleIntervention(DictLikeMixin):
     title: str
     description: str
 
@@ -2030,7 +2052,7 @@ class Intervention:
 
 
 @dataclass
-class EnodeVehicle:
+class EnodeVehicle(DictLikeMixin):
     """Represents a single enode vehicle."""
     id: str
     can_smart_charge: bool
@@ -5546,3 +5568,135 @@ def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[s
             for sensor in group.result_sensors
         ],
     }
+
+
+@dataclass
+class SmartPvSystem(DictLikeMixin):
+    """Represents a single Frank Energie smart PV system."""
+    id: str
+    brand: str
+    connection_ean: str
+    created_at: datetime
+    deleted_at: datetime | None
+    display_name: str | None
+    external_reference: str
+    inverter_serial_numbers: list[str]
+    model: str | None
+    onboarding_status: str
+    provider: str
+    steering_status: str
+    updated_at: datetime
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SmartPvSystem":
+        return cls(
+            id=data["id"],
+            brand=data["brand"],
+            connection_ean=data["connectionEAN"],
+            created_at=_parse_datetime(data["createdAt"]),
+            deleted_at=_parse_datetime(data.get("deletedAt")),
+            display_name=data.get("displayName"),
+            external_reference=data["externalReference"],
+            inverter_serial_numbers=data.get("inverterSerialNumbers") or [],
+            model=data.get("model"),
+            onboarding_status=data["onboardingStatus"],
+            provider=data["provider"],
+            steering_status=data["steeringStatus"],
+            updated_at=_parse_datetime(data["updatedAt"]),
+        )
+
+
+@dataclass
+class SmartPvSystems(DictLikeMixin):
+    """Represents a collection of smart PV systems."""
+    systems: list[SmartPvSystem]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SmartPvSystems":
+        pv_dicts = data.get("data", {}).get("smartPvSystems", [])
+        systems = [SmartPvSystem.from_dict(v) for v in pv_dicts]
+        return cls(systems=systems)
+
+
+@dataclass
+class SmartPvSystemSummary(DictLikeMixin):
+    """Real-time summary data for a specific PV system."""
+    operational_status: str
+    operational_status_timestamp: datetime
+    steering_status: str
+    total_bonus: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SmartPvSystemSummary":
+        payload = data.get("data", {}).get("smartPvSystemSummary") or data
+        return cls(
+            operational_status=payload["operationalStatus"],
+            operational_status_timestamp=_parse_datetime(payload["operationalStatusTimestamp"]),
+            steering_status=payload["steeringStatus"],
+            total_bonus=float(payload.get("totalBonus", 0.0)),
+        )
+
+
+@dataclass
+class UserSmartFeedInStatus(DictLikeMixin):
+    """Smart feed-in service status."""
+    has_accepted_terms: bool
+    is_activated: bool
+    is_app_onboarding_available: bool
+    is_available_in_country: bool
+    user_created_at: datetime
+    user_id: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "UserSmartFeedInStatus":
+        payload = data.get("data", {}).get("userSmartFeedIn") or data
+        return cls(
+            has_accepted_terms=payload["hasAcceptedTerms"],
+            is_activated=payload["isActivated"],
+            is_app_onboarding_available=payload["isAppOnboardingAvailable"],
+            is_available_in_country=payload["isAvailableInCountry"],
+            user_created_at=_parse_datetime(payload["userCreatedAt"]),
+            user_id=payload["userId"],
+        )
+
+
+@dataclass
+class FeedInSession(DictLikeMixin):
+    """Represents a single feed-in session."""
+    bonus: float
+    cumulative_bonus: float
+    date: str
+    status: str
+    volume: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "FeedInSession":
+        return cls(
+            bonus=float(data.get("bonus", 0.0)),
+            cumulative_bonus=float(data.get("cumulativeBonus", 0.0)),
+            date=data["date"],
+            status=data["status"],
+            volume=float(data.get("volume", 0.0)),
+        )
+
+
+@dataclass
+class SmartFeedInSessionData(DictLikeMixin):
+    """Solar feed-in session data over a period."""
+    period_bonus: float
+    period_end_date: str
+    period_start_date: str
+    period_volume: float
+    sessions: list[FeedInSession]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> "SmartFeedInSessionData":
+        payload = data.get("data", {}).get("smartFeedInSessions") or data
+        sessions = [FeedInSession.from_dict(s) for s in (payload.get("sessions") or [])]
+        return cls(
+            period_bonus=float(payload.get("periodBonus", 0.0)),
+            period_end_date=payload["periodEndDate"],
+            period_start_date=payload["periodStartDate"],
+            period_volume=float(payload.get("periodVolume", 0.0)),
+            sessions=sessions,
+        )
