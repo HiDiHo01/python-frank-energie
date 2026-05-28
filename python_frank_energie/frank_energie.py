@@ -1987,7 +1987,7 @@ class FrankEnergie:
             return SmartPvSystems.from_dict(response)
         except (KeyError, ValueError, TypeError) as err:
             _LOGGER.error("Failed to parse smart PV systems: %s", err)
-            return SmartPvSystems([])
+            return None
 
     async def smart_pv_system_summary(self, device_id: str) -> SmartPvSystemSummary | None:
         """Get the summary for a specific smart PV system.

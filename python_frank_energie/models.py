@@ -42,9 +42,12 @@ LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 class DictLikeMixin:
     """Mixin to allow dataclasses to be accessed like dictionaries for backwards compatibility."""
 
+    def _normalize_key(self, key: str) -> str:
+        """Normalize incoming keys to the attribute naming convention (snake_case)."""
+        return "".join(["_" + c.lower() if c.isupper() else c for c in key]).lstrip("_")
+
     def __getitem__(self, key: str) -> Any:
-        # Convert camelCase to snake_case
-        snake_key = "".join(["_" + c.lower() if c.isupper() else c for c in key]).lstrip("_")
+        snake_key = self._normalize_key(key)
         if hasattr(self, snake_key):
             return getattr(self, snake_key)
         if hasattr(self, key):
@@ -58,7 +61,7 @@ class DictLikeMixin:
             return default
 
     def __contains__(self, key: str) -> bool:
-        snake_key = "".join(["_" + c.lower() if c.isupper() else c for c in key]).lstrip("_")
+        snake_key = self._normalize_key(key)
         return hasattr(self, snake_key) or hasattr(self, key)
 
 T = TypeVar("T")
