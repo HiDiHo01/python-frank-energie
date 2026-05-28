@@ -2,28 +2,47 @@
 # python_frank_energie/frank_energie.py
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
-from http import HTTPStatus
+import logging
 import re
 import time
-from typing import Any, Optional
-import logging
+from datetime import UTC, date, datetime, timedelta
+from http import HTTPStatus
+from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
-import aiohttp
-import sys
 import platform
-from aiohttp import ClientResponse, ClientSession, ClientError, ClientTimeout, ClientResponseError
+import sys
+
+import aiohttp
+from aiohttp import ClientError, ClientSession, ClientTimeout
 
 from .authentication import Authentication
-from .exceptions import (AuthException, AuthRequiredException,
-                         FrankEnergieException, NetworkError,
-                         RequestException)
-from .models import (Authentication, EnergyConsumption, EnodeChargers, EnodeVehicle, EnodeVehicles, Invoices,
-                     MarketPrices, Me, MonthInsights, MonthSummary,
-                     PeriodUsageAndCosts, SmartBatteries, SmartBattery, SmartBatteryDetails, SmartBatterySummary, SmartBatterySessions, User, UserSites, ContractPriceResolutionState,
-                     SmartPvSystem, SmartPvSystems, SmartPvSystemSummary, UserSmartFeedInStatus, FeedInSession, SmartFeedInSessionData)
+from .exceptions import AuthException, AuthRequiredException, FrankEnergieException, NetworkError, RequestException
+from .models import (
+    Authentication,
+    ContractPriceResolutionState,
+    EnergyConsumption,
+    EnodeChargers,
+    EnodeVehicle,
+    EnodeVehicles,
+    Invoices,
+    MarketPrices,
+    Me,
+    MonthInsights,
+    MonthSummary,
+    PeriodUsageAndCosts,
+    SmartBatteries,
+    SmartBattery,
+    SmartBatteryDetails,
+    SmartBatterySessions,
+    SmartBatterySummary,
+    SmartPvSystems,
+    SmartPvSystemSummary,
+    User,
+    UserSites,
+    UserSmartFeedInStatus,
+)
 
 VERSION = "2026.5.10"
 
@@ -71,15 +90,15 @@ class FrankEnergie:
         version: str | None = None,
     ) -> None:
         """Initialize the FrankEnergie client."""
-        self._session: Optional[ClientSession] = clientsession
+        self._session: ClientSession | None = clientsession
         self._close_session: bool = clientsession is None
-        self._auth: Optional[Authentication] = None
-        self._last_query: Optional[FrankEnergieQuery] = None
-        self._last_variables: Optional[dict[str, object]] = None
-        self._operation_name: Optional[str] = None
-        self._site_reference: Optional[str] = None
-        self._user_country: Optional[str] = None
-        self._resolution: Optional[str] = "PT60M"
+        self._auth: Authentication | None = None
+        self._last_query: FrankEnergieQuery | None = None
+        self._last_variables: dict[str, object] | None = None
+        self._operation_name: str | None = None
+        self._site_reference: str | None = None
+        self._user_country: str | None = None
+        self._resolution: str | None = "PT60M"
 
         if auth_token or refresh_token:
             self._auth = Authentication(auth_token, refresh_token, version)
@@ -215,7 +234,7 @@ class FrankEnergie:
 
             return response
 
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             _LOGGER.error(
                 "Frank Energie API timeout during operation [%s]",
                 self._operation_name,
@@ -328,7 +347,7 @@ class FrankEnergie:
             elif message.startswith("No reading dates found for user"):
                 # Typical for IN_DELIVERY sites
                 continue
-            
+
             # --- Feature not enabled ---
             elif message == "user-error:smart-trading-not-enabled":
                 _LOGGER.debug("Smart trading is not enabled for this user.")
@@ -707,10 +726,10 @@ class FrankEnergie:
                 return {}
             if response['data'] is None:
                 _LOGGER.debug("No data for chargers found: %s", response)
-                return {}   
+                return {}
             if 'enodeChargers' not in response['data']:
                 _LOGGER.debug("No chargers found in data: %s", response)
-                return {}   
+                return {}
             chargers_data = response.get("data", {}).get("enodeChargers", [])
             _LOGGER.info("%s Enode Chargers Found", len(chargers_data))
             _LOGGER.debug("Enode Chargers data: %s", chargers_data)
@@ -1369,7 +1388,7 @@ class FrankEnergie:
             "Me",
             {"siteReference": site_reference},
         )
-        
+
         response = await self._query(query)
         return User.from_dict(response)
 
@@ -1380,7 +1399,7 @@ class FrankEnergie:
     ) -> MarketPrices:
         """Get belgium market prices."""
         if start_date is None:
-            start_date = datetime.now(timezone.utc).date()
+            start_date = datetime.now(UTC).date()
         if end_date is None:
             end_date = start_date + timedelta(days=1)
 
@@ -1417,13 +1436,13 @@ class FrankEnergie:
             }
             """,
             "MarketPrices",
-            {"date": str(start_date)},  
+            {"date": str(start_date)},
         )
         response = await self._query(query, extra_headers=headers)
         return MarketPrices.from_be_dict(response)
 
     async def prices(
-        self, start_date: Optional[date] | None = None, end_date: Optional[date] | None = None, resolution: Optional[str] | None = None
+        self, start_date: date | None | None = None, end_date: date | None | None = None, resolution: str | None | None = None
     ) -> MarketPrices:
         """Get market prices."""
         if not start_date:
@@ -1683,13 +1702,13 @@ class FrankEnergie:
             "SmartBatteries",
         )
 
-        try: 
+        try:
             _LOGGER.debug("Querying smart batteries")
             response = await self._query(query)
         except Exception as e:
             _LOGGER.error("Failed to query smart batteries: %s", e)
             return None
-    
+
         # Handle empty or missing response data
         if not response:
             _LOGGER.error("GraphQL errors in smartBatteries response: %s", response["errors"])
@@ -1767,7 +1786,7 @@ class FrankEnergie:
             {"deviceId": device_id}
         )
 
-        try: 
+        try:
             _LOGGER.debug("Querying smart battery details for device_id: %s", device_id)
             response = await self._query(query)
         except Exception as err:
@@ -2118,14 +2137,14 @@ class FrankEnergie:
             self.ENODE_VEHICLES_VARIABLES,
         )
 
-        try: 
+        try:
             _LOGGER.debug("Querying enode vehicles")
             response = await self._query(query)
             # return response["data"]["enodeVehicles"]
         except Exception as e:
             _LOGGER.error("Failed to query enode vehicles: %s", e)
             return None
-    
+
         # Handle empty or missing response data
         if not response:
             _LOGGER.warning("Empty or missing GraphQL response for 'enodeVehicles'")
@@ -2157,7 +2176,7 @@ class FrankEnergie:
         return EnodeVehicles(enode_vehicles)
 
     def _validate_not_future_date(self, value: date) -> None:
-        if value > datetime.now(timezone.utc).date():
+        if value > datetime.now(UTC).date():
             raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
 
     def _validate_start_date_format(self, start_date: str | date) -> None:
@@ -2170,7 +2189,7 @@ class FrankEnergie:
         if len(start_date) == 10:  # volledige datum
             try:
                 date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
-                if date_obj > datetime.now(timezone.utc).date():
+                if date_obj > datetime.now(UTC).date():
                     raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
             except ValueError as e:
                 raise ValueError("De 'start_date' heeft geen geldig datumformaat: %s" % e)
