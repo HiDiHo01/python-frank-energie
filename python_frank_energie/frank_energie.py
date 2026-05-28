@@ -5,9 +5,12 @@ import asyncio
 import logging
 import re
 import time
+from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
-from typing import Any
+from typing import Any, TypeVar
+
+T = TypeVar("T")
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -364,6 +367,33 @@ class FrankEnergie:
 
             if extensions:
                 _LOGGER.debug("GraphQL extensions: %s", extensions)
+
+    async def _query_and_parse(
+        self,
+        query: FrankEnergieQuery,
+        parser_fn: Callable[[dict[str, Any]], T],
+        context_name: str,
+    ) -> T | None:
+        """Helper to check auth, query the API, handle logging, and parse the response."""
+        if self._auth is None:
+            raise AuthRequiredException
+
+        try:
+            _LOGGER.debug("Querying %s", context_name)
+            response = await self._query(query)
+        except Exception:
+            _LOGGER.exception("Failed to query %s", context_name)
+            return None
+
+        if not response or response.get("errors") or not response.get("data"):
+            _LOGGER.warning("Empty, missing, or error response for '%s'", context_name)
+            return None
+
+        try:
+            return parser_fn(response)
+        except (KeyError, ValueError, TypeError):
+            _LOGGER.exception("Failed to parse %s", context_name)
+            return None
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
@@ -1960,40 +1990,18 @@ class FrankEnergie:
 
         Returns a collection of smart PV systems.
         """
-        if self._auth is None:
-            raise AuthRequiredException
-
         query = FrankEnergieQuery(
             self.SMART_PV_SYSTEMS_QUERY,
             self.SMART_PV_SYSTEMS_OPERATIONNAME,
             self.SMART_PV_SYSTEMS_VARIABLES,
         )
-
-        try:
-            _LOGGER.debug("Querying smart PV systems")
-            response = await self._query(query)
-        except Exception:
-            _LOGGER.exception("Failed to query smart PV systems")
-            return None
-
-        if not response or response.get("errors") or not response.get("data"):
-            _LOGGER.warning("Empty, missing, or error response for 'smartPvSystems'")
-            return None
-
-        try:
-            return SmartPvSystems.from_dict(response)
-        except (KeyError, ValueError, TypeError):
-            _LOGGER.exception("Failed to parse smart PV systems")
-            return None
+        return await self._query_and_parse(query, SmartPvSystems.from_dict, "smart PV systems")
 
     async def smart_pv_system_summary(self, device_id: str) -> SmartPvSystemSummary | None:
         """Get the summary for a specific smart PV system.
 
         Returns summary data for the PV system.
         """
-        if self._auth is None:
-            raise AuthRequiredException
-
         if not isinstance(device_id, str) or not device_id.strip():
             raise ValueError("device_id must be a non-empty string")
 
@@ -2002,54 +2010,19 @@ class FrankEnergie:
             self.SMART_PV_SYSTEM_SUMMARY_OPERATIONNAME,
             {"deviceId": device_id},
         )
-
-        try:
-            _LOGGER.debug("Querying smart PV system summary for device_id: %s", device_id)
-            response = await self._query(query)
-        except Exception:
-            _LOGGER.exception("Failed to query smart PV system summary")
-            return None
-
-        if not response or response.get("errors") or not response.get("data"):
-            _LOGGER.warning("Empty, missing, or error response for 'smartPvSystemSummary'")
-            return None
-
-        try:
-            return SmartPvSystemSummary.from_dict(response)
-        except (KeyError, ValueError, TypeError):
-            _LOGGER.exception("Failed to parse smart PV system summary")
-            return None
+        return await self._query_and_parse(query, SmartPvSystemSummary.from_dict, "smart PV system summary")
 
     async def user_smart_feed_in(self) -> UserSmartFeedInStatus | None:
         """Get the users smart feed-in service status.
 
         Returns user smart feed-in status.
         """
-        if self._auth is None:
-            raise AuthRequiredException
-
         query = FrankEnergieQuery(
             self.USER_SMART_FEED_IN_QUERY,
             self.USER_SMART_FEED_IN_OPERATIONNAME,
             self.USER_SMART_FEED_IN_VARIABLES,
         )
-
-        try:
-            _LOGGER.debug("Querying user smart feed-in status")
-            response = await self._query(query)
-        except Exception:
-            _LOGGER.exception("Failed to query user smart feed-in status")
-            return None
-
-        if not response or response.get("errors") or not response.get("data"):
-            _LOGGER.warning("Empty, missing, or error response for 'userSmartFeedIn'")
-            return None
-
-        try:
-            return UserSmartFeedInStatus.from_dict(response)
-        except (KeyError, ValueError, TypeError):
-            _LOGGER.exception("Failed to parse user smart feed-in status")
-            return None
+        return await self._query_and_parse(query, UserSmartFeedInStatus.from_dict, "user smart feed-in status")
 
     ENODE_VEHICLES_QUERY = """
         query EnodeVehicles {
