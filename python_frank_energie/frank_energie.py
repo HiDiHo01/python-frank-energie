@@ -1229,6 +1229,63 @@ class FrankEnergie:
             _LOGGER.error("Failed to fetch contract price resolution state: %s", e)
             return None
 
+    # SetContractPriceResolutionState needs to be verified
+    async def set_contract_price_resolution_state(
+        self, connection_id: str, resolution: str
+    ) -> ContractPriceResolutionState:
+        """
+        Set the contract price resolution state for a given connection.
+    
+        Args:
+            connection_id: The ID of the connection to update. Must not be None.
+            resolution: The resolution to set (e.g. 'PT15M' or 'PT60M').
+    
+        Raises:
+            AuthRequiredException: If authentication has not been performed.
+            ValueError: If connection_id or resolution is None.
+    
+        Returns:
+            ContractPriceResolutionState: Parsed response from the API.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+    
+        if connection_id is None:
+            raise ValueError("connection_id must be provided")
+    
+        if resolution is None:
+            raise ValueError("resolution must be provided")
+    
+        query = FrankEnergieQuery(
+            """
+            mutation SetContractPriceResolutionState($connectionId: String!, $resolution: String!) {
+                setContractPriceResolutionState(connectionId: $connectionId, resolution: $resolution) {
+                    activeOption
+                    availableOptions
+                    changeRequestEffectiveDate
+                    isChangeRequestPossible
+                    upcomingChange
+                    upcomingChangeEffectiveDate
+                }
+            }
+            """,
+            "SetContractPriceResolutionState",
+            {"connectionId": connection_id, "resolution": resolution},
+        )
+    
+        try:
+            _LOGGER.debug(
+                "Setting contract price resolution state for connection ID %s to %s",
+                connection_id,
+                resolution,
+            )
+            response = await self._query(query)
+            data = response["data"]["setContractPriceResolutionState"]
+            return ContractPriceResolutionState.from_dict(data)
+        except Exception as e:
+            _LOGGER.error("Failed to set contract price resolution state: %s", e)
+            return None
+    
     # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
     # query UserSmartCharging {\\n  userSmartCharging {\\n    isActivated\\n    provider\\n    userCreatedAt\\n    userId\\n    isAvailableInCountry\\n    needsSubscription\\n    subscription {\\n      startDate\\n      endDate\\n      id\\n      proposition {\\n        product\\n        countryCode\\n      }\\n    }\\n  }\\n}\\n\",\"operationName\":\"UserSmartCharging\"}
     # {\"query\":\"query AppVersion {\\n  appVersion {\\n    ios {\\n      version\\n    }\\n    android {\\n      version\\n    }\\n  }\\n}\\n\",\"operationName\":\"AppVersion\"}"
