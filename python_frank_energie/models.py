@@ -653,6 +653,20 @@ class PeriodUsageAndCosts:
             raise ValueError(f"Fout bij conversie van PeriodUsageAndCosts data: {e}, data: {data}") from e
 
 
+def parse_date(value: str | date | None) -> date | None:
+    """Parse a date string or object into a date object."""
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        if "T" in value:
+            return datetime.fromisoformat(value).date()
+        return date.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
 @dataclass(slots=True)
 class ContractPriceResolutionState:
     """State for price resolution settings."""
@@ -669,11 +683,6 @@ class ContractPriceResolutionState:
         """Create an instance from raw API dictionary."""
         """Parse a dictionary into a ContractPriceResolutionState, converting dates."""
 
-        def parse_date(value: str | None) -> date | None:
-            if value is None:
-                return None
-            return date.fromisoformat(value)
-
         return cls(
             activeOption=data.get("activeOption"),
             availableOptions=data.get("availableOptions", []),
@@ -681,6 +690,34 @@ class ContractPriceResolutionState:
             isChangeRequestPossible=data.get("isChangeRequestPossible"),
             upcomingChange=parse_date(data.get("upcomingChange")),
             upcomingChangeEffectiveDate=parse_date(data.get("upcomingChangeEffectiveDate")),
+        )
+
+
+@dataclass(slots=True)
+class ContractPriceResolutionChangeResult:
+    """Result of requesting a contract price resolution change."""
+
+    success: bool
+    reason: str | None = None
+    effective_date: date | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> ContractPriceResolutionChangeResult:
+        """Create an instance from raw API dictionary."""
+        temp = data.get("data")
+        nested_data = temp if isinstance(temp, dict) else {}
+        effective_date = parse_date(nested_data.get("effectiveDate"))
+
+        success_raw = data.get("success")
+        success = success_raw if isinstance(success_raw, bool) else str(success_raw).lower() in ("true", "1")
+
+        reason_raw = data.get("reason")
+        reason = reason_raw if isinstance(reason_raw, str) else None
+
+        return cls(
+            success=success,
+            reason=reason,
+            effective_date=effective_date,
         )
 
 
