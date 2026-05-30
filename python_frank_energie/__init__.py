@@ -5,7 +5,15 @@ from .authentication import Authentication
 from .domain import CountryCode, EnergyType, Resolution
 from .exceptions import AuthException, ConnectionException, RequestException
 from .frank_energie import FrankEnergie
-from .models import Invoices, MarketPrices, PeriodUsageAndCosts, Price, PriceData
+from .models import (
+    ContractPriceResolutionChangeResult,
+    ContractPriceResolutionState,
+    Invoices,
+    MarketPrices,
+    PeriodUsageAndCosts,
+    Price,
+    PriceData,
+)
 
 __version__ = "2026.3.21"
 
@@ -19,6 +27,8 @@ __all__ = [
     "Resolution",
     "EnergyType",
     # Models
+    "ContractPriceResolutionChangeResult",
+    "ContractPriceResolutionState",
     "Invoices",
     "MarketPrices",
     "Price",

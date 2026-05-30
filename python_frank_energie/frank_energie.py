@@ -20,9 +20,11 @@ import sys
 import aiohttp
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
+from .domain import Resolution
 from .exceptions import AuthException, AuthRequiredException, FrankEnergieException, NetworkError, RequestException
 from .models import (
     Authentication,
+    ContractPriceResolutionChangeResult,
     ContractPriceResolutionState,
     EnergyConsumption,
     EnodeChargers,
@@ -47,6 +49,7 @@ from .models import (
 )
 
 VERSION = "2026.5.10"
+ERROR_CONNECTION_ID_REQUIRED = "connection_id must be provided"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -1200,7 +1203,7 @@ class FrankEnergie:
             raise AuthRequiredException
 
         if connection_id is None:
-            raise ValueError("connection_id must be provided")
+            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
 
         query = FrankEnergieQuery(
             """
@@ -1251,7 +1254,7 @@ class FrankEnergie:
             raise AuthRequiredException
     
         if connection_id is None:
-            raise ValueError("connection_id must be provided")
+            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
     
         if resolution is None:
             raise ValueError("resolution must be provided")
@@ -1285,7 +1288,74 @@ class FrankEnergie:
         except Exception as e:
             _LOGGER.error("Failed to set contract price resolution state: %s", e)
             return None
-    
+
+    async def contract_price_resolution_request_change(
+        self, connection_id: str | None = None, resolution: Resolution | None = None
+    ) -> ContractPriceResolutionChangeResult | None:
+        """
+        Request a change to the contract price resolution.
+
+        Args:
+            connection_id: The ID of the connection. Must not be None.
+            resolution: The price resolution to change to (e.g., Resolution.PT15M, Resolution.PT60M). Must not be None.
+
+        Raises:
+            AuthRequiredException: If the client is not authenticated.
+            ValueError: If connection_id or resolution is None, or if resolution is invalid.
+
+        Returns:
+            ContractPriceResolutionChangeResult: Result of the change request.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+
+        if connection_id is None:
+            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
+
+        if resolution is None:
+            raise ValueError("resolution must be provided")
+
+        try:
+            resolution_enum = Resolution(resolution)
+        except ValueError as e:
+            raise ValueError(
+                f"resolution must be a valid Resolution enum or one of: {[r.value for r in Resolution]}"
+            ) from e
+
+        query = FrankEnergieQuery(
+            """
+            mutation ContractPriceResolutionRequestChange($connectionId: String!, $resolution: PriceResolution!) {
+              contractPriceResolutionRequestChange(
+                connectionId: $connectionId
+                resolution: $resolution
+              ) {
+                data {
+                  effectiveDate
+                }
+                reason
+                success
+              }
+            }
+            """,
+            "ContractPriceResolutionRequestChange",
+            {"connectionId": connection_id, "resolution": resolution_enum.value},
+        )
+
+        try:
+            _LOGGER.debug(
+                "Requesting contract price resolution change for connection ID: %s to %s",
+                connection_id,
+                resolution_enum.value,
+            )
+            response = await self._query(query)
+            data = response["data"]["contractPriceResolutionRequestChange"]
+            return ContractPriceResolutionChangeResult.from_dict(data)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Failed to request contract price resolution change")
+            return None
+
     # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
     # query UserSmartCharging {\\n  userSmartCharging {\\n    isActivated\\n    provider\\n    userCreatedAt\\n    userId\\n    isAvailableInCountry\\n    needsSubscription\\n    subscription {\\n      startDate\\n      endDate\\n      id\\n      proposition {\\n        product\\n        countryCode\\n      }\\n    }\\n  }\\n}\\n\",\"operationName\":\"UserSmartCharging\"}
     # {\"query\":\"query AppVersion {\\n  appVersion {\\n    ios {\\n      version\\n    }\\n    android {\\n      version\\n    }\\n  }\\n}\\n\",\"operationName\":\"AppVersion\"}"
