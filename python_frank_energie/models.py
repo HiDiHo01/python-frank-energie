@@ -5486,16 +5486,23 @@ class SmartPvSystem(DictLikeMixin):
 
 
 @dataclass
-class SmartPvSystems(DictLikeMixin):
+class SmartPvSystems:
     """Represents a collection of smart PV systems."""
 
     systems: list[SmartPvSystem]
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> SmartPvSystems:
-        pv_dicts = data.get("data", {}).get("smartPvSystems", [])
-        systems = [SmartPvSystem.from_dict(v) for v in pv_dicts]
-        return cls(systems=systems)
+    def from_dict(cls, response: dict[str, object] | None) -> SmartPvSystems:
+        if not response:
+            return cls(systems=[])
+        data = response.get("data") or {}
+        pv_dicts = data.get("smartPvSystems") or []
+        return cls(
+            systems=[SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)]
+        )
+
+    def __bool__(self) -> bool:
+        return bool(self.systems)
 
 
 @dataclass
