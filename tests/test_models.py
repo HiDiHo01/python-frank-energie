@@ -155,6 +155,18 @@ def test_month_summary_malformed_populated_payload_still_raises():
     assert "Invalid expectedCosts" in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    "bad_payload",
+    ["not-a-dict", ["list", "instead"], 42],
+    ids=["string", "list", "int"],
+)
+def test_month_summary_non_dict_payload_raises(bad_payload):
+    """A truthy non-dict monthSummary value is schema drift -> raise."""
+    with pytest.raises(RequestException) as excinfo:
+        MonthSummary.from_dict({"data": {"monthSummary": bad_payload}})
+    assert "Unexpected monthSummary payload type" in str(excinfo.value)
+
+
 #
 # Tests for MarketPrices Model.
 #

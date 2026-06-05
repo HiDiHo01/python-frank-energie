@@ -1882,6 +1882,9 @@ class MonthSummary:
         if not payload:
             return None
 
+        if not isinstance(payload, dict):
+            raise RequestException("Unexpected monthSummary payload type")
+
         expected_costs = payload.get("expectedCosts")
         last_reading = payload.get("lastMeterReadingDate")
         actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")

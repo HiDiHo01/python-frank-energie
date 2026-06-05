@@ -513,14 +513,17 @@ class FrankEnergie:
         response = await self._query(query)
         return EnergyConsumption.from_dict(response)
 
-    async def month_summary(self, site_reference: str) -> MonthSummary:
+    async def month_summary(self, site_reference: str) -> MonthSummary | None:
         """Retrieve the month summary for the specified month.
 
         Args:
             month: The month for which to retrieve the summary. Defaults to the current month.
 
         Returns:
-            The month summary information.
+            The month summary information, or ``None`` when Frank Energie has
+            no summary to deliver yet (typical for the first few days of a
+            new billing month, before the previous month's invoice is
+            generated).
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
