@@ -99,17 +99,36 @@ def test_month_summary_with_expected_parameters(snapshot: SnapshotAssertion):
 
 
 def test_month_summary_with_missing_parameters():
-    """Test MonthSummary.from_dict with missing parameters."""
-    with pytest.raises(RequestException) as excinfo:
-        MonthSummary.from_dict({})
+    """Empty payload (no summary yet) should resolve to ``None`` rather than raise.
 
-    assert "Unexpected response" in str(excinfo.value)
+    Frank Energie does not publish the previous month's invoice for the first
+    few days of a new billing month; the coordinator must tolerate that gap.
+    """
+    assert MonthSummary.from_dict({}) is None
 
 
-def test_month_summary_with_unexpected_response():
-    """Test MonthSummary.from_dict with unexpected response."""
-    with pytest.raises(RequestException):
-        MonthSummary.from_dict({"data": {"monthSummary": None}})
+def test_month_summary_with_none_payload():
+    """``data.monthSummary: null`` is a normal transient state -> ``None``."""
+    assert MonthSummary.from_dict({"data": {"monthSummary": None}}) is None
+
+
+def test_month_summary_with_empty_payload():
+    """``data.monthSummary: {}`` is a normal transient state -> ``None``."""
+    assert MonthSummary.from_dict({"data": {"monthSummary": {}}}) is None
+
+
+def test_month_summary_with_all_null_fields():
+    """All summary fields null -> ``None`` (defense-in-depth)."""
+    payload = {
+        "data": {
+            "monthSummary": {
+                "expectedCosts": None,
+                "lastMeterReadingDate": None,
+                "actualCostsUntilLastMeterReadingDate": None,
+            }
+        }
+    }
+    assert MonthSummary.from_dict(payload) is None
 
 
 def test_month_summary_error_message():
@@ -118,6 +137,22 @@ def test_month_summary_error_message():
         MonthSummary.from_dict({"errors": [{"message": "help me"}]})
 
     assert "help me" in str(excinfo.value)
+
+
+def test_month_summary_malformed_populated_payload_still_raises():
+    """A populated-but-malformed summary must still raise (schema-drift signal)."""
+    payload = {
+        "data": {
+            "monthSummary": {
+                "expectedCosts": "not-a-number",
+                "lastMeterReadingDate": "2026-05-31",
+                "actualCostsUntilLastMeterReadingDate": 12.34,
+            }
+        }
+    }
+    with pytest.raises(RequestException) as excinfo:
+        MonthSummary.from_dict(payload)
+    assert "Invalid expectedCosts" in str(excinfo.value)
 
 
 #
