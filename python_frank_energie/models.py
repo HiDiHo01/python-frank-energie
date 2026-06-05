@@ -1854,10 +1854,19 @@ class MonthSummary:
 
     @staticmethod
     def from_dict(data: Mapping[str, object]) -> MonthSummary | None:
-        """Parse the response from the monthSummary query."""
+        """Parse the response from the monthSummary query.
+
+        Returns ``None`` when Frank Energie has no summary to deliver yet
+        (absent payload, empty payload, ``data.monthSummary: null``). This is
+        a normal transient state — typically the first few days of a new
+        billing month, before the previous month's invoice is generated.
+
+        Only raises when the FE response is *malformed-but-present*: schema
+        drift, mixed-type fields on a populated summary, etc.
+        """
         _LOGGER.debug("MonthSummary model %s", data)
 
-        if data is None:
+        if not data:
             return None
 
         if errors := data.get("errors"):
@@ -1868,14 +1877,21 @@ class MonthSummary:
         if not isinstance(root, dict):
             raise RequestException("Unexpected response format")
 
-        payload = root.get("monthSummary", {})
+        payload = root.get("monthSummary")
 
-        if payload is None:
-            raise RequestException("Unexpected response")
+        if not payload:
+            return None
 
         expected_costs = payload.get("expectedCosts")
         last_reading = payload.get("lastMeterReadingDate")
         actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")
+
+        if (
+            expected_costs is None
+            and last_reading is None
+            and actual_costs is None
+        ):
+            return None
 
         if not isinstance(expected_costs, (int, float, type(None))):
             raise RequestException("Invalid expectedCosts")
