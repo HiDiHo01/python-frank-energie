@@ -1,0 +1,54 @@
+{
+  "data": {
+    "smartBatteryDetails": [
+      {
+        "brand": "Sessy",
+        "capacity": 5.2,
+        "createdAt": "2024-11-22T14:41:47.853Z",
+        "externalReference": "AJM6UPPP",
+        "id": "unique_identifier",
+        "maxChargePower": 2.2,
+        "maxDischargePower": 1.7,
+        "onboardingStatus": "ACTIVE",
+        "provider": "SESSY",
+        "updatedAt": "2025-02-07T22:03:21.898Z",
+        "settings": {
+          "batteryMode": "SELF_CONSUMPTION_MIX",
+          "createdAt": "2024-11-22T14:41:47.853Z",
+          "effectiveTill": "2025-10-09T22:00:00.000Z",
+          "imbalanceTradingStrategy": "AGGRESSIVE",
+          "selfConsumptionTradingAllowed": true,
+          "selfConsumptionTradingThresholdPrice": 0.2,
+          "updatedAt": "2025-10-08T17:47:33.806Z",
+          "requestedUpdate": {
+            "batteryMode": "IMBALANCE_TRADING",
+            "effectiveFrom": "2025-10-09T22:00:00.000Z",
+            "imbalanceTradingStrategy": null
+          }
+        }
+      },
+      {
+        "brand": "Sessy",
+        "capacity": 10.4,
+        "createdAt": "2024-12-01T10:00:00.000Z",
+        "externalReference": "AJM6UPPQ",
+        "id": "unique_identifier",
+        "maxChargePower": 4.4,
+        "maxDischargePower": 3.4,
+        "onboardingStatus": "ACTIVE",
+        "provider": "SESSY",
+        "updatedAt": "2025-02-07T22:03:21.898Z",
+        "settings": {
+          "batteryMode": "IMBALANCE_TRADING",
+          "createdAt": "2024-12-01T10:00:00.000Z",
+          "effectiveTill": null,
+          "imbalanceTradingStrategy": "CONSERVATIVE",
+          "selfConsumptionTradingAllowed": false,
+          "selfConsumptionTradingThresholdPrice": 0.15,
+          "updatedAt": "2025-10-08T17:47:33.806Z",
+          "requestedUpdate": null
+        }
+      }
+    ]
+  }
+}
