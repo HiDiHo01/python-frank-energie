@@ -1,5 +1,6 @@
 """Frank Energie API implementation."""
 # python_frank_energie/frank_energie.py
+# version 2026.05.31
 
 import asyncio
 import logging
@@ -20,12 +21,12 @@ import sys
 import aiohttp
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
-from .domain import Resolution
 from .exceptions import AuthException, AuthRequiredException, FrankEnergieException, NetworkError, RequestException
 from .models import (
     Authentication,
-    ContractPriceResolutionChangeResult,
     ContractPriceResolutionState,
+    ContractPriceResolutionChangeResult,
+    ContractPriceResolutionChangeResultData,
     EnergyConsumption,
     EnodeChargers,
     EnodeVehicle,
@@ -36,6 +37,7 @@ from .models import (
     MonthInsights,
     MonthSummary,
     PeriodUsageAndCosts,
+    Resolution,
     SmartBatteries,
     SmartBattery,
     SmartBatteryDetails,
@@ -48,8 +50,7 @@ from .models import (
     UserSmartFeedInStatus,
 )
 
-VERSION = "2026.5.10"
-ERROR_CONNECTION_ID_REQUIRED = "connection_id must be provided"
+VERSION = "2026.5.31"
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -333,7 +334,7 @@ class FrankEnergie:
                     response,
                 )
                 raise FrankEnergieException(
-                    f"Request failed for '{active_query}': GraphQL validation error — check query and variables."
+                    "Request failed for '%s': GraphQL validation error — check query and variables." % active_query
                 )
 
             # --- Expected "no data" cases (not failures) ---
@@ -351,6 +352,9 @@ class FrankEnergie:
             elif message == "user-error:smart-charging-not-enabled":
                 _LOGGER.debug("Smart charging is not enabled for this user.")
                 continue
+            elif message == "user-error:smart-feed-in-not-enabled":
+                _LOGGER.debug("Smart fed-in is not enabled for this user.")
+                continue
 
             # --- Other specific messages ---
             elif message == "'Base' niet aanwezig in prijzen verzameling":
@@ -359,7 +363,7 @@ class FrankEnergie:
 
             # --- Critical errors ---
             elif message.startswith("No connections found for user"):
-                raise FrankEnergieException(f"Request failed: {message}")
+                raise FrankEnergieException("Request failed: %s" % message)
             elif message == "request-error:request-not-supported-in-country":
                 _LOGGER.error("Request not supported in user's country: %s", error_obj)
                 continue
@@ -377,25 +381,17 @@ class FrankEnergie:
         parser_fn: Callable[[dict[str, Any]], T],
         context_name: str,
     ) -> T | None:
-        """Helper to check auth, query the API, handle logging, and parse the response."""
+        """Check auth, query the API, and parse the response."""
         if self._auth is None or not self.is_authenticated:
             raise AuthRequiredException
 
         try:
-            _LOGGER.debug("Querying %s", context_name)
             response = await self._query(query)
-        except Exception:
-            _LOGGER.exception("Failed to query %s", context_name)
-            return None
-
-        if not response or response.get("errors") or not response.get("data"):
-            _LOGGER.warning("Empty, missing, or error response for '%s'", context_name)
-            return None
-
-        try:
             return parser_fn(response)
-        except (KeyError, ValueError, TypeError):
-            _LOGGER.exception("Failed to parse %s", context_name)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Failed to fetch or parse %s", context_name)
             return None
 
     LOGIN_QUERY = """
@@ -513,17 +509,14 @@ class FrankEnergie:
         response = await self._query(query)
         return EnergyConsumption.from_dict(response)
 
-    async def month_summary(self, site_reference: str) -> MonthSummary | None:
+    async def month_summary(self, site_reference: str) -> MonthSummary:
         """Retrieve the month summary for the specified month.
 
         Args:
             month: The month for which to retrieve the summary. Defaults to the current month.
 
         Returns:
-            The month summary information, or ``None`` when Frank Energie has
-            no summary to deliver yet (typical for the first few days of a
-            new billing month, before the previous month's invoice is
-            generated).
+            The month summary information.
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
@@ -560,8 +553,16 @@ class FrankEnergie:
             response = await self._query(query)
             _LOGGER.debug("MonthSummary raw response: %s", response)
             return MonthSummary.from_dict(response)
+        except (AuthException, AuthRequiredException):
+            raise
         except Exception as e:
-            raise FrankEnergieException(f"Failed to fetch month summary: {e}") from e
+            _LOGGER.exception(
+                "Month summary failed (%s)",
+                type(e).__name__,
+            )
+            raise FrankEnergieException(
+                f"Failed to fetch month summary: {e}"
+            ) from e
 
     async def month_insights(self, site_reference: str, date: str) -> MonthInsights:
         """Retrieve the month insights for the specified month.
@@ -651,7 +652,7 @@ class FrankEnergie:
         try:
             return MonthInsights.from_dict(response_dict)
         except Exception as exc:
-            raise FrankEnergieException(f"Failed to parse MonthInsights response: {exc}") from exc
+            raise FrankEnergieException("Failed to parse MonthInsights response: %s" % exc) from exc
 
     async def enode_chargers(self, site_reference: str, start_date: date) -> dict[str, EnodeChargers]:
         """Retrieve the enode charger information for the specified site reference.
@@ -823,6 +824,74 @@ class FrankEnergie:
 
         response = await self._query(query)
         return Invoices.from_dict(response)
+
+    async def SmartBatteryUpdateSettings(self, deviceId: str, settings: dict) -> SmartBatteryUpdateSettings:
+        """Update smart battery settings for the specified device. """
+        if self._auth is None or not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if not isinstance(deviceId, str) or not deviceId.strip():
+            raise ValueError("A valid non-empty deviceId must be provided.")
+
+        if not isinstance(settings, dict) or not settings:
+            raise ValueError("A valid non-empty settings dictionary must be provided.")
+
+        query = FrankEnergieQuery(
+            """
+            {
+                mutation SmartBatteryUpdateSettings($deviceId: String!, $settings: SmartBatteryUpdateSettingsInput!) {
+                    smartBatteryUpdateSettings(deviceId: $deviceId, settings: $settings) {
+                        batteryMode
+                        createdAt
+                        imbalanceTradingStrategy
+                        selfConsumptionTradingAllowed
+                        selfConsumptionTradingThresholdPrice
+                        updatedAt
+                    }
+                }
+            }
+            """,
+            "SmartBatteryUpdateSettings",
+            {"deviceId": deviceId,
+             "settings": {"batteryMode": "IMBALANCE_TRADING", "selfConsumptionTradingThresholdPrice": 0.2, "imbalanceTradingStrategy": "AGGRESSIVE"}},
+        )
+
+        response = await self._query(query)
+        return SmartBatteryUpdateSettings.from_dict(response)
+
+    async def EnodeUpdateVehicleChargeSettings(self, vehicleId: str, input: dict) -> EnodeUpdateVehicleChargeSettings:
+        """Update vehicle charge settings for the specified device. """
+        if self._auth is None or not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if not isinstance(vehicleId, str) or not vehicleId.strip():
+            raise ValueError("A valid non-empty vehicleId must be provided.")
+
+        if not isinstance(input, dict) or not input:
+            raise ValueError("A valid non-empty input dictionary must be provided.")
+
+        query = FrankEnergieQuery(
+            """
+            mutation EnodeUpdateVehicleChargeSettings($input: EnodeUpdateVehicleChargeSettingsInputType!) {
+                enodeUpdateVehicleChargeSettings(input: $input)
+            }
+            """,
+            "EnodeUpdateVehicleChargeSettings",
+            {"input": {
+                "vehicleId": vehicleId,
+                "deadline": "2025-06-13T10:00:00.000Z",
+                "hourMonday": 720,
+                "hourTuesday": 420,
+                "hourWednesday": 420,
+                "hourThursday": 420,
+                "hourFriday": 420,
+                "hourSaturday": 480,
+                "hourSunday": 540
+            }},
+        )
+
+        response = await self._query(query)
+        return EnodeUpdateVehicleChargeSettings.from_dict(response)
 
     async def old_me(self, site_reference: str) -> Me:
         """Fetch authenticated user data."""
@@ -1206,7 +1275,7 @@ class FrankEnergie:
             raise AuthRequiredException
 
         if connection_id is None:
-            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
+            raise ValueError("connection_id must be provided")
 
         query = FrankEnergieQuery(
             """
@@ -1235,33 +1304,99 @@ class FrankEnergie:
             _LOGGER.error("Failed to fetch contract price resolution state: %s", e)
             return None
 
-    # SetContractPriceResolutionState needs to be verified
-    async def set_contract_price_resolution_state(
+    async def contract_price_resolution_request_change(
+        self, connection_id: str | None = None, resolution: Resolution | None = None
+    ) -> ContractPriceResolutionChangeResult | None:
+        """
+        Request a change to the contract price resolution.
+
+        Args:
+            connection_id: The ID of the connection. Must not be None.
+            resolution: The price resolution to change to (e.g., Resolution.PT15M, Resolution.PT60M). Must not be None.
+
+        Raises:
+            AuthRequiredException: If the client is not authenticated.
+            ValueError: If connection_id or resolution is None, or if resolution is invalid.
+
+        Returns:
+            ContractPriceResolutionChangeResult: Result of the change request.
+        """
+        if self._auth is None:
+            raise AuthRequiredException
+
+        if connection_id is None:
+            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
+
+        if resolution is None:
+            raise ValueError("resolution must be provided")
+
+        try:
+            resolution_enum = Resolution(resolution)
+        except ValueError as e:
+            raise ValueError(
+                f"resolution must be a valid Resolution enum or one of: {[r.value for r in Resolution]}"
+            ) from e
+
+        query = FrankEnergieQuery(
+            """
+            mutation ContractPriceResolutionRequestChange($connectionId: String!, $resolution: PriceResolution!) {
+              contractPriceResolutionRequestChange(
+                connectionId: $connectionId
+                resolution: $resolution
+              ) {
+                data {
+                  effectiveDate
+                }
+                reason
+                success
+              }
+            }
+            """,
+            "ContractPriceResolutionRequestChange",
+            {"connectionId": connection_id, "resolution": resolution_enum.value},
+        )
+
+        try:
+            _LOGGER.debug(
+                "Requesting contract price resolution change for connection ID: %s to %s",
+                connection_id,
+                resolution_enum.value,
+            )
+            response = await self._query(query)
+            data = response["data"]["contractPriceResolutionRequestChange"]
+            return ContractPriceResolutionChangeResult.from_dict(data)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Failed to request contract price resolution change")
+            return None
+
+    async def old_set_contract_price_resolution_state(
         self, connection_id: str, resolution: str
     ) -> ContractPriceResolutionState:
         """
         Set the contract price resolution state for a given connection.
-    
+
         Args:
             connection_id: The ID of the connection to update. Must not be None.
             resolution: The resolution to set (e.g. 'PT15M' or 'PT60M').
-    
+
         Raises:
             AuthRequiredException: If authentication has not been performed.
             ValueError: If connection_id or resolution is None.
-    
+
         Returns:
             ContractPriceResolutionState: Parsed response from the API.
         """
         if self._auth is None:
             raise AuthRequiredException
-    
+
         if connection_id is None:
-            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
-    
+            raise ValueError("connection_id must be provided")
+
         if resolution is None:
             raise ValueError("resolution must be provided")
-    
+
         query = FrankEnergieQuery(
             """
             mutation SetContractPriceResolutionState($connectionId: String!, $resolution: String!) {
@@ -1278,7 +1413,7 @@ class FrankEnergie:
             "SetContractPriceResolutionState",
             {"connectionId": connection_id, "resolution": resolution},
         )
-    
+
         try:
             _LOGGER.debug(
                 "Setting contract price resolution state for connection ID %s to %s",
@@ -1883,6 +2018,14 @@ class FrankEnergie:
 
         return SmartBatteries(batteries)
 
+        try:
+            batteries = [SmartBattery.from_dict(b) for b in batteries_data]
+        except (KeyError, ValueError, TypeError) as err:
+            _LOGGER.error("Failed to parse smart batteries: %s", err)
+            return SmartBatteries([])
+
+        return SmartBatteries(batteries)
+
     async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails | None:
         """Retrieve smart battery details and summary."""
         if self._auth is None:
@@ -2117,7 +2260,9 @@ class FrankEnergie:
             self.SMART_PV_SYSTEMS_OPERATIONNAME,
             self.SMART_PV_SYSTEMS_VARIABLES,
         )
-        return await self._query_and_parse(query, SmartPvSystems.from_dict, "smart PV systems")
+        # return await self._query_and_parse(query, SmartPvSystems.from_dict, "smart PV systems")
+        response = await self._query(query)
+        return SmartPvSystems.from_dict(response)
 
     async def smart_pv_system_summary(self, device_id: str) -> SmartPvSystemSummary | None:
         """Get the summary for a specific smart PV system.
@@ -2144,6 +2289,7 @@ class FrankEnergie:
             self.USER_SMART_FEED_IN_OPERATIONNAME,
             self.USER_SMART_FEED_IN_VARIABLES,
         )
+        # response = await self._query(query)
         return await self._query_and_parse(query, UserSmartFeedInStatus.from_dict, "user smart feed-in status")
 
     ENODE_VEHICLES_QUERY = """
@@ -2222,16 +2368,18 @@ class FrankEnergie:
             return None
 
         # Handle empty or missing response data
-        if not response:
-            _LOGGER.warning("Empty or missing GraphQL response for 'enodeVehicles'")
-            return None
+        # missing response is hanled in _query
+        # if not response:
+        #     _LOGGER.warning("Empty or missing GraphQL response for 'enodeVehicles'")
+        #     return None
 
-        if response.get("errors"):
-            _LOGGER.error("Error response for 'enodeVehicles': %s", response)
-            return None
+        # errors are hanled in _query
+        # if response.get("errors"):
+        #     _LOGGER.error("Error response for 'enodeVehicles': %s", response)
+        #     return None
 
         if not response.get("data"):
-            _LOGGER.warning("Empty or missing GraphQL response for 'enodeVehicles'")
+            _LOGGER.debug("Empty or missing GraphQL response for 'enodeVehicles'")
             # return {}
             return None
 
@@ -2251,564 +2399,6 @@ class FrankEnergie:
 
         return EnodeVehicles(enode_vehicles)
 
-    # -------------------------------------------------------------------------
-    # Smart controls — mutations used by Home Assistant
-    # -------------------------------------------------------------------------
-
-    async def disable_smart_trading(self) -> bool:
-        """Disable smart trading for the authenticated user.
-
-        Calls the ``DisableSmartTrading`` GraphQL mutation.
-
-        Returns:
-            True if the API reported success, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation DisableSmartTrading {
-              disableSmartTrading {
-                success
-              }
-            }
-            """,
-            "DisableSmartTrading",
-        )
-
-        try:
-            _LOGGER.debug("Disabling smart trading")
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to disable smart trading")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when disabling smart trading: %s", response)
-            return False
-
-        return bool(response.get("data", {}).get("disableSmartTrading", {}).get("success", False))
-
-    async def disable_smart_feed_in(self) -> bool:
-        """Disable smart feed-in for the authenticated user.
-
-        Calls the ``SmartFeedInDisable`` GraphQL mutation.
-
-        Returns:
-            True if the API reported success, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation SmartFeedInDisable {
-              smartFeedInDisable {
-                success
-              }
-            }
-            """,
-            "SmartFeedInDisable",
-        )
-
-        try:
-            _LOGGER.debug("Disabling smart feed-in")
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to disable smart feed-in")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when disabling smart feed-in: %s", response)
-            return False
-
-        return bool(response.get("data", {}).get("smartFeedInDisable", {}).get("success", False))
-
-    async def enode_update_vehicle_charge_settings(self, input_data: dict[str, Any]) -> bool:
-        """Update the charge settings for a specific Enode vehicle.
-
-        Calls the ``EnodeUpdateVehicleChargeSettings`` GraphQL mutation.
-        The ``input_data`` dict must include the charge settings ``id`` and any
-        fields to update (e.g. ``deadline``, ``isSmartChargingEnabled``,
-        ``minChargeLimit``, ``maxChargeLimit``, ``hourMonday`` … ``hourSunday``).
-
-        Args:
-            input_data: A dict matching ``EnodeUpdateVehicleChargeSettingsInputType``.
-                Required key: ``id`` (the ChargeSettings.id from the vehicle).
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            ValueError: If ``input_data`` is missing the required ``id`` field.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        if "id" not in input_data:
-            raise ValueError("input_data must include the charge settings 'id' field.")
-
-        query = FrankEnergieQuery(
-            """
-            mutation EnodeUpdateVehicleChargeSettings($input: EnodeUpdateVehicleChargeSettingsInputType!) {
-              enodeUpdateVehicleChargeSettings(input: $input)
-            }
-            """,
-            "EnodeUpdateVehicleChargeSettings",
-            {"input": input_data},
-        )
-
-        try:
-            _LOGGER.debug("Updating vehicle charge settings for id=%s", input_data.get("id"))
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to update vehicle charge settings")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when updating vehicle charge settings: %s", response)
-            return False
-
-        return True
-
-    async def enode_update_charger_charge_settings(self, input_data: dict[str, Any]) -> bool:
-        """Update the charge settings for a specific Enode wall charger.
-
-        Calls the ``EnodeUpdateChargerChargeSettings`` GraphQL mutation.
-        The ``input_data`` dict must include the charge settings ``id`` and any
-        fields to update (e.g. ``deadline``, ``isSmartChargingEnabled``,
-        ``capacity``, ``initialCharge``, ``hourMonday`` … ``hourSunday``).
-
-        Args:
-            input_data: A dict matching ``EnodeUpdateChargerChargeSettingsInputType``.
-                Required key: ``id`` (the ChargeSettings.id from the charger).
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            ValueError: If ``input_data`` is missing the required ``id`` field.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        if "id" not in input_data:
-            raise ValueError("input_data must include the charge settings 'id' field.")
-
-        query = FrankEnergieQuery(
-            """
-            mutation EnodeUpdateChargerChargeSettings($input: EnodeUpdateChargerChargeSettingsInputType!) {
-              enodeUpdateChargerChargeSettings(input: $input)
-            }
-            """,
-            "EnodeUpdateChargerChargeSettings",
-            {"input": input_data},
-        )
-
-        try:
-            _LOGGER.debug("Updating charger charge settings for id=%s", input_data.get("id"))
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to update charger charge settings")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when updating charger charge settings: %s", response)
-            return False
-
-        return True
-
-    async def enode_enable_smart_charging(self) -> bool:
-        """Enable Enode smart charging for the authenticated user.
-
-        Calls the ``EnodeEnableSmartCharging`` GraphQL mutation.
-
-        Returns:
-            True if the API returned a userId (indicating success), False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation EnodeEnableSmartCharging {
-              enodeEnableSmartCharging {
-                userId
-              }
-            }
-            """,
-            "EnodeEnableSmartCharging",
-        )
-
-        try:
-            _LOGGER.debug("Enabling Enode smart charging")
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to enable Enode smart charging")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when enabling Enode smart charging: %s", response)
-            return False
-
-        return bool(response.get("data", {}).get("enodeEnableSmartCharging", {}).get("userId"))
-
-    async def enode_disable_smart_charging(self) -> bool:
-        """Disable Enode smart charging for the authenticated user.
-
-        Calls the ``EnodeDisableSmartCharging`` GraphQL mutation.
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation EnodeDisableSmartCharging {
-              enodeDisableSmartCharging
-            }
-            """,
-            "EnodeDisableSmartCharging",
-        )
-
-        try:
-            _LOGGER.debug("Disabling Enode smart charging")
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to disable Enode smart charging")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when disabling Enode smart charging: %s", response)
-            return False
-
-        return bool(response.get("data", {}).get("enodeDisableSmartCharging", False))
-
-    async def disable_smart_hvac(self) -> bool:
-        """Disable smart HVAC for the authenticated user.
-
-        Calls the ``SmartHvacDisable`` GraphQL mutation.
-
-        Returns:
-            True if the API reported success, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation SmartHvacDisable {
-              smartHvacDisable {
-                success
-              }
-            }
-            """,
-            "SmartHvacDisable",
-        )
-
-        try:
-            _LOGGER.debug("Disabling smart HVAC")
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to disable smart HVAC")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when disabling smart HVAC: %s", response)
-            return False
-
-        return bool(response.get("data", {}).get("smartHvacDisable", {}).get("success", False))
-
-    async def smart_hvac_update_settings(self, device_id: str, settings: dict[str, Any]) -> bool:
-        """Update settings for a smart HVAC device.
-
-        Calls the ``SmartHvacUpdateSettings`` GraphQL mutation.
-        Writable fields via ``SmartHvacUpdateSettingsInput``:
-        ``mode``, ``temperatureLowerBound``, ``temperatureUpperBound``.
-
-        Args:
-            device_id: The HVAC device ID.
-            settings: A dict matching ``SmartHvacUpdateSettingsInput``.
-                Example: ``{"mode": "SMART", "temperatureLowerBound": 18.0,
-                "temperatureUpperBound": 22.0}``
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation SmartHvacUpdateSettings($deviceId: String!, $settings: SmartHvacUpdateSettingsInput!) {
-              smartHvacUpdateSettings(deviceId: $deviceId, settings: $settings) {
-                createdAt
-                mode
-                temperatureLowerBound
-                temperatureUpperBound
-                updatedAt
-              }
-            }
-            """,
-            "SmartHvacUpdateSettings",
-            {"deviceId": device_id, "settings": settings},
-        )
-
-        try:
-            _LOGGER.debug("Updating smart HVAC settings for device %s", device_id)
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to update smart HVAC settings for device %s", device_id)
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when updating HVAC settings: %s", response)
-            return False
-
-        return True
-
-    # -------------------------------------------------------------------------
-    # Smart controls — API stubs for future use (not yet used by HA)
-    # -------------------------------------------------------------------------
-
-    async def smart_battery_update_settings(self, device_id: str, settings: dict[str, Any]) -> bool:
-        """Update settings for a smart battery device.
-
-        Calls the ``SmartBatteryUpdateSettings`` GraphQL mutation.
-        Writable fields via ``SmartBatteryUpdateSettingsInput``:
-        ``batteryMode``, ``imbalanceTradingStrategy``,
-        ``selfConsumptionTradingThresholdPrice``.
-
-        Note:
-            ``selfConsumptionTradingAllowed`` is a read-only status field and
-            cannot be set via this mutation.
-
-        Args:
-            device_id: The battery device ID.
-            settings: A dict matching ``SmartBatteryUpdateSettingsInput``.
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation SmartBatteryUpdateSettings($deviceId: String!, $settings: SmartBatteryUpdateSettingsInput!) {
-              smartBatteryUpdateSettings(deviceId: $deviceId, settings: $settings) {
-                batteryMode
-                createdAt
-                imbalanceTradingStrategy
-                selfConsumptionTradingThresholdPrice
-                updatedAt
-              }
-            }
-            """,
-            "SmartBatteryUpdateSettings",
-            {"deviceId": device_id, "settings": settings},
-        )
-
-        try:
-            _LOGGER.debug("Updating smart battery settings for device %s", device_id)
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to update smart battery settings for device %s", device_id)
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when updating battery settings: %s", response)
-            return False
-
-        return True
-
-    async def enode_update_all_vehicle_charge_settings(self, input_data: dict[str, Any]) -> bool:
-        """Bulk-update charge settings for all Enode vehicles.
-
-        Calls the ``EnodeUpdateAllVehicleChargeSettings`` GraphQL mutation.
-        Use this to apply the same deadline or charge limits to every vehicle
-        at once.
-
-        Args:
-            input_data: A dict matching ``EnodeUpdateAllVehicleChargeSettingsInputType``.
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation EnodeUpdateAllVehicleChargeSettings($input: EnodeUpdateAllVehicleChargeSettingsInputType!) {
-              enodeUpdateAllVehicleChargeSettings(input: $input)
-            }
-            """,
-            "EnodeUpdateAllVehicleChargeSettings",
-            {"input": input_data},
-        )
-
-        try:
-            _LOGGER.debug("Bulk updating Enode vehicle charge settings")
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to bulk update vehicle charge settings")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when bulk-updating vehicle charge settings: %s", response)
-            return False
-
-        return True
-
-    async def logout(self, installation_id: str) -> bool:
-        """Log out and invalidate the current session.
-
-        Calls the ``Logout`` GraphQL mutation.
-
-        Args:
-            installation_id: The installation ID of the device to log out.
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation Logout($installationId: String!) {
-              logout(installationId: $installationId)
-            }
-            """,
-            "Logout",
-            {"installationId": installation_id},
-        )
-
-        try:
-            _LOGGER.debug("Logging out installation %s", installation_id)
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to log out installation %s", installation_id)
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when logging out: %s", response)
-            return False
-
-        ok = bool(response.get("data", {}).get("logout", False))
-        if ok:
-            self._auth = None
-        return ok
-
-    async def update_user_settings(self, input_data: dict[str, Any]) -> bool:
-        """Update user-level app settings.
-
-        Calls the ``UpdateUserSettings`` GraphQL mutation.
-        Writable fields via ``UpdateUserSettingsInput``:
-        ``disabledHapticFeedback``, ``language``, ``rewardPayoutPreference``,
-        ``smartPushNotifications``.
-
-        Args:
-            input_data: A dict matching ``UpdateUserSettingsInput``.
-
-        Returns:
-            True if the mutation was accepted without errors, False otherwise.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-        """
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        query = FrankEnergieQuery(
-            """
-            mutation UpdateUserSettings($input: UpdateUserSettingsInput!) {
-              updateUserSettings(input: $input) {
-                id
-                UserSettings {
-                  id
-                  disabledHapticFeedback
-                  language
-                  rewardPayoutPreference
-                  smartPushNotifications
-                }
-              }
-            }
-            """,
-            "UpdateUserSettings",
-            {"input": input_data},
-        )
-
-        try:
-            _LOGGER.debug("Updating user settings")
-            response = await self._query(query)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to update user settings")
-            return False
-
-        if not response or response.get("errors"):
-            _LOGGER.warning("Error response when updating user settings: %s", response)
-            return False
-
-        return True
-
     def _validate_not_future_date(self, value: date) -> None:
         if value > datetime.now(UTC).date():
             raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
@@ -2826,7 +2416,7 @@ class FrankEnergie:
                 if date_obj > datetime.now(UTC).date():
                     raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
             except ValueError as e:
-                raise ValueError(f"De 'start_date' heeft geen geldig datumformaat: {e}")
+                raise ValueError("De 'start_date' heeft geen geldig datumformaat: %s" % e)
 
     async def __aenter__(self):
         """Async enter.

@@ -1,8 +1,8 @@
 """Data models enable parsing and processing of the Frank Energie API responses in a structured manner."""
 
-from __future__ import annotations
-
 # python_frank_energie/models.py
+# version 2026.05.31
+from __future__ import annotations
 
 """ Important Design Rule
 Do not move interval logic out of Price
@@ -14,10 +14,12 @@ This split is what keeps the model maintainable.
 import calendar
 import logging
 from collections import defaultdict
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
+from enum import Enum
 from statistics import mean
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -27,9 +29,6 @@ from pydantic import BaseModel, EmailStr
 
 from .exceptions import AuthException, RequestException
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
-
 try:
     from .time_periods import TimePeriod
 except ImportError:
@@ -38,7 +37,6 @@ except ImportError:
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-VERSION = "2026.5.10"
 DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 12
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
@@ -94,6 +92,36 @@ def _as_dict(value: object, field_name: str) -> dict[str, object]:
     return value  # type: ignore[return-value]
 
 
+class Resolution(str, Enum):
+    PT15M = "PT15M"
+    PT60M = "PT60M"
+
+
+@dataclass
+class ContractPriceResolutionChangeResultData:
+    effectiveDate: date | None = None
+
+
+@dataclass
+class ContractPriceResolutionChangeResult:
+    success: bool = False
+    reason: str | None = None
+    data: ContractPriceResolutionChangeResultData | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ContractPriceResolutionChangeResult:
+        result_data = data.get("data")
+        return cls(
+            success=data.get("success", False),
+            reason=data.get("reason"),
+            data=ContractPriceResolutionChangeResultData(
+                effectiveDate=date.fromisoformat(result_data["effectiveDate"])
+                if result_data and result_data.get("effectiveDate")
+                else None
+            ),
+        )
+
+
 @dataclass
 class Authentication:
     """Authentication data.
@@ -114,9 +142,10 @@ class Authentication:
         """Parse the response from the login or renewToken mutation."""
         _LOGGER.debug("Authentication response keys: %s", list(data.keys()))
 
-        if (errors := data.get("errors")) and isinstance(errors, list) and errors:
-            message = errors[0].get("message") if isinstance(errors[0], dict) else None
-            raise AuthException(message or "Unknown authentication error")
+        if errors := data.get("errors"):
+            if isinstance(errors, list) and errors:
+                message = errors[0].get("message") if isinstance(errors[0], dict) else None
+                raise AuthException(message or "Unknown authentication error")
 
         # --- Validate root data ---
         root = data.get("data")
@@ -400,7 +429,10 @@ class Invoices:
 
     def calculate_average_costs_per_month(self, year: int = None) -> float | None:
         """Calculate the average costs per month."""
-        invoices = self.all_periods_invoices if year is None else self.get_invoices_for_year(year)
+        if year is None:
+            invoices = self.all_periods_invoices
+        else:
+            invoices = self.get_invoices_for_year(year)
 
         invoices_count = 0
         total_costs = 0.0
@@ -653,20 +685,6 @@ class PeriodUsageAndCosts:
             raise ValueError(f"Fout bij conversie van PeriodUsageAndCosts data: {e}, data: {data}") from e
 
 
-def parse_date(value: str | date | None) -> date | None:
-    """Parse a date string or object into a date object."""
-    if value is None:
-        return None
-    if isinstance(value, date):
-        return value
-    try:
-        if "T" in value:
-            return datetime.fromisoformat(value).date()
-        return date.fromisoformat(value)
-    except (ValueError, TypeError):
-        return None
-
-
 @dataclass(slots=True)
 class ContractPriceResolutionState:
     """State for price resolution settings."""
@@ -683,41 +701,18 @@ class ContractPriceResolutionState:
         """Create an instance from raw API dictionary."""
         """Parse a dictionary into a ContractPriceResolutionState, converting dates."""
 
+        def parse_date(value: str | None) -> date | None:
+            if value is None:
+                return None
+            return date.fromisoformat(value)
+
         return cls(
             activeOption=data.get("activeOption"),
             availableOptions=data.get("availableOptions", []),
             changeRequestEffectiveDate=parse_date(data.get("changeRequestEffectiveDate")),
             isChangeRequestPossible=data.get("isChangeRequestPossible"),
-            upcomingChange=parse_date(data.get("upcomingChange")),
+            upcomingChange=data.get("upcomingChange"),
             upcomingChangeEffectiveDate=parse_date(data.get("upcomingChangeEffectiveDate")),
-        )
-
-
-@dataclass(slots=True)
-class ContractPriceResolutionChangeResult:
-    """Result of requesting a contract price resolution change."""
-
-    success: bool
-    reason: str | None = None
-    effective_date: date | None = None
-
-    @classmethod
-    def from_dict(cls, data: dict[str, object]) -> ContractPriceResolutionChangeResult:
-        """Create an instance from raw API dictionary."""
-        temp = data.get("data")
-        nested_data = temp if isinstance(temp, dict) else {}
-        effective_date = parse_date(nested_data.get("effectiveDate"))
-
-        success_raw = data.get("success")
-        success = success_raw if isinstance(success_raw, bool) else str(success_raw).lower() in ("true", "1")
-
-        reason_raw = data.get("reason")
-        reason = reason_raw if isinstance(reason_raw, str) else None
-
-        return cls(
-            success=success,
-            reason=reason,
-            effective_date=effective_date,
         )
 
 
@@ -910,8 +905,7 @@ class Me:
 
         errors = data.get("errors")
         if errors:
-            message = getattr(errors[0], "get", lambda k, *args: "Unknown error")("message")
-
+            message = getattr(errors[0], "get", lambda k, d=None: "Unknown error")("message")
             raise RequestException(message)
 
         raw_data = data.get("data")
@@ -1837,23 +1831,23 @@ class MonthInsights:
         )
 
 
-@dataclass
+@dataclass(slots=True)
 class MonthSummary:
     """Month summary data, including the actual and expected costs for this month."""
 
     _id: str
     actualCostsUntilLastMeterReadingDate: float
     expectedCostsUntilLastMeterReadingDate: float
-    expectedCosts: float | None
-    expectedCostsPerDay: float | None
     lastMeterReadingDate: str
-    CostsPerDayTillNow: float
+    costs_per_day_till_now: float
     meterReadingDayCompleteness: int
     gasExcluded: bool
     typename: str
+    expectedCosts: float | None = None
+    expectedCostsPerDay: float | None = None
 
     @staticmethod
-    def from_dict(data: Mapping[str, object]) -> MonthSummary | None:
+    def old_from_dict(data: Mapping[str, object]) -> MonthSummary | None:
         """Parse the response from the monthSummary query.
 
         Returns ``None`` when Frank Energie has no summary to deliver yet
@@ -1866,7 +1860,7 @@ class MonthSummary:
         """
         _LOGGER.debug("MonthSummary model %s", data)
 
-        if not data:
+        if data is None:
             return None
 
         if errors := data.get("errors"):
@@ -1879,10 +1873,10 @@ class MonthSummary:
 
         payload = root.get("monthSummary")
 
-        if not payload:
+        if payload is None:
             return None
 
-        if not isinstance(payload, dict):
+        if not isinstance(payload, Mapping):
             raise RequestException("Unexpected monthSummary payload type")
 
         expected_costs = payload.get("expectedCosts")
@@ -1918,7 +1912,7 @@ class MonthSummary:
             expectedCostsUntilLastMeterReadingDate=payload.get("expectedCostsUntilLastMeterReadingDate"),
             expectedCosts=expected_costs,
             expectedCostsPerDay=expected_costs_per_day,
-            CostsPerDayTillNow=costs_per_day_till_now,
+            costs_per_day_till_now=costs_per_day_till_now,
             lastMeterReadingDate=last_reading,
             meterReadingDayCompleteness=payload.get("meterReadingDayCompleteness"),
             gasExcluded=payload.get("gasExcluded"),
@@ -1926,24 +1920,131 @@ class MonthSummary:
         )
 
     @staticmethod
+    def from_dict(
+        data: Mapping[str, object] | None,
+    ) -> MonthSummary | None:
+        """Parse the response from the monthSummary query.
+
+        Returns ``None`` when Frank Energie has no summary to deliver yet
+        (absent payload, empty payload, ``data.monthSummary: null``). This is
+        a normal transient state — typically the first few days of a new
+        billing month, before the previous month's invoice is generated.
+
+        Only raises when the FE response is malformed-but-present.
+        """
+        _LOGGER.debug("MonthSummary model %s", data)
+
+        if data is None:
+            return None
+
+        if errors := data.get("errors"):
+            raise RequestException(errors[0]["message"])
+
+        root = data.get("data")
+
+        if not isinstance(root, Mapping):
+            raise RequestException("Missing data payload")
+
+        payload = root.get("monthSummary")
+
+        if payload is None:
+            return None
+
+        if not isinstance(payload, Mapping):
+            raise RequestException("Unexpected monthSummary payload type")
+
+        summary_id = payload.get("_id")
+        actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")
+        expected_costs = payload.get("expectedCosts")
+        expected_costs_until = payload.get(
+            "expectedCostsUntilLastMeterReadingDate"
+        )
+        last_reading = payload.get("lastMeterReadingDate")
+        completeness = payload.get("meterReadingDayCompleteness")
+        gas_excluded = payload.get("gasExcluded")
+        typename = payload.get("__typename")
+
+        if (
+            expected_costs is None
+            and last_reading is None
+            and actual_costs is None
+        ):
+            return None
+
+        if not isinstance(summary_id, str):
+            raise RequestException("Invalid _id")
+
+        if not isinstance(actual_costs, (int, float)):
+            raise RequestException(
+                "Invalid actualCostsUntilLastMeterReadingDate"
+            )
+
+        if not isinstance(last_reading, str):
+            raise RequestException("Invalid lastMeterReadingDate")
+
+        if not isinstance(
+            expected_costs_until,
+            (int, float),
+        ):
+            raise RequestException(
+                "Invalid expectedCostsUntilLastMeterReadingDate"
+            )
+
+        if not isinstance(expected_costs, (int, float, type(None))):
+            raise RequestException("Invalid expectedCosts")
+
+        if not isinstance(completeness, int):
+            raise RequestException(
+                "Invalid meterReadingDayCompleteness"
+            )
+
+        if not isinstance(gas_excluded, bool):
+            raise RequestException("Invalid gasExcluded")
+
+        if not isinstance(typename, str):
+            raise RequestException("Invalid __typename")
+
+        expected_costs_per_day = (
+            MonthSummary.calculate_expected_costs_per_day(
+                float(expected_costs),
+                last_reading,
+            )
+            if expected_costs is not None
+            else None
+        )
+
+        costs_per_day_till_now = (
+            MonthSummary.calculate_costs_per_day_till_now(
+                float(actual_costs),
+                last_reading,
+            )
+        )
+
+        return MonthSummary(
+            _id=summary_id,
+            actualCostsUntilLastMeterReadingDate=float(actual_costs),
+            expectedCostsUntilLastMeterReadingDate=float(
+                expected_costs_until,
+            ),
+            lastMeterReadingDate=last_reading,
+            costs_per_day_till_now=costs_per_day_till_now,
+            meterReadingDayCompleteness=completeness,
+            gasExcluded=gas_excluded,
+            typename=typename,
+            expectedCosts=(
+                float(expected_costs)
+                if expected_costs is not None
+                else None
+            ),
+            expectedCostsPerDay=expected_costs_per_day,
+        )
+
+    @staticmethod
     def calculate_expected_costs_per_day(expected_costs: float, lastMeterReadingDate: str) -> float | None:
         """Calculate the expected costs per day."""
         last_meter_reading_date = datetime.strptime(lastMeterReadingDate, "%Y-%m-%d").replace(tzinfo=UTC)
-        # last_meter_reading_month = last_meter_reading_date.month
-        # days_in_month = (last_meter_reading_date.replace(month=last_meter_reading_month % 12 + 1, day=1) -
-        #                  datetime(year=last_meter_reading_date.year, month=last_meter_reading_month, day=1)).days
         days_in_month = calendar.monthrange(last_meter_reading_date.year, last_meter_reading_date.month)[1]
         return expected_costs / days_in_month
-
-    @staticmethod
-    def old_calculate_costs_per_day_till_now(costs_till_now: float, lastMeterReadingDate: str) -> float:
-        """Calculate the costs per day this month till now."""
-        last_meter_reading_date = datetime.strptime(lastMeterReadingDate, "%Y-%m-%d").replace(tzinfo=UTC)
-        if last_meter_reading_date.day > 1:  # skip day one
-            days_till_last_reading = last_meter_reading_date.day  # always one day behind
-            # return the cost divided by the days
-            return costs_till_now / days_till_last_reading
-        return costs_till_now  # return the cost on the fist day
 
     @staticmethod
     def calculate_costs_per_day_till_now(costs_till_now: float, lastMeterReadingDate: str) -> float:
@@ -1958,15 +2059,6 @@ class MonthSummary:
     def differenceUntilLastMeterReadingDate(self) -> float:
         """The difference between the expected costs and the actual costs."""
         return self.actualCostsUntilLastMeterReadingDate - self.expectedCostsUntilLastMeterReadingDate
-
-    @property
-    def old_differenceUntilLastMeterReadingDateAvg(self) -> float:
-        """The difference between the expected costs and the actual costs per day."""
-        last_meter_reading_date = datetime.strptime(self.lastMeterReadingDate, "%Y-%m-%d").replace(tzinfo=UTC)
-        if last_meter_reading_date.day > 1:  # skip day one
-            days_till_last_reading = last_meter_reading_date.day
-            return self.differenceUntilLastMeterReadingDate / days_till_last_reading
-        return self.differenceUntilLastMeterReadingDate
 
     @property
     def differenceUntilLastMeterReadingDateAvg(self) -> float:
@@ -2370,7 +2462,7 @@ class Price:
 
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
-        return "{} -> {}: {:.4f} {}".format(
+        return "%s -> %s: %.4f %s" % (
             self.date_from.isoformat() if self.date_from else "N/A",
             self.date_till.isoformat() if self.date_till else "N/A",
             self.total,
@@ -2896,11 +2988,11 @@ class PriceData:
 
     @property
     def upcoming_min(self) -> Price | None:
-        return min(list(self.upcoming), key=lambda hour: hour.total, default=None)
+        return min([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
 
     @property
     def upcoming_max(self) -> Price | None:
-        return max(list(self.upcoming), key=lambda hour: hour.total, default=None)
+        return max([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
 
     @property
     def old_elec_previoushour(self):
@@ -3154,6 +3246,7 @@ class PriceData:
     def calculate_stats(data):
         print(data)
         electricity_prices = data.MarketPrices.electricity
+        gas_prices = data.MarketPrices.gas
 
         # Calculate total market price and total market price tax and the total price
         total_market_price = sum(price.market_price for price in electricity_prices)
@@ -3168,10 +3261,10 @@ class PriceData:
         # Find the minimum and maximum prices
         min_market_price = min(price.market_price for price in electricity_prices)
         max_market_price = max(price.market_price for price in electricity_prices)
-        min(price.market_price_with_tax for price in electricity_prices)
-        max(price.market_price_with_tax for price in electricity_prices)
-        min(price.total for price in electricity_prices)
-        max(price.total for price in electricity_prices)
+        min_market_price_with_tax = min(price.market_price_with_tax for price in electricity_prices)
+        max_market_price_with_tax = max(price.market_price_with_tax for price in electricity_prices)
+        min_total_price = min(price.total for price in electricity_prices)
+        max_total_price = max(price.total for price in electricity_prices)
 
         # Find the time interval with the highest market price
         max_market_price_interval = max(electricity_prices, key=lambda x: x["marketPrice"])
@@ -3251,7 +3344,7 @@ class PriceData:
     @property
     def all_avg(self):
         """Get the average of all prices."""
-        all_prices = list(self.price_data)
+        all_prices = [price for price in self.price_data]
 
         if not all_prices:
             return None
@@ -3320,7 +3413,7 @@ class PriceData:
         now = datetime.now(UTC).astimezone()
         tomorrow = now + timedelta(days=1)
         tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow_start + timedelta(days=1)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
 
         # tomorrow_prices = [
         #     price for price in self.price_data
@@ -3462,7 +3555,7 @@ class PriceData:
 
     @property
     def old_upcoming_min(self) -> Price:
-        return min(list(self.upcoming), key=lambda hour: hour.total)
+        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
 
     @property
     def upcoming_min(self) -> Price | None:
@@ -3486,7 +3579,7 @@ class PriceData:
 
     @property
     def old_upcoming_max(self) -> Price:
-        return max(list(self.upcoming), key=lambda hour: hour.total)
+        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
 
     @property
     def upcoming_max(self) -> Price | None:
@@ -3634,7 +3727,7 @@ class Old_PriceData:
     elec_resolution: str | None = None
     resolution_minutes: int = 60
 
-    """"
+    """" 
     PriceDataAvg = namedtuple('PriceDataAvg', [
         'values', 'total', 'market_price_with_tax_and_markup',
         'market_markup_price', 'market_price_with_tax',
@@ -3838,11 +3931,11 @@ class Old_PriceData:
 
     @property
     def upcoming_min(self) -> Price | None:
-        return min(list(self.upcoming), key=lambda hour: hour.total, default=None)
+        return min([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
 
     @property
     def upcoming_max(self) -> Price | None:
-        return max(list(self.upcoming), key=lambda hour: hour.total, default=None)
+        return max([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
 
     @property
     def old_elec_previoushour(self):
@@ -4096,6 +4189,7 @@ class Old_PriceData:
     def calculate_stats(data):
         print(data)
         electricity_prices = data.MarketPrices.electricity
+        gas_prices = data.MarketPrices.gas
 
         # Calculate total market price and total market price tax and the total price
         total_market_price = sum(price.market_price for price in electricity_prices)
@@ -4110,10 +4204,10 @@ class Old_PriceData:
         # Find the minimum and maximum prices
         min_market_price = min(price.market_price for price in electricity_prices)
         max_market_price = max(price.market_price for price in electricity_prices)
-        min(price.market_price_with_tax for price in electricity_prices)
-        max(price.market_price_with_tax for price in electricity_prices)
-        min(price.total for price in electricity_prices)
-        max(price.total for price in electricity_prices)
+        min_market_price_with_tax = min(price.market_price_with_tax for price in electricity_prices)
+        max_market_price_with_tax = max(price.market_price_with_tax for price in electricity_prices)
+        min_total_price = min(price.total for price in electricity_prices)
+        max_total_price = max(price.total for price in electricity_prices)
 
         # Find the time interval with the highest market price
         max_market_price_interval = max(electricity_prices, key=lambda x: x["marketPrice"])
@@ -4193,7 +4287,7 @@ class Old_PriceData:
     @property
     def all_avg(self):
         """Get the average of all prices."""
-        all_prices = list(self.price_data)
+        all_prices = [price for price in self.price_data]
 
         if not all_prices:
             return None
@@ -4262,7 +4356,7 @@ class Old_PriceData:
         now = datetime.now(UTC).astimezone()
         tomorrow = now + timedelta(days=1)
         tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow_start + timedelta(days=1)
+        tomorrow_end = tomorrow_start + timedelta(days=1)
 
         # tomorrow_prices = [
         #     price for price in self.price_data
@@ -4404,7 +4498,7 @@ class Old_PriceData:
 
     @property
     def old_upcoming_min(self) -> Price:
-        return min(list(self.upcoming), key=lambda hour: hour.total)
+        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
 
     @property
     def upcoming_min(self) -> Price | None:
@@ -4428,7 +4522,7 @@ class Old_PriceData:
 
     @property
     def old_upcoming_max(self) -> Price:
-        return max(list(self.upcoming), key=lambda hour: hour.total)
+        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
 
     @property
     def upcoming_max(self) -> Price | None:
@@ -4730,6 +4824,17 @@ class MarketPrices:
                 energy_country=energy_country,
             )
 
+        error = cls._extract_error(data, None)
+        if error:
+            if "No marketprices found" in error:
+                _LOGGER.debug("No user prices available yet: %s", error)
+                return cls(
+                    electricity=PriceData([], "electricity"),
+                    gas=PriceData([], "gas"),
+                    energy_country=energy_country,
+                )
+            raise RequestException(error)
+
         if data.get("errors"):
             raise RequestException(cls._extract_error(data, "Unknown API error"))
 
@@ -4810,9 +4915,9 @@ class Session:
                 cumulative_trading_result=float(payload["cumulativeTradingResult"]),
             )
         except KeyError as exc:
-            raise RequestException(f"Missing expected field in session: {exc}") from exc
+            raise RequestException("Missing expected field in session: %s" % exc) from exc
         except ValueError as exc:
-            raise RequestException(f"Invalid data format in session payload: {exc}") from exc
+            raise RequestException("Invalid data format in session payload: %s" % exc) from exc
 
 
 # @dataclass
@@ -4992,9 +5097,10 @@ class SmartBattery:
 
         capacity_value = data.get("capacity")
 
+        capacity: float | None = None
         if capacity_value is not None:
             try:
-                float(capacity_value)
+                capacity = float(capacity_value)
             except (TypeError, ValueError):
                 _LOGGER.debug(
                     "Invalid battery capacity received for device %s: %s",
@@ -5067,9 +5173,9 @@ class SmartBatterySession:
                 trade_index=payload.get("tradeIndex"),
             )
         except KeyError as exc:
-            raise ValueError(f"Missing expected field in session: {exc}") from exc
+            raise ValueError("Missing expected field in session: %s" % exc) from exc
         except ValueError as exc:
-            raise ValueError(f"Invalid data format in session payload: {exc}") from exc
+            raise ValueError("Invalid data format in session payload: %s" % exc) from exc
 
 
 @dataclass
@@ -5247,7 +5353,7 @@ class old_SmartBatteryDetails:
         )
 
         summary_data = data.get("smartBatterySummary", {})
-        datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
+        last_update = datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
 
         smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
 
@@ -5406,7 +5512,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
         dt = datetime.fromisoformat(value.rstrip("Z"))
         return dt.replace(tzinfo=ZoneInfo("UTC"))
     except ValueError as err:
-        raise ValueError(f"Invalid datetime string: {value}") from err
+        raise ValueError("Invalid datetime string: %s" % value) from err
 
 
 def test_parse_datetime(value: object) -> datetime | None:
@@ -5424,13 +5530,13 @@ def test_parse_datetime(value: object) -> datetime | None:
         return None
 
     if not isinstance(value, str):
-        raise ValueError(f"Expected string for datetime parsing, got: {type(value).__name__}")
+        raise ValueError("Expected string for datetime parsing, got: %s" % type(value).__name__)
 
     try:
         dt = parse_datetime(value)
     except (ValueError, TypeError) as err:
         _LOGGER.debug("Failed to parse datetime string '%s': %s", value, err)
-        raise ValueError(f"Invalid datetime string: {value}") from err
+        raise ValueError("Invalid datetime string: %s" % value) from err
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ZoneInfo("UTC"))
@@ -5502,6 +5608,21 @@ class SmartPvSystem(DictLikeMixin):
             steering_status=data["steeringStatus"],
             updated_at=_parse_datetime(data["updatedAt"]),
         )
+
+
+@dataclass
+class old_SmartPvSystems(DictLikeMixin):
+    """Represents a collection of smart PV systems."""
+
+    systems: list[SmartPvSystem]
+
+    @classmethod
+    def from_dict(cls, response: dict[str, object]) -> SmartPvSystems:
+        if not response:
+            return cls(systems=[])
+        pv_dicts = response.get("data", {}).get("smartPvSystems", [])
+        systems=[SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)]
+        return cls(systems=systems)
 
 
 @dataclass
