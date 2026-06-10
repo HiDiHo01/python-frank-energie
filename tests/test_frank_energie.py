@@ -127,6 +127,29 @@ async def test_renew_token(aresponses):
 
 
 @pytest.mark.asyncio
+async def test_renew_token_no_auth_header(aresponses):
+    """Test that renew_token does not send the Authorization header."""
+    async def response_handler(request):
+        assert "Authorization" not in request.headers
+        return aresponses.Response(
+            text=load_fixtures("authentication.json"),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        )
+
+    aresponses.add(SIMPLE_DATA_URL, "/", "POST", response_handler)
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, "a", "b")  # noqa: S106
+        auth = await api.renew_token()
+        await api.close()
+
+    assert api.is_authenticated is True
+    assert auth.authToken == "hello"
+    assert auth.refreshToken == "world"
+
+
+@pytest.mark.asyncio
 async def test_renew_token_invalid_credentials(aresponses):
     """Test login with invalid credentials."""
     aresponses.add(

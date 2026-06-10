@@ -179,7 +179,7 @@ class FrankEnergie:
             "skip-graphcdn": "1",
         }
 
-        if self._auth and self._auth.authToken:
+        if self._auth and self._auth.authToken and query.operation_name != "RenewToken":
             headers["Authorization"] = f"Bearer {self._auth.authToken}"
 
         if extra_headers:
