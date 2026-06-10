@@ -1,6 +1,6 @@
 """Frank Energie API implementation."""
 # python_frank_energie/frank_energie.py
-# version 2026.05.31
+# version 2026.06.10
 
 import asyncio
 import logging
@@ -50,8 +50,6 @@ from .models import (
     UserSmartFeedInStatus,
 )
 
-VERSION = "2026.5.31"
-
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -88,6 +86,7 @@ class FrankEnergie:
 
     DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
     # DATA_URL = "https://graphql.frankenergie.nl/"
+    AUTH_HEADER_EXEMPT_OPERATIONS = {"RenewToken"}
 
     def __init__(
         self,
@@ -179,7 +178,11 @@ class FrankEnergie:
             "skip-graphcdn": "1",
         }
 
-        if self._auth and self._auth.authToken and query.operation_name != "RenewToken":
+        if (
+            self._auth
+            and self._auth.authToken
+            and query.operation_name not in self.AUTH_HEADER_EXEMPT_OPERATIONS
+        ):
             headers["Authorization"] = f"Bearer {self._auth.authToken}"
 
         if extra_headers:
