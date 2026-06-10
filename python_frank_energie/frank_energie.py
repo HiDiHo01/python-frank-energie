@@ -2042,6 +2042,7 @@ class FrankEnergie:
                             batteryMode
                             imbalanceTradingStrategy
                             selfConsumptionTradingAllowed
+                            selfConsumptionTradingThresholdPrice
                         }
                     }
                     smartBatterySummary(deviceId: $deviceId) {
