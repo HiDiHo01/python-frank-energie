@@ -119,12 +119,6 @@ class FrankEnergie:
             self._session = None
             self._close_session = False
 
-    # @property
-    # def auth(self) -> Optional[Authentication]:
-    #     """Backwards compatibility for integrations accessing .auth directly."""
-    #     _LOGGER.error("Using .auth directly is deprecated. Use .is_authenticated instead.")
-    #     return self._auth
-
     @property
     def is_authenticated(self) -> bool:
         """Check if the client is authenticated.
