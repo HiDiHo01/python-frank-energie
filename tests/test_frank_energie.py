@@ -127,8 +127,11 @@ async def test_renew_token(aresponses):
 
 
 @pytest.mark.asyncio
+@pytest.mark.allow_socket
 async def test_renew_token_no_auth_header(aresponses):
     """Test that renew_token does not send the Authorization header."""
+    from python_frank_energie.authentication import Authentication
+
     async def response_handler(request):
         assert "Authorization" not in request.headers
         return aresponses.Response(
@@ -141,6 +144,7 @@ async def test_renew_token_no_auth_header(aresponses):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, "a", "b")  # noqa: S106
+        api._auth = Authentication(authToken="expired_token", refreshToken="refresh_token")
         auth = await api.renew_token()
         await api.close()
 
