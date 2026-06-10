@@ -1883,11 +1883,7 @@ class MonthSummary:
         last_reading = payload.get("lastMeterReadingDate")
         actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")
 
-        if (
-            expected_costs is None
-            and last_reading is None
-            and actual_costs is None
-        ):
+        if expected_costs is None and last_reading is None and actual_costs is None:
             return None
 
         if not isinstance(expected_costs, (int, float, type(None))):
@@ -4985,6 +4981,7 @@ class SmartBatterySettings:
     battery_mode: str | None
     imbalance_trading_strategy: str | None
     self_consumption_trading_allowed: bool | None
+    self_consumption_trading_threshold_price: float | None
 
     @classmethod
     def from_dict(cls, data: dict[str, object] | None) -> SmartBatterySettings | None:
@@ -4997,13 +4994,15 @@ class SmartBatterySettings:
             battery_mode=data.get("batteryMode", None),
             imbalance_trading_strategy=data.get("imbalanceTradingStrategy", None),
             self_consumption_trading_allowed=data.get("selfConsumptionTradingAllowed", None),
+            self_consumption_trading_threshold_price=data.get("selfConsumptionTradingThresholdPrice", None),
         )
 
     def __str__(self) -> str:
         return (
             f"BatteryMode={self.battery_mode}, "
             f"Strategy={self.imbalance_trading_strategy}, "
-            f"SelfConsumptionAllowed={self.self_consumption_trading_allowed}"
+            f"SelfConsumptionAllowed={self.self_consumption_trading_allowed}, "
+            f"ThresholdPrice={self.self_consumption_trading_threshold_price}"
         )
 
 
@@ -5272,6 +5271,7 @@ class SmartBatteryDetails:
             battery_mode=settings_data.get("batteryMode", ""),
             imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
+            self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
         )
 
         smart_battery = SmartBattery(
@@ -5318,6 +5318,7 @@ class old_SmartBatteryDetails:
             battery_mode=settings_data.get("batteryMode", ""),
             imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
+            self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
         )
 
         created_at_str = sb_data.get("createdAt")
@@ -5637,9 +5638,7 @@ class SmartPvSystems:
             return cls(systems=[])
         data = response.get("data") or {}
         pv_dicts = data.get("smartPvSystems") or []
-        return cls(
-            systems=[SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)]
-        )
+        return cls(systems=[SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)])
 
     def __bool__(self) -> bool:
         return bool(self.systems)

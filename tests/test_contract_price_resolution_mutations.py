@@ -117,6 +117,7 @@ async def test_contract_price_resolution_request_change_returns_none_on_exceptio
 @pytest.mark.asyncio
 async def test_contract_price_resolution_request_change_raises_cancelled_error():
     import asyncio
+
     api = _make_api()
     with patch.object(api, "_query", new=AsyncMock(side_effect=asyncio.CancelledError)):
         with pytest.raises(asyncio.CancelledError):
@@ -172,55 +173,30 @@ async def test_contract_price_resolution_request_change_raises_value_error_inval
 
 def test_contract_price_resolution_change_result_from_dict_robustness():
     # Test valid parsing with boolean success
-    res = ContractPriceResolutionChangeResult.from_dict({
-        "success": True,
-        "reason": "OK",
-        "data": {"effectiveDate": "2026-06-01"}
-    })
+    res = ContractPriceResolutionChangeResult.from_dict(
+        {"success": True, "reason": "OK", "data": {"effectiveDate": "2026-06-01"}}
+    )
     assert res.success is True
     assert res.reason == "OK"
     assert res.effective_date == date(2026, 6, 1)
 
     # Test non-dict data payload (should not crash, effective_date should be None)
-    res = ContractPriceResolutionChangeResult.from_dict({
-        "success": True,
-        "reason": "OK",
-        "data": "not-a-dict"
-    })
+    res = ContractPriceResolutionChangeResult.from_dict({"success": True, "reason": "OK", "data": "not-a-dict"})
     assert res.success is True
     assert res.effective_date is None
 
     # Test string success truthiness ("true")
-    res = ContractPriceResolutionChangeResult.from_dict({
-        "success": "true",
-        "reason": "OK",
-        "data": None
-    })
+    res = ContractPriceResolutionChangeResult.from_dict({"success": "true", "reason": "OK", "data": None})
     assert res.success is True
 
     # Test string success truthiness ("1")
-    res = ContractPriceResolutionChangeResult.from_dict({
-        "success": "1",
-        "reason": None,
-        "data": None
-    })
+    res = ContractPriceResolutionChangeResult.from_dict({"success": "1", "reason": None, "data": None})
     assert res.success is True
 
     # Test string success falsiness ("false")
-    res = ContractPriceResolutionChangeResult.from_dict({
-        "success": "false",
-        "reason": None,
-        "data": None
-    })
+    res = ContractPriceResolutionChangeResult.from_dict({"success": "false", "reason": None, "data": None})
     assert res.success is False
 
     # Test invalid reason type
-    res = ContractPriceResolutionChangeResult.from_dict({
-        "success": True,
-        "reason": 12345,
-        "data": None
-    })
+    res = ContractPriceResolutionChangeResult.from_dict({"success": True, "reason": 12345, "data": None})
     assert res.reason is None
-
-
-

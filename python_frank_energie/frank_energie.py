@@ -2015,14 +2015,6 @@ class FrankEnergie:
 
         return SmartBatteries(batteries)
 
-        try:
-            batteries = [SmartBattery.from_dict(b) for b in batteries_data]
-        except (KeyError, ValueError, TypeError) as err:
-            _LOGGER.error("Failed to parse smart batteries: %s", err)
-            return SmartBatteries([])
-
-        return SmartBatteries(batteries)
-
     async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails | None:
         """Retrieve smart battery details and summary."""
         if self._auth is None:
@@ -2042,6 +2034,7 @@ class FrankEnergie:
                             batteryMode
                             imbalanceTradingStrategy
                             selfConsumptionTradingAllowed
+                            selfConsumptionTradingThresholdPrice
                         }
                     }
                     smartBatterySummary(deviceId: $deviceId) {
