@@ -20,12 +20,12 @@ from datetime import UTC, datetime, timedelta
 from python_frank_energie import FrankEnergie
 
 # Configure logging
-# logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s [Line %(lineno)d]")
+# logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s [Line %(lineno)d]")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s [Line %(lineno)d]")
 _LOGGER = logging.getLogger(__name__)
 
 
-async def execute_query():
+async def execute_query() -> int:
     """
     Execute a query to retrieve market prices for electricity and gas from the Frank Energie API.
 
@@ -44,74 +44,107 @@ async def execute_query():
             4 - Process interrupted by user
             5 - Unexpected error occurred
     """
-    # current_date = datetime.now().date()
-    current_date = datetime.now(UTC).date()
-    tomorrow = current_date + timedelta(days=1)
+    current_date: date = datetime.now(UTC).date()
+    tomorrow: date = current_date + timedelta(days=1)
+
+    _LOGGER.info(
+        "Fetching market prices for date range %s to %s",
+        current_date,
+        tomorrow,
+    )
 
     try:
         async with FrankEnergie() as frank_energie:
-            _LOGGER.info("Fetching market prices for date range %s to %s", current_date, tomorrow)
-            market_prices = await frank_energie.prices(current_date, tomorrow, "PT15M")
+            market_prices = await frank_energie.prices(
+                current_date,
+                tomorrow,
+                "PT15M",
+            )
 
-            if not market_prices:
-                _LOGGER.warning("No market prices available for the given date range.")
-                return 1  # No data found
+        if market_prices is None:
+            _LOGGER.warning("No market prices returned.")
+            return 1
 
-            electricity_prices = market_prices.electricity
-            gas_prices = market_prices.gas
+        electricity_prices = market_prices.electricity
+        gas_prices = market_prices.gas
 
-            if not electricity_prices and not gas_prices:
-                _LOGGER.warning("No prices available.")
-                return 1
+        electricity_entries = electricity_prices.all if electricity_prices else []
+        gas_entries = gas_prices.all if gas_prices else []
 
-            if not electricity_prices:
-                _LOGGER.warning("No electricity prices available.")
-            if not gas_prices:
-                _LOGGER.warning("No gas prices available.")
+        if not electricity_entries and not gas_entries:
+            _LOGGER.warning("No electricity or gas prices available.")
+            return 1
 
-            # Log electricity prices
-            _LOGGER.info("Electricity Prices:")
-            if hasattr(electricity_prices, "all") and electricity_prices.all:
-                for price in electricity_prices.all:
-                    _LOGGER.info(
-                        "From: %s, Till: %s, Market Price: %.4f, Total: %.4f",
-                        price.date_from,
-                        price.date_till,
-                        price.market_price,
-                        price.total,
-                    )
-            else:
-                _LOGGER.warning("No electricity price details available.")
+        _LOGGER.info(
+            "Retrieved %s electricity prices and %s gas prices",
+            len(electricity_entries),
+            len(gas_entries),
+        )
 
-            # Log gas prices
-            _LOGGER.info("Gas Prices:")
-            if hasattr(gas_prices, "all") and gas_prices.all:
-                for price in gas_prices.all:
-                    _LOGGER.info(
-                        "From: %s, Till: %s, Market Price: %.4f, Total: %.4f",
-                        price.date_from,
-                        price.date_till,
-                        price.market_price,
-                        price.total,
-                    )
-            else:
-                _LOGGER.warning("No gas price details available.")
+        if electricity_entries:
+            _LOGGER.debug("Electricity prices:")
 
-            return 0  # Success
+            for price in electricity_entries:
+                _LOGGER.debug(
+                    "From=%s Till=%s Market=%.4f Total=%.4f",
+                    price.date_from,
+                    price.date_till,
+                    price.market_price,
+                    price.total,
+                )
+        else:
+            _LOGGER.warning("No electricity prices available.")
 
-    except ConnectionError as e:
-        _LOGGER.error("Connection error: %s", e)
+        if gas_entries:
+            _LOGGER.debug("Gas prices:")
+
+            for price in gas_entries:
+                _LOGGER.debug(
+                    "From=%s Till=%s Market=%.4f Total=%.4f",
+                    price.date_from,
+                    price.date_till,
+                    price.market_price,
+                    price.total,
+                )
+        else:
+            _LOGGER.warning("No gas prices available.")
+
+        _LOGGER.info(
+            "Retrieved %s electricity prices and %s gas prices",
+            len(electricity_entries),
+            len(gas_entries),
+        )
+        return 0
+
+    except ConnectionError:
+        _LOGGER.exception("Connection error while querying Frank Energie")
         return 2
-    except ValueError as e:
-        _LOGGER.error("Value error: %s", e)
+
+    except ValueError:
+        _LOGGER.exception("Invalid data received from Frank Energie")
         return 3
+
+    except asyncio.CancelledError:
+        raise
+
     except KeyboardInterrupt:
-        _LOGGER.warning("Process interrupted by user.")
+        _LOGGER.warning("Process interrupted by user")
         return 4
-    except Exception as e:
-        _LOGGER.error("Unexpected error: %s", e)
+
+    except Exception:
+        _LOGGER.exception("Unexpected error while querying Frank Energie")
         return 5
 
 
+async def main() -> int:
+    """
+    Run the query script.
+
+    Returns:
+        Process exit code.
+    """
+    return await execute_query()
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(execute_query()))
+    raise SystemExit(asyncio.run(main()))
