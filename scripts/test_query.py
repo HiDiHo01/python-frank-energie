@@ -21,7 +21,7 @@ from python_frank_energie import FrankEnergie
 
 # Configure logging
 # logging.basicConfig(level=logging.ERROR, format="%(asctime)s - %(levelname)s - %(message)s [Line %(lineno)d]")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s [Line %(lineno)d]")
+logging.basicConfig(level=logging.INFO, format="%(levelname)s - %(message)s [Line %(lineno)d]")
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -94,7 +94,8 @@ async def execute_query() -> int:
                 )
         else:
             _LOGGER.warning("No electricity prices available.")
-
+            return 1
+        
         if gas_entries:
             _LOGGER.debug("Gas prices:")
 
@@ -108,12 +109,7 @@ async def execute_query() -> int:
                 )
         else:
             _LOGGER.warning("No gas prices available.")
-
-        _LOGGER.info(
-            "Retrieved %s electricity prices and %s gas prices",
-            len(electricity_entries),
-            len(gas_entries),
-        )
+            return 1
         return 0
 
     except ConnectionError:
