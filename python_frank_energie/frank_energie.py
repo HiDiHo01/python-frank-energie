@@ -1257,19 +1257,24 @@ class FrankEnergie:
 
         return UserSites.from_dict(response)
 
-    async def contract_price_resolution_state(self, connection_id: str | None = None) -> ContractPriceResolutionState | None:
+    async def contract_price_resolution_state(
+        self,
+        connection_id: str | None = None,
+    ) -> ContractPriceResolutionState | None:
         """
         Fetch the contract price resolution state for a given connection.
 
         Args:
-            connection_id: The ID of the connection to query. Must not be None.
+            connection_id: The ID of the connection to query.
 
         Raises:
             AuthRequiredException: If authentication has not been performed.
             ValueError: If connection_id is None.
 
         Returns:
-            ContractPriceResolutionState: Parsed response from the API.
+            ContractPriceResolutionState | None:
+                The contract price resolution state, or None if the
+                response is invalid or cannot be parsed.
         """
         if self._auth is None:
             raise AuthRequiredException("Authentication is required.")
@@ -1315,10 +1320,13 @@ class FrankEnergie:
                 return None
 
             return ContractPriceResolutionState.from_dict(data)
-        except Exception as e:
-            _LOGGER.error("Failed to fetch contract price resolution state: %s", e)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception(
+                "Failed to fetch contract price resolution state"
+            )
             return None
-
 
     async def contract_price_resolution_request_change(
         self,
