@@ -1557,7 +1557,7 @@ class FrankEnergie:
         response = await self._query(query)
         return Me.from_dict(response)
 
-    async def user(self, site_reference: str | None = None) -> User:
+    async def user(self, site_reference: str) -> User:
         """Fetch authenticated user data."""
 
         if not self.is_authenticated:
