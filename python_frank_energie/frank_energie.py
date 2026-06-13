@@ -1559,7 +1559,6 @@ class FrankEnergie:
 
     async def user(self, site_reference: str) -> User:
         """Fetch authenticated user data."""
-
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
