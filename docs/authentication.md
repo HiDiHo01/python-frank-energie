@@ -17,17 +17,31 @@ The `Authentication` model extracts the JWT `exp` claim from the access token an
 
 The model exposes `Authentication.is_expired`, which returns `True` when the token has expired or when expiration information cannot be determined.
 
+An expired access token does not necessarily mean the user session is invalid. A valid refresh token may still be available and should be used to obtain a new access token.
+
+## Authentication State
+
+`FrankEnergie.is_authenticated()` intentionally performs a lightweight local credential check.
+
+It verifies that authentication credentials are available and suitable for token renewal. It does not validate token expiration or perform a network request.
+
+This separation is intentional:
+
+- `is_authenticated()` is a cheap local check.
+- `validate_authentication()` performs server-side validation.
+- `_query()` is responsible for renewing expired access tokens before sending requests.
+
 ## Important Design Decision
 
-Do not make `FrankEnergie.is_authenticated()` depend solely on token expiration unless automatic token renewal is implemented.
+Do not make `FrankEnergie.is_authenticated()` depend solely on token expiration.
 
-Changing authentication checks from a simple authentication-object existence check to a strict expiration check without automatic renewal will cause valid sessions to fail immediately when the access token expires.
+Doing so would cause valid sessions to become unauthenticated immediately when the access token expires, even though a valid refresh token may still be available.
 
-This would force Home Assistant users into unnecessary reauthentication flows even when a valid refresh token is available.
+This would force Home Assistant users into unnecessary reauthentication flows.
 
-## Expected Authentication Lifecycle
+## Current Authentication Lifecycle
 
-Recommended flow:
+Current request flow:
 
 API request
 → Access token expired?
@@ -59,7 +73,7 @@ Preferred user experience:
 
 Potential improvements:
 
-- Automatic token renewal inside request handling.
 - Refresh-before-expiry window (for example 5 minutes before expiration).
 - Token redaction in debug logging.
 - Centralized authentication state management.
+- Automatic retry when a request fails because a token becomes invalid unexpectedly.
