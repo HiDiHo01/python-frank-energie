@@ -86,7 +86,10 @@ class FrankEnergie:
 
     DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
     # DATA_URL = "https://graphql.frankenergie.nl/"
-    AUTH_HEADER_EXEMPT_OPERATIONS = {"RenewToken"}
+    RENEW_TOKEN_OPERATIONNAME = "RenewToken"
+    AUTH_HEADER_EXEMPT_OPERATIONS = {
+        RENEW_TOKEN_OPERATIONNAME,
+    }
 
     def __init__(
         self,
@@ -102,6 +105,7 @@ class FrankEnergie:
         self._last_query: FrankEnergieQuery | None = None
         self._last_variables: dict[str, object] | None = None
         self._operation_name: str | None = None
+        self._renew_lock = asyncio.Lock()
         self._site_reference: str | None = None
         self._user_country: str | None = None
         self._resolution: str | None = "PT60M"
@@ -144,11 +148,26 @@ class FrankEnergie:
             return False
     
         try:
-            await self.renew_token()
+            async with self._renew_lock:
+                if (
+                    self._auth is not None
+                    and self._auth.is_expired
+                ):
+                    await self.renew_token()
         except (AuthException, AuthRequiredException):
             return False
     
         return True
+
+    def _requires_token_refresh(
+        self,
+        operation_name: str,
+    ) -> bool:
+        return (
+            operation_name != self.RENEW_TOKEN_OPERATIONNAME
+            and self._auth is not None
+            and self._auth.is_expired
+        )
     
     @staticmethod
     def generate_system_user_agent() -> str:
@@ -192,15 +211,20 @@ class FrankEnergie:
             "skip-graphcdn": "1",
         }
 
-        if self._auth and self._auth.is_expired:
+        if self._operation_name and self._requires_token_refresh(self._operation_name):
+            _LOGGER.debug(
+                "Access token expired; attempting token renewal"
+            )
             await self.renew_token()
 
         if (
-            self._auth
-            and self._auth.authToken
-            and query.operation_name not in self.AUTH_HEADER_EXEMPT_OPERATIONS
+            self._auth is not None
+            and query.operation_name
+            not in self.AUTH_HEADER_EXEMPT_OPERATIONS
         ):
-            headers["Authorization"] = f"Bearer {self._auth.authToken}"
+            headers["Authorization"] = (
+                f"Bearer {self._auth.authToken}"
+            )
 
         if extra_headers:
             headers.update(extra_headers)
