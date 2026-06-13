@@ -430,11 +430,9 @@ class FrankEnergie:
                     self._auth = Authentication.from_dict(response)
             return self._auth
 
-        except Exception as error:
-            import traceback
-
-            traceback.print_exc()
-            raise error
+        except Exception:
+            _LOGGER.exception("Login failed")
+            raise
 
     async def renew_token(self) -> Authentication:
         """Renew the authentication token.
