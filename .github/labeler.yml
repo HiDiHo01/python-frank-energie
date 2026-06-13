@@ -1,0 +1,34 @@
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "**/*.md"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "tests/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "requirements*.txt"
+          - "pyproject.toml"
+          - "uv.lock"
+
+github-actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+
+api:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "python_frank_energie/**"
+
+authentication:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "python_frank_energie/frank_energie.py"
+          - "python_frank_energie/models.py"
+          - "docs/authentication.md"
