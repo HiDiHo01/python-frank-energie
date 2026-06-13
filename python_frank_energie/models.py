@@ -97,26 +97,56 @@ class Resolution(str, Enum):
     PT60M = "PT60M"
 
 
-@dataclass
+@dataclass(slots=True)
 class ContractPriceResolutionChangeResultData:
-    effectiveDate: date | None = None
+    """Contract price resolution change result."""
+
+    effective_date: date | None = None
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> "ContractPriceResolutionChangeResultData":
+        """Create an instance from an API response."""
+        value = data.get("effectiveDate")
+
+        if isinstance(value, str):
+            try:
+                value = date.fromisoformat(value)
+            except ValueError:
+                value = None
+        elif not isinstance(value, date) and value is not None:
+            value = None
+
+        return cls(
+            effective_date=value,
+        )
 
 
-@dataclass
+@dataclass(slots=True)
 class ContractPriceResolutionChangeResult:
+    """Contract price resolution change result."""
+
     success: bool = False
     reason: str | None = None
     data: ContractPriceResolutionChangeResultData | None = None
 
     @classmethod
-    def from_dict(cls, data: dict) -> ContractPriceResolutionChangeResult:
+    def from_dict(
+        cls,
+        data: dict[str, object],
+    ) -> ContractPriceResolutionChangeResult:
+        """Create an instance from an API response."""
         result_data = data.get("data")
+        reason = data.get("reason")
+
         return cls(
-            success=data.get("success", False),
-            reason=data.get("reason"),
-            data=ContractPriceResolutionChangeResultData(
-                effectiveDate=date.fromisoformat(result_data["effectiveDate"])
-                if result_data and result_data.get("effectiveDate")
+            success=bool(data.get("success", False)),
+            reason=reason if isinstance(reason, str) else None,
+            data=(
+                ContractPriceResolutionChangeResultData.from_dict(result_data)
+                if isinstance(result_data, dict)
                 else None
             ),
         )
