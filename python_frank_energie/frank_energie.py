@@ -121,15 +121,30 @@ class FrankEnergie:
 
     @property
     def is_authenticated(self) -> bool:
-        """Check if the client is authenticated.
+        """Return True when valid authentication tokens are available."""
+    
+        auth = self._auth
+    
+        return (
+            auth is not None
+            and bool(auth.authToken)
+            and bool(auth.refreshToken)
+            and not auth.is_expired
+        )
 
-        Returns:
-            True if the client is authenticated, False otherwise.
-
-        Does not actually check if the token is valid.
-        """
-        return self._auth is not None and self._auth.authToken is not None
-
+    async def validate_authentication(self) -> bool:
+        """Validate the current authentication tokens."""
+    
+        if not self.is_authenticated:
+            return False
+    
+        try:
+            await self.renew_token()
+        except (AuthException, AuthRequiredException):
+            return False
+    
+        return True
+    
     @staticmethod
     def generate_system_user_agent() -> str:
         """Generate the system user-agent string for API requests."""
