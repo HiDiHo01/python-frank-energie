@@ -211,12 +211,13 @@ class FrankEnergie:
             "skip-graphcdn": "1",
         }
 
-        async with self._renew_lock:
-            if query.operation_name and self._requires_token_refresh(query.operation_name):
-                _LOGGER.debug(
-                    "Access token expired; attempting token renewal"
-                )
-                await self.renew_token()
+        if self._requires_token_refresh(query.operation_name):
+            async with self._renew_lock:
+                if self._requires_token_refresh(query.operation_name):
+                    _LOGGER.debug(
+                        "Access token expired; attempting token renewal"
+                    )
+                    await self.renew_token()
 
         if (
             self._auth is not None
