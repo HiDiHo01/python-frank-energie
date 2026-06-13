@@ -421,25 +421,6 @@ class FrankEnergie:
             if extensions:
                 _LOGGER.debug("GraphQL extensions: %s", extensions)
 
-    async def _query_and_parse(
-        self,
-        query: FrankEnergieQuery,
-        parser_fn: Callable[[dict[str, Any]], T],
-        context_name: str,
-    ) -> T | None:
-        """Check auth, query the API, and parse the response."""
-        if self._auth is None or not self.is_authenticated:
-            raise AuthRequiredException
-
-        try:
-            response = await self._query(query)
-            return parser_fn(response)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to fetch or parse %s", context_name)
-            return None
-
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
             login(email: $email, password: $password) {
@@ -451,6 +432,7 @@ class FrankEnergie:
             __typename
         }
     """
+    LOGIN_OPERATION_NAME = "Login"
 
     async def login(self, username: str, password: str) -> Authentication:
         """Login and retrieve the authentication token.
@@ -463,25 +445,33 @@ class FrankEnergie:
             The authentication information.
 
         Raises:
+            ValueError: If username or password is missing.
             AuthException: If the login fails.
         """
         if not username or not password:
             raise ValueError("Username and password must be provided.")
 
-        query = FrankEnergieQuery(self.LOGIN_QUERY, "Login", {"email": username, "password": password})
+        query = FrankEnergieQuery(
+            self.LOGIN_QUERY,
+            self.LOGIN_OPERATION_NAME,
+            {"email": username, "password": password},
+        )
 
         try:
             response = await self._query(query)
-            if response is not None:
-                data = response["data"]
-                if data is not None:
-                    # auth_data = data["login"]
-                    self._auth = Authentication.from_dict(response)
-            return self._auth
 
-        except Exception:
-            _LOGGER.exception("Login failed")
+            auth = Authentication.from_dict(response)
+
+            self._auth = auth
+
+            return auth
+
+        except asyncio.CancelledError:
             raise
+
+        except Exception as err:
+            _LOGGER.exception("Login failed")
+            raise AuthException("Authentication failed.") from err
 
     async def renew_token(self) -> Authentication:
         """Renew the authentication token.
@@ -493,7 +483,7 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             AuthException: If the token renewal fails.
         """
-        if self._auth is None or not self.is_authenticated:
+        if self._auth is None:
             raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
@@ -529,7 +519,7 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             FrankEnergieException: If the request fails.
         """
-        if self._auth is None or not self.is_authenticated:
+        if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
@@ -569,7 +559,7 @@ class FrankEnergie:
         if not site_reference:
             raise FrankEnergieException("A valid site_reference must be provided.")
 
-        if self._auth is None or not self.is_authenticated:
+        if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
@@ -621,7 +611,7 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             FrankEnergieException: If the request fails.
         """
-        if self._auth is None or not self.is_authenticated:
+        if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         if not isinstance(site_reference, str) or not site_reference.strip():
@@ -712,10 +702,11 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             FrankEnergieException: If the request fails.
         """
-        if self._auth is None or not self.is_authenticated:
-            _LOGGER.debug("Skipping Enode Chargers: not authenticated.")
-            return {}
-            # raise AuthRequiredException("Authentication is required.")
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if not isinstance(site_reference, str) or not site_reference.strip():
+            raise FrankEnergieException("A valid non-empty site_reference must be provided.")
 
         query = FrankEnergieQuery(
             """
@@ -818,7 +809,7 @@ class FrankEnergie:
         Returns an Invoices object containing all, previous, current,
         and upcoming invoices.
         """
-        if self._auth is None or not self.is_authenticated:
+        if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         if not isinstance(site_reference, str) or not site_reference.strip():
@@ -871,7 +862,7 @@ class FrankEnergie:
 
     async def SmartBatteryUpdateSettings(self, deviceId: str, settings: dict) -> SmartBatteryUpdateSettings:
         """Update smart battery settings for the specified device. """
-        if self._auth is None or not self.is_authenticated:
+        if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         if not isinstance(deviceId, str) or not deviceId.strip():
@@ -905,7 +896,7 @@ class FrankEnergie:
 
     async def EnodeUpdateVehicleChargeSettings(self, vehicleId: str, input: dict) -> EnodeUpdateVehicleChargeSettings:
         """Update vehicle charge settings for the specified device. """
-        if self._auth is None or not self.is_authenticated:
+        if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         if not isinstance(vehicleId, str) or not vehicleId.strip():
@@ -1546,8 +1537,10 @@ class FrankEnergie:
     # \"query AppNotice {\\n  appNotice {\\n    active\\n    message\\n    title\\n  }\\n}\\n\",\"operationName\":\"AppNotice\"}"
 
     async def user_country(self) -> Me:
-        if self._auth is None:
-            raise AuthRequiredException
+        """Fetch a minimal Me payload containing authenticated user countryCode."""
+
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
             """
@@ -1565,8 +1558,13 @@ class FrankEnergie:
         return Me.from_dict(response)
 
     async def user(self, site_reference: str | None = None) -> User:
-        if self._auth is None:
-            raise AuthRequiredException
+        """Fetch authenticated user data."""
+
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if site_reference is None or not isinstance(site_reference, str) or not site_reference.strip():
+            raise ValueError("A valid non-empty site_reference must be provided.")
 
         query = FrankEnergieQuery(
             """
@@ -1709,7 +1707,10 @@ class FrankEnergie:
         )
 
         response = await self._query(query)
-        return User.from_dict(response)
+        user = User.from_dict(response)
+        if user is None:
+            raise FrankEnergieException("Failed to parse authenticated user data")
+        return user
 
     async def be_prices(self, start_date: date, end_date: date | None = None) -> MarketPrices:
         """Get belgium market prices."""
@@ -1823,8 +1824,9 @@ class FrankEnergie:
         resolution: str | None = "PT15M",
     ) -> MarketPrices:
         """Get customer market prices."""
-        if self._auth is None:
-            raise AuthRequiredException
+
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
 
         if not start_date:
             start_date = date.today()
@@ -1914,11 +1916,21 @@ class FrankEnergie:
             FrankEnergieAPIException: Als de API een fout retourneert.
             ValueError: Als de site_reference leeg is of start_date in de toekomst ligt.
         """
+
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
         if not site_reference:
             raise ValueError("De 'site_reference' mag niet leeg zijn.")
 
-        if self._auth is None:
-            raise AuthRequiredException("Authenticatie is vereist om deze query uit te voeren.")
+        if not start_date:
+            raise ValueError("De 'start_date' is vereist.")
+
+        if isinstance(start_date, str):
+            try:
+                start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+            except ValueError as e:
+                raise ValueError("start_date moet in het formaat 'YYYY-MM-DD' zijn") from e
 
         query = FrankEnergieQuery(
             """
@@ -1984,7 +1996,12 @@ class FrankEnergie:
 
         try:
             response = await self._query(query)
-            return PeriodUsageAndCosts.from_dict(response)
+            period_usage = PeriodUsageAndCosts.from_dict(response)
+            if period_usage is None:
+                raise FrankEnergieException(
+                    "Kon verbruik en kosten niet ophalen voor opgegeven periode."
+                )
+            return period_usage
         except Exception as err:
             _LOGGER.exception(
                 "Fout bij ophalen van periodUsageAndCosts voor site %s op %s: %s", site_reference, start_date, err
@@ -1997,8 +2014,8 @@ class FrankEnergie:
 
         Returns a list of all smart batteries.
         """
-        if self._auth is None:
-            raise AuthRequiredException
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
             """
@@ -2064,8 +2081,8 @@ class FrankEnergie:
 
     async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails | None:
         """Retrieve smart battery details and summary."""
-        if self._auth is None:
-            raise AuthRequiredException
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
 
         if not device_id:
             raise ValueError("Missing required device_id for smart_battery_sessions")
@@ -2149,6 +2166,7 @@ class FrankEnergie:
             smart_battery_summary=summary,
         )
 
+
     async def smart_battery_sessions(
         self, device_id: str, start_date: date, end_date: date
     ) -> SmartBatterySessions | None:
@@ -2186,8 +2204,8 @@ class FrankEnergie:
             }
         }
         """
-        if self._auth is None:
-            raise AuthRequiredException
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
 
         if not device_id:
             raise ValueError("Missing required device_id for smart_battery_sessions")
@@ -2260,6 +2278,24 @@ class FrankEnergie:
     SMART_PV_SYSTEMS_OPERATIONNAME = "SmartPvSystems"
     SMART_PV_SYSTEMS_VARIABLES = {}
 
+    async def smart_pv_systems(self) -> SmartPvSystems | None:
+        """Get the users smart PV systems.
+
+        Returns a collection of smart PV systems.
+        """
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        query = FrankEnergieQuery(
+            self.SMART_PV_SYSTEMS_QUERY,
+            self.SMART_PV_SYSTEMS_OPERATIONNAME,
+            self.SMART_PV_SYSTEMS_VARIABLES,
+        )
+
+        response = await self._query(query)
+        return SmartPvSystems.from_dict(response)
+
+
     SMART_PV_SYSTEM_SUMMARY_QUERY = """
         query SmartPvSystemSummary($deviceId: String!) {
             smartPvSystemSummary(deviceId: $deviceId) {
@@ -2271,6 +2307,26 @@ class FrankEnergie:
         }
     """
     SMART_PV_SYSTEM_SUMMARY_OPERATIONNAME = "SmartPvSystemSummary"
+
+    async def smart_pv_system_summary(self, device_id: str) -> SmartPvSystemSummary | None:
+        """Get the summary for a specific smart PV system.
+
+        Returns summary data for the PV system.
+        """
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if not isinstance(device_id, str) or not device_id.strip():
+            raise ValueError("device_id must be a non-empty string")
+
+        query = FrankEnergieQuery(
+            self.SMART_PV_SYSTEM_SUMMARY_QUERY,
+            self.SMART_PV_SYSTEM_SUMMARY_OPERATIONNAME,
+            {"deviceId": device_id},
+        )
+
+        response = await self._query(query)
+        return SmartPvSystemSummary.from_dict(response)
 
     USER_SMART_FEED_IN_QUERY = """
         query UserSmartFeedIn {
@@ -2287,47 +2343,23 @@ class FrankEnergie:
     USER_SMART_FEED_IN_OPERATIONNAME = "UserSmartFeedIn"
     USER_SMART_FEED_IN_VARIABLES = {}
 
-    async def smart_pv_systems(self) -> SmartPvSystems | None:
-        """Get the users smart PV systems.
-
-        Returns a collection of smart PV systems.
-        """
-        query = FrankEnergieQuery(
-            self.SMART_PV_SYSTEMS_QUERY,
-            self.SMART_PV_SYSTEMS_OPERATIONNAME,
-            self.SMART_PV_SYSTEMS_VARIABLES,
-        )
-        # return await self._query_and_parse(query, SmartPvSystems.from_dict, "smart PV systems")
-        response = await self._query(query)
-        return SmartPvSystems.from_dict(response)
-
-    async def smart_pv_system_summary(self, device_id: str) -> SmartPvSystemSummary | None:
-        """Get the summary for a specific smart PV system.
-
-        Returns summary data for the PV system.
-        """
-        if not isinstance(device_id, str) or not device_id.strip():
-            raise ValueError("device_id must be a non-empty string")
-
-        query = FrankEnergieQuery(
-            self.SMART_PV_SYSTEM_SUMMARY_QUERY,
-            self.SMART_PV_SYSTEM_SUMMARY_OPERATIONNAME,
-            {"deviceId": device_id},
-        )
-        return await self._query_and_parse(query, SmartPvSystemSummary.from_dict, "smart PV system summary")
-
     async def user_smart_feed_in(self) -> UserSmartFeedInStatus | None:
         """Get the users smart feed-in service status.
 
         Returns user smart feed-in status.
         """
+
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
         query = FrankEnergieQuery(
             self.USER_SMART_FEED_IN_QUERY,
             self.USER_SMART_FEED_IN_OPERATIONNAME,
             self.USER_SMART_FEED_IN_VARIABLES,
         )
-        # response = await self._query(query)
-        return await self._query_and_parse(query, UserSmartFeedInStatus.from_dict, "user smart feed-in status")
+
+        response = await self._query(query)
+        return UserSmartFeedInStatus.from_dict(response)
 
     ENODE_VEHICLES_QUERY = """
         query EnodeVehicles {
@@ -2387,8 +2419,8 @@ class FrankEnergie:
 
         Returns a list of all enode vehicles.
         """
-        if self._auth is None:
-            raise AuthRequiredException
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
             self.ENODE_VEHICLES_QUERY,
