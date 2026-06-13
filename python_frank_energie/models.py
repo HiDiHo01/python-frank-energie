@@ -216,11 +216,14 @@ class Authentication:
 
     @property
     def is_expired(self) -> bool:
-        """Check if the token is expired based on the expires_at field."""
+        """Return True when the token is expired or about to expire based on the expires_at field."""
         if self.expires_at is None:
             return True
 
-        return datetime.now(UTC) >= self.expires_at
+        # gives a 5-minute refresh window and avoids edge cases where a request starts just before expiration
+        return datetime.now(UTC) >= (
+            self.expires_at - timedelta(minutes=5)
+        )
 
 
 @dataclass
