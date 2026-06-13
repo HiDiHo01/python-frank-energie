@@ -1564,9 +1564,13 @@ class FrankEnergie:
         response = await self._query(query)
         return Me.from_dict(response)
 
-    async def user(self, site_reference: str | None = None) -> User:
-        if self._auth is None:
-            raise AuthRequiredException
+    async def user(self, site_reference: str) -> User:
+        """Fetch authenticated user data."""
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if site_reference is None or not isinstance(site_reference, str) or not site_reference.strip():
+            raise ValueError("A valid non-empty site_reference must be provided.")
 
         query = FrankEnergieQuery(
             """
