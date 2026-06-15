@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Apply labels
-        uses: actions/labeler@v5
+        uses: actions/labeler@v6
 
       - name: Size label
         uses: codelytv/pr-size-labeler@v1
