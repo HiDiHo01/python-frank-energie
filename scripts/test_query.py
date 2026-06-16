@@ -95,7 +95,7 @@ async def execute_query() -> int:
         else:
             _LOGGER.warning("No electricity prices available.")
             return 1
-        
+
         if gas_entries:
             _LOGGER.debug("Gas prices:")
 
