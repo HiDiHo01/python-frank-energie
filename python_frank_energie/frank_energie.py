@@ -866,6 +866,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling smart trading")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable smart trading")
             return False
@@ -904,6 +906,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling smart feed-in")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable smart feed-in")
             return False
@@ -952,6 +956,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating vehicle charge settings for id=%s", input_data.get("id"))
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update vehicle charge settings")
             return False
@@ -1000,6 +1006,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating charger charge settings for id=%s", input_data.get("id"))
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update charger charge settings")
             return False
@@ -1038,6 +1046,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Enabling Enode smart charging")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to enable Enode smart charging")
             return False
@@ -1074,6 +1084,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling Enode smart charging")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable Enode smart charging")
             return False
@@ -1112,6 +1124,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Disabling smart HVAC")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to disable smart HVAC")
             return False
@@ -1163,6 +1177,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating smart HVAC settings for device %s", device_id)
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update smart HVAC settings for device %s", device_id)
             return False
@@ -1221,6 +1237,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating smart battery settings for device %s", device_id)
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update smart battery settings for device %s", device_id)
             return False
@@ -1263,6 +1281,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Bulk-updating all vehicle charge settings")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to bulk-update vehicle charge settings")
             return False
@@ -1303,6 +1323,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Logging out installation %s", installation_id)
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to log out installation %s", installation_id)
             return False
@@ -1358,6 +1380,8 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Updating user settings")
             response = await self._query(query)
+        except asyncio.CancelledError:
+            raise
         except Exception:
             _LOGGER.exception("Failed to update user settings")
             return False
@@ -2300,7 +2324,7 @@ class FrankEnergie:
 
         if isinstance(start_date, str):
             try:
-                _start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+                datetime.strptime(start_date, "%Y-%m-%d")  # validate format only
             except ValueError as e:
                 raise ValueError("start_date moet in het formaat 'YYYY-MM-DD' zijn") from e
 
