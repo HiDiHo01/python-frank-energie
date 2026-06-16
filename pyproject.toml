@@ -91,9 +91,11 @@ addopts = "--asyncio-mode=auto --cov --cov-report=html --strict-markers"
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "B", "I", "UP", "ASYNC"]
 extend-select = ["D401", "SIM", "C4", "TCH"]
-ignore = []
+ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["python_frank_energie"]
