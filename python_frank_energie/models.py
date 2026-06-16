@@ -35,6 +35,43 @@ FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 
 
+def _parse_iso_datetime(value: str | datetime | None, field_name: str = "datetime") -> datetime | None:
+    """Parse an ISO-8601 datetime string (or passthrough an existing datetime) to a UTC-aware datetime.
+
+    Python's ``datetime.fromisoformat`` accepts ``+00:00`` but rejects the
+    trailing ``Z`` that the Frank Energie API commonly returns (e.g.
+    ``2024-01-01T12:00:00Z``).  This helper normalises that suffix before
+    parsing so valid timestamps are never silently dropped.
+
+    Date-only strings (e.g. ``"2026-06-01"``) produce naive datetimes;
+    these are pinned to UTC via ``replace(tzinfo=UTC)`` so that downstream
+    comparisons against timezone-aware ``Price.date_from`` values do not raise
+    ``TypeError``.
+
+    Args:
+        value: A raw ISO-8601 string, an existing ``datetime`` object, or None.
+        field_name: Name used in warning messages to identify the field.
+
+    Returns:
+        A UTC-aware ``datetime`` object, or ``None`` when the input is empty or
+        cannot be parsed.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            _LOGGER.warning("Invalid %s format: %s", field_name, value)
+            return None
+    # Ensure the result is always timezone-aware (UTC)
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 class DictLikeMixin:
     """Mixin to allow dataclasses to be accessed like dictionaries for backwards compatibility."""
 
@@ -1324,27 +1361,8 @@ class Contract(DictLikeMixin):
         if not data:
             return None
 
-        start_date_raw = data.get("startDate")
-        start_date = None
-        if start_date_raw:
-            if isinstance(start_date_raw, datetime):
-                start_date = start_date_raw
-            else:
-                try:
-                    start_date = datetime.fromisoformat(str(start_date_raw).replace("Z", "+00:00"))
-                except ValueError:
-                    _LOGGER.warning("Invalid contract startDate format: %s", start_date_raw)
-
-        end_date_raw = data.get("endDate")
-        end_date = None
-        if end_date_raw:
-            if isinstance(end_date_raw, datetime):
-                end_date = end_date_raw
-            else:
-                try:
-                    end_date = datetime.fromisoformat(str(end_date_raw).replace("Z", "+00:00"))
-                except ValueError:
-                    _LOGGER.warning("Invalid contract endDate format: %s", end_date_raw)
+        start_date = _parse_iso_datetime(data.get("startDate"), "startDate")
+        end_date = _parse_iso_datetime(data.get("endDate"), "endDate")
 
         return Contract(
             startDate=start_date,
@@ -1747,29 +1765,9 @@ class User:
 
         _LOGGER.debug("deliverySites %s", payload.get("deliverySites"))
 
-        last_login_str = payload.get("lastLogin")
-        last_login = None
-        if last_login_str:
-            try:
-                last_login = datetime.fromisoformat(last_login_str)
-            except ValueError:
-                _LOGGER.warning("Invalid lastLogin format: %s", last_login_str)
-
-        created_at_str = payload.get("createdAt")
-        created_at = None
-        if created_at_str:
-            try:
-                created_at = datetime.fromisoformat(created_at_str)
-            except ValueError:
-                _LOGGER.warning("Invalid createdAt format: %s", created_at_str)
-
-        updated_at_str = payload.get("updatedAt")
-        updated_at = None
-        if updated_at_str:
-            try:
-                updated_at = datetime.fromisoformat(updated_at_str)
-            except ValueError:
-                _LOGGER.warning("Invalid updatedAt format: %s", updated_at_str)
+        last_login = _parse_iso_datetime(payload.get("lastLogin"), "lastLogin")
+        created_at = _parse_iso_datetime(payload.get("createdAt"), "createdAt")
+        updated_at = _parse_iso_datetime(payload.get("updatedAt"), "updatedAt")
 
         return User(
             id=payload.get("id"),
@@ -4968,19 +4966,6 @@ class SmartBattery:
 
         if not isinstance(device_id, str) or not device_id:
             raise ValueError("SmartBattery 'id' is missing or invalid")
-
-        capacity_value = data.get("capacity")
-
-        _capacity: float | None = None
-        if capacity_value is not None:
-            try:
-                _capacity = float(capacity_value)
-            except (TypeError, ValueError):
-                _LOGGER.debug(
-                    "Invalid battery capacity received for device %s: %s",
-                    device_id,
-                    capacity_value,
-                )
 
         settings_data = data.get("settings")
 

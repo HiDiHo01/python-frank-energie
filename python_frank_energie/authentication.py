@@ -90,7 +90,7 @@ class Authentication:
             True if the token has not expired; otherwise, False.
         """
         try:
-            decoded = jwt.decode(self.authToken, algorithms=["HS256"], options={"verify_signature": False})
+            decoded = jwt.decode(self.authToken, algorithms=["HS256"], options={"verify_signature": False})  # nosec B106 - intentional: client-side expiry check only, no signing secret available
         except jwt.DecodeError as err:
             _LOGGER.warning("Failed to decode authToken: %s", err)
             return False

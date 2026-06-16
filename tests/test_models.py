@@ -119,6 +119,77 @@ def test_user_with_expected_parameters():
     assert addr.get("city") == "AMSTERDAM"
 
 
+def test_user_connections_missing():
+    """User.from_dict with no 'connections' key returns an empty list."""
+    minimal_payload = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+            }
+        }
+    }
+    user = User.from_dict(minimal_payload)
+    assert user.connections == []
+
+
+def test_user_connections_empty_list():
+    """User.from_dict with an empty connections array returns an empty list."""
+    payload = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "connections": [],
+            }
+        }
+    }
+    user = User.from_dict(payload)
+    assert user.connections == []
+
+
+def test_user_connections_non_dict_items_skipped():
+    """Non-dict entries in connections are silently skipped, no exception raised."""
+    payload = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "connections": [
+                    None,
+                    "not-a-dict",
+                    42,
+                    {"id": "conn-1", "segment": "ELECTRICITY"},  # only this should survive
+                ],
+            }
+        }
+    }
+    user = User.from_dict(payload)
+    assert len(user.connections) == 1
+    assert isinstance(user.connections[0], Connection)
+    assert user.connections[0].segment == "ELECTRICITY"
+
+
+def test_user_datetime_z_suffix_parses():
+    """createdAt/updatedAt/lastLogin with trailing Z parse to datetime, not None."""
+    payload = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "lastLogin": "2024-05-01T12:00:00Z",
+                "createdAt": "2023-01-15T08:30:00Z",
+                "updatedAt": "2024-06-01T00:00:00Z",
+            }
+        }
+    }
+    user = User.from_dict(payload)
+    assert user.lastLogin is not None, "lastLogin should parse with Z suffix"
+    assert user.createdAt is not None, "createdAt should parse with Z suffix"
+    assert user.updatedAt is not None, "updatedAt should parse with Z suffix"
+    assert user.lastLogin.tzinfo is not None, "lastLogin should be timezone-aware"
+
+
 #
 # Tests for MonthSummary Model.
 #
