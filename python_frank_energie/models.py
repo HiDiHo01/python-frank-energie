@@ -145,6 +145,12 @@ class ContractPriceResolutionChangeResult:
 
         result_data = data.get("data")
 
+        parsed_data = (
+            ContractPriceResolutionChangeResultData.from_dict(result_data)
+            if isinstance(result_data, dict)
+            else None
+        )
+
         return cls(
             success=bool(data.get("success", False)),
             reason=(
@@ -152,11 +158,7 @@ class ContractPriceResolutionChangeResult:
                 if data.get("reason") is not None
                 else None
             ),
-            data=ContractPriceResolutionChangeResultData.from_dict(
-                result_data
-                if isinstance(result_data, dict)
-                else None
-            ),
+            data=parsed_data,
         )
 
     @property
@@ -740,15 +742,15 @@ class ContractPriceResolutionState:
 
     active_option: str | None = None
     available_options: list[str] = field(default_factory=list)
-    changeRequestEffectiveDate: date | str | None = None
-    isChangeRequestPossible: bool = None
-    upcomingChange: date | str | None = None
-    upcomingChangeEffectiveDate: date | str | None = None
+    change_request_effective_date: date | str | None = None
+    is_change_request_possible: bool = field(default=False)
+    upcoming_change: date | str | None = None
+    upcoming_change_effective_date: date | str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> ContractPriceResolutionState:
-        """Create an instance from raw API dictionary."""
-        """Parse a dictionary into a ContractPriceResolutionState, converting dates."""
+        """Create an instance from raw API dictionary.
+        Parse a dictionary into a ContractPriceResolutionState, converting dates."""
 
         def parse_date(value: str | None) -> date | None:
             if value is None:
@@ -758,10 +760,10 @@ class ContractPriceResolutionState:
         return cls(
             active_option=data.get("activeOption"),
             available_options=data.get("availableOptions", []),
-            changeRequestEffectiveDate=parse_date(data.get("changeRequestEffectiveDate")),
-            isChangeRequestPossible=data.get("isChangeRequestPossible"),
-            upcomingChange=data.get("upcomingChange"),
-            upcomingChangeEffectiveDate=parse_date(data.get("upcomingChangeEffectiveDate")),
+            change_request_effective_date=parse_date(data.get("changeRequestEffectiveDate")),
+            is_change_request_possible=data.get("isChangeRequestPossible"),
+            upcoming_change=data.get("upcomingChange"),
+            upcoming_change_effective_date=parse_date(data.get("upcomingChangeEffectiveDate")),
         )
 
     # deprecated Backward-compatible aliases for camelCase properties
@@ -774,6 +776,27 @@ class ContractPriceResolutionState:
     def availableOptions(self) -> list[str]:
         """Backward compatibility alias."""
         return self.available_options
+
+    @property
+    def changeRequestEffectiveDate(self) -> date | str | None:
+        """Backward compatibility alias."""
+        return self.change_request_effective_date
+
+    @property
+    def isChangeRequestPossible(self) -> bool:
+        """Backward compatibility alias."""
+        return self.is_change_request_possible
+
+    @property
+    def upcomingChange(self) -> date | str | None:
+        """Backward compatibility alias."""
+        return self.upcoming_change
+
+    @property
+    def upcomingChangeEffectiveDate(self) -> date | str | None:
+        """Backward compatibility alias."""
+        return self.upcoming_change_effective_date
+
 
 @dataclass
 class UserSites:
@@ -850,10 +873,10 @@ class InviteLink:
     """InviteLink data."""
 
     id: str
-    fromName: str
+    from_name: str
     slug: str
-    treesAmountPerConnection: int
-    discountPerConnection: int
+    trees_amount_per_connection: int
+    discount_per_connection: int
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> InviteLink:
@@ -871,10 +894,10 @@ class InviteLink:
         if isinstance(data, dict) and "id" in data and "slug" in data:
             return InviteLink(
                 id=data.get("id", ""),
-                fromName=data.get("fromName", ""),
+                from_name=data.get("fromName", ""),
                 slug=data.get("slug", ""),
-                treesAmountPerConnection=data.get("treesAmountPerConnection", 0),
-                discountPerConnection=data.get("discountPerConnection", 0),
+                trees_amount_per_connection=data.get("treesAmountPerConnection", 0),
+                discount_per_connection=data.get("discountPerConnection", 0),
             )
 
         # Try nested GraphQL style (Format B)
@@ -894,6 +917,20 @@ class InviteLink:
             discount_per_connection=root.get("discountPerConnection", 0),
         )
 
+    @property
+    def fromName(self) -> str:
+        """Backward compatibility alias."""
+        return self.from_name
+
+    @property
+    def discountPerConnection(self) -> int:
+        """Backward compatibility alias."""
+        return self.discount_per_connection
+
+    @property
+    def treesAmountPerConnection(self) -> int:
+        """Backward compatibility alias."""
+        return self.trees_amount_per_connection
 
 @dataclass
 class PushNotificationPriceAlert:
