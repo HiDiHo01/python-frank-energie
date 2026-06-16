@@ -3,7 +3,7 @@
   Invoices(previousPeriodInvoice=Invoices.Invoice(StartDate=datetime.datetime(2023, 3, 1, 0, 0), PeriodDescription='Maart 2023', TotalAmount=140.12), currentPeriodInvoice=Invoices.Invoice(StartDate=datetime.datetime(2023, 4, 1, 0, 0), PeriodDescription='April 2023', TotalAmount=80.34), upcomingPeriodInvoice=Invoices.Invoice(StartDate=datetime.datetime(2023, 5, 1, 0, 0), PeriodDescription='Mei 2023', TotalAmount=80.34))
 # ---
 # name: test_me_with_expected_parameters
-  Me(id='vb10h3v01nfb0vh1f', email='contact@email.nl', countryCode='NL', advancedPaymentAmount=100.0, treesCount=None, hasInviteLink=True, hasCO2Compensation=False, deliverySites=[Me.DeliverySites(reference='1234AB 10', segments=['ELECTRICITY', 'GAS'], address_street='Oudestraat', address_houseNumber='1898', address_houseNumberAddition=None, address_zipCode='5171 KW', address_city='Kaatsheuvel', status='DELIVERY_ENDED'), Me.DeliverySites(reference='1000BC 42', segments=['ELECTRICITY', 'GAS'], address_street='Sesamstraat', address_houseNumber='123', address_houseNumberAddition=None, address_zipCode='1234 AB', address_city='AMSTERDAM', status='IN_DELIVERY')])
+  Me(id='vb10h3v01nfb0vh1f', email='contact@email.nl', countryCode='NL', advancedPaymentAmount=100.0, treesCount=None, hasInviteLink=True, InviteLinkUser=None, hasCO2Compensation=False, createdAt=None, updatedAt=None, addressHasMultipleSites=None, meterReadingExportPeriods=[], smartCharging={}, PushNotificationPriceAlerts=[])
 # ---
 # name: test_month_summary_with_expected_parameters
   MonthSummary(actualCostsUntilLastMeterReadingDate=12.34, expectedCostsUntilLastMeterReadingDate=20.0, expectedCosts=50.0, lastMeterReadingDate='2023-01-01')
