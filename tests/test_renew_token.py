@@ -59,8 +59,8 @@ async def test_renew_token_no_auth_header(aresponses):
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
         api._auth = Authentication(
-            authToken="expired_token",
-            refreshToken="refresh_token",
+            auth_token="expired_token",
+            refresh_token="refresh_token",
         )
 
         auth = await api.renew_token()

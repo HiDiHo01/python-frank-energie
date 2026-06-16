@@ -1,6 +1,7 @@
 {
     "data": {
-        "marketPricesElectricity": [
+        "marketPrices": {
+            "electricityPrices": [
             {
                 "from": "2022-11-21T00:00:00.000Z",
                 "till": "2022-11-21T01:00:00.000Z",
@@ -194,7 +195,7 @@
                 "energyTaxPrice": 4.230
             }
         ],
-        "marketPricesGas": [
+        "gasPrices": [
             {
                 "from": "2022-11-21T00:00:00.000Z",
                 "till": "2022-11-21T01:00:00.000Z",
@@ -389,4 +390,5 @@
             }
         ]
     }
+}
 }

@@ -3,21 +3,21 @@
         "invoices": {
             "previousPeriodInvoice": {
                 "id": "abcd1",
-                "StartDate": "2023-03-01T00:00:00",
-                "PeriodDescription": "Maart 2023",
-                "TotalAmount": 140.12
+                "startDate": "2023-03-01T00:00:00",
+                "periodDescription": "Maart 2023",
+                "totalAmount": 140.12
             },
             "currentPeriodInvoice": {
                 "id": "abcd2",
-                "StartDate": "2023-04-01T00:00:00",
-                "PeriodDescription": "April 2023",
-                "TotalAmount": 80.34
+                "startDate": "2023-04-01T00:00:00",
+                "periodDescription": "April 2023",
+                "totalAmount": 80.34
             },
             "upcomingPeriodInvoice": {
                 "id": "abcd3",
-                "StartDate": "2023-05-01T00:00:00",
-                "PeriodDescription": "Mei 2023",
-                "TotalAmount": 80.34
+                "startDate": "2023-05-01T00:00:00",
+                "periodDescription": "Mei 2023",
+                "totalAmount": 80.34
             }
         }
     }

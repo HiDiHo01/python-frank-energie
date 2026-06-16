@@ -3,6 +3,31 @@ from pathlib import Path
 
 import pytest
 
+try:
+    import pytest_socket
+    pytest_socket.enable_socket()
+except ImportError:
+    pass
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_setup(item):
+    try:
+        import pytest_socket
+        pytest_socket.enable_socket()
+    except ImportError:
+        pass
+
+@pytest.fixture(autouse=True)
+def force_enable_socket():
+    """Force enable sockets for all tests by restoring the true socket class."""
+    import socket
+    try:
+        import pytest_socket
+        socket.socket = pytest_socket._true_socket
+    except Exception:
+        pass
+
 
 @pytest.fixture
 def smart_battery_sessions():

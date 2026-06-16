@@ -77,7 +77,7 @@ class Authentication:
     def is_expired(self) -> bool:
         """Return True when the token should be refreshed."""
         if self.expires_at is None:
-            return True
+            return bool(self.authToken and len(self.authToken.split(".")) >= 3)
         return datetime.now(UTC) >= (self.expires_at - timedelta(minutes=5))
 
     def auth_token_valid(self, tz: timezone = UTC) -> bool:

@@ -15,7 +15,15 @@ from typing import Any, TypeVar
 import aiohttp
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
-from .exceptions import AuthException, AuthRequiredException, FrankEnergieException, NetworkError, RequestException
+from .exceptions import (
+    AuthException,
+    AuthRequiredException,
+    FrankEnergieException,
+    NetworkError,
+    RequestException,
+    SmartChargingNotEnabledException,
+    SmartTradingNotEnabledException,
+)
 from .models import (
     Authentication,
     ContractPriceResolutionChangeResult,
@@ -131,10 +139,16 @@ class FrankEnergie:
     # Access tokens are expected to be renewed via renew_token().
     # Reauthentication should only be required when token renewal fails.
     @property
+    def auth(self) -> Authentication | None:
+        """Return the current authentication information (deprecated)."""
+        _LOGGER.error("Using .auth directly is deprecated. Use .is_authenticated instead.")
+        return self._auth
+
+    @property
     def is_authenticated(self) -> bool:
         """Return True when valid authentication tokens are available."""
 
-        return bool(self._auth is not None and self._auth.refreshToken and self._auth.authToken)
+        return bool(self._auth is not None and self._auth.authToken)
 
     async def validate_authentication(self) -> bool:
         """Validate the current authentication tokens."""
@@ -187,6 +201,9 @@ class FrankEnergie:
             NetworkError: If the network request fails.
             FrankEnergieException: If the request fails.
         """
+        if not hasattr(query, "to_dict") or not callable(query.to_dict):
+            raise TypeError("Query object must implement a to_dict().")
+
         start = time.monotonic()
 
         # "User-Agent": self.generate_system_user_agent(), # not working properly
@@ -215,8 +232,7 @@ class FrankEnergie:
         self._last_variables = query.variables
         self._operation_name = query.operation_name
 
-        if not hasattr(query, "to_dict") or not callable(query.to_dict):
-            raise TypeError("Query object must implement to_dict().")
+
 
         payload: dict[str, object] = query.to_dict()
 
@@ -360,7 +376,7 @@ class FrankEnergie:
                     response,
                 )
                 raise FrankEnergieException(
-                    f"Request failed for '{active_query}': GraphQL validation error — check query and variables."
+                    "Request failed: Graphql validation error"
                 )
 
             # --- Expected "no data" cases (not failures) ---
@@ -373,11 +389,9 @@ class FrankEnergie:
 
             # --- Feature not enabled ---
             elif message == "user-error:smart-trading-not-enabled":
-                _LOGGER.debug("Smart trading is not enabled for this user.")
-                continue
+                raise SmartTradingNotEnabledException("Smart trading is not enabled for this user.")
             elif message == "user-error:smart-charging-not-enabled":
-                _LOGGER.debug("Smart charging is not enabled for this user.")
-                continue
+                raise SmartChargingNotEnabledException("Smart charging is not enabled for this user.")
             elif message == "user-error:smart-feed-in-not-enabled":
                 _LOGGER.debug("Smart fed-in is not enabled for this user.")
                 continue
@@ -392,7 +406,7 @@ class FrankEnergie:
                 raise FrankEnergieException(f"Request failed: {message}")
             elif message == "request-error:request-not-supported-in-country":
                 _LOGGER.error("Request not supported in user's country: %s", error_obj)
-                continue
+                raise FrankEnergieException("Request not supported in the user's country")
             else:
                 # --- Unhandled errors ---
                 _LOGGER.error("Unhandled GraphQL error message: %s", message)
@@ -414,7 +428,7 @@ class FrankEnergie:
     """
     LOGIN_OPERATION_NAME = "Login"
 
-    async def login(self, username: str, password: str) -> Authentication:
+    async def login(self, username: str, password: str) -> Authentication | None:
         """Login and retrieve the authentication token.
 
         Args:
@@ -439,6 +453,9 @@ class FrankEnergie:
 
         try:
             response = await self._query(query)
+
+            if response is None:
+                return None
 
             auth = Authentication.from_dict(response)
 
@@ -681,7 +698,7 @@ class FrankEnergie:
             FrankEnergieException: If the request fails.
         """
         if not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
+            return {}
 
         if not isinstance(site_reference, str) or not site_reference.strip():
             raise FrankEnergieException("A valid non-empty site_reference must be provided.")
@@ -1546,13 +1563,13 @@ class FrankEnergie:
 
         return Me.from_dict(response)
 
-    async def me(self, site_reference: str) -> Me:
+    async def me(self, site_reference: str | None = None) -> Me:
         """Fetch authenticated user data."""
 
-        if self._auth is None:
+        if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
-        if not isinstance(site_reference, str) or not site_reference.strip():
+        if not site_reference or not isinstance(site_reference, str) or not site_reference.strip():
             raise ValueError("A valid non-empty site_reference must be provided.")
 
         query = FrankEnergieQuery(
@@ -1954,7 +1971,7 @@ class FrankEnergie:
         response = await self._query(query)
         return Me.from_dict(response)
 
-    async def user(self, site_reference: str) -> User:
+    async def user(self, site_reference: str | None = None) -> User:
         """Fetch authenticated user data."""
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -2108,7 +2125,7 @@ class FrankEnergie:
             raise FrankEnergieException("Failed to parse authenticated user data")
         return user
 
-    async def be_prices(self, start_date: date, end_date: date | None = None) -> MarketPrices:
+    async def be_prices(self, start_date: date | None = None, end_date: date | None = None) -> MarketPrices:
         """Get belgium market prices."""
         if start_date is None:
             start_date = datetime.now(UTC).date()
@@ -2314,7 +2331,7 @@ class FrankEnergie:
         """
 
         if not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
+            raise AuthRequiredException("Authenticatie is vereist.")
 
         if not site_reference:
             raise ValueError("De 'site_reference' mag niet leeg zijn.")
@@ -2322,11 +2339,7 @@ class FrankEnergie:
         if not start_date:
             raise ValueError("De 'start_date' is vereist.")
 
-        if isinstance(start_date, str):
-            try:
-                datetime.strptime(start_date, "%Y-%m-%d")  # validate format only
-            except ValueError as e:
-                raise ValueError("start_date moet in het formaat 'YYYY-MM-DD' zijn") from e
+        self._validate_start_date_format(start_date)
 
         query = FrankEnergieQuery(
             """
@@ -2436,21 +2449,22 @@ class FrankEnergie:
             response = await self._query(query)
         except Exception as e:
             _LOGGER.error("Failed to query smart batteries: %s", e)
-            return None
+            return SmartBatteries([])
 
         # Handle empty or missing response data
         if not response:
-            _LOGGER.error("GraphQL errors in smartBatteries response: %s", response["errors"])
-            return None
+            _LOGGER.error("Empty or missing response for 'smartBatteries'")
+            return SmartBatteries([])
 
         if response.get("errors"):
             _LOGGER.error("Error response for 'smartBatteries': %s", response)
+            return SmartBatteries([])
 
         data = response.get("data")
 
         if not isinstance(data, dict):
             _LOGGER.warning("Missing 'data' field in smartBatteries response")
-            return None
+            return SmartBatteries([])
 
         _LOGGER.debug("Response data for 'smartBatteries': %s", response)
         batteries_data = data.get("smartBatteries")
@@ -2542,7 +2556,7 @@ class FrankEnergie:
                 "Incomplete smart battery response for device_id %s",
                 device_id,
             )
-            return None
+            raise FrankEnergieException("Incomplete response data")
 
         try:
             battery = SmartBattery.from_dict(battery_data)
@@ -2878,6 +2892,30 @@ class FrankEnergie:
                     raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
             except ValueError as e:
                 raise ValueError(f"De 'start_date' heeft geen geldig datumformaat: {e}") from e
+
+    def introspect_schema(self) -> dict[str, Any]:
+        """Introspect the GraphQL schema."""
+        import requests
+
+        query = """
+            query IntrospectionQuery {
+                __schema {
+                    types {
+                        name
+                        fields {
+                            name
+                        }
+                    }
+                }
+            }
+        """
+        with requests.post(self.DATA_URL, json={"query": query}, timeout=10) as response:
+            response.raise_for_status()
+            return response.json()
+
+    def get_diagnostic_data(self) -> str:
+        """Get diagnostic data."""
+        return "Diagnostic data"
 
     async def __aenter__(self):
         """Async enter.
