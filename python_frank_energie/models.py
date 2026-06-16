@@ -1302,7 +1302,7 @@ class Debtor:
 
 
 @dataclass
-class GridOperatorAddress:
+class GridOperatorAddress(DictLikeMixin):
     """Address of the grid operator."""
 
     street: str | None = None
@@ -1311,28 +1311,63 @@ class GridOperatorAddress:
     zipCode: str | None = None
     city: str | None = None
 
-
-@dataclass
-class Contract:
-    startDate: datetime
-    endDate: datetime | None
-    contractType: str
-    productName: str
-    tariffChartId: str | None
-
     @staticmethod
-    def from_dict(data: dict[str, object]) -> Contract:
-        return Contract(
-            start_date=data.get("startDate"),
-            end_date=data.get("endDate", {}),
-            contract_type=data.get("contractType", {}),
-            product_name=data.get("productName", {}),
-            tariff_chart_id=data.get("tariffChartId", {}),
+    def from_dict(data: dict[str, object]) -> GridOperatorAddress:
+        return GridOperatorAddress(
+            street=data.get("street"),
+            houseNumber=data.get("houseNumber"),
+            houseNumberAddition=data.get("houseNumberAddition"),
+            zipCode=data.get("zipCode"),
+            city=data.get("city"),
         )
 
 
 @dataclass
-class ConnectionExternalDetails:
+class Contract(DictLikeMixin):
+    startDate: datetime | None
+    endDate: datetime | None
+    contractType: str | None
+    productName: str | None
+    tariffChartId: str | None
+
+    @staticmethod
+    def from_dict(data: dict[str, object]) -> Contract | None:
+        if not data:
+            return None
+
+        start_date_raw = data.get("startDate")
+        start_date = None
+        if start_date_raw:
+            if isinstance(start_date_raw, datetime):
+                start_date = start_date_raw
+            else:
+                try:
+                    start_date = datetime.fromisoformat(str(start_date_raw).replace("Z", "+00:00"))
+                except ValueError:
+                    _LOGGER.warning("Invalid contract startDate format: %s", start_date_raw)
+
+        end_date_raw = data.get("endDate")
+        end_date = None
+        if end_date_raw:
+            if isinstance(end_date_raw, datetime):
+                end_date = end_date_raw
+            else:
+                try:
+                    end_date = datetime.fromisoformat(str(end_date_raw).replace("Z", "+00:00"))
+                except ValueError:
+                    _LOGGER.warning("Invalid contract endDate format: %s", end_date_raw)
+
+        return Contract(
+            startDate=start_date,
+            endDate=end_date,
+            contractType=data.get("contractType"),
+            productName=data.get("productName"),
+            tariffChartId=data.get("tariffChartId"),
+        )
+
+
+@dataclass
+class ConnectionExternalDetails(DictLikeMixin):
     """Grid-operator details nested inside a ``Connection`` object.
 
     Maps to the ``externalDetails`` field returned by the
@@ -1362,7 +1397,7 @@ class ConnectionExternalDetails:
 
 
 @dataclass
-class Connection:
+class Connection(DictLikeMixin):
     """Represents a connection to the energy grid."""
 
     id: str | None = None
@@ -1678,8 +1713,8 @@ class User:
     # deliverySites: DeliverySiteList
     connections: list[Connection]
     # deliverySites: list[DeliverySite]
-    createdAt: datetime
-    updatedAt: datetime
+    createdAt: datetime | None
+    updatedAt: datetime | None
     email: str
     # firstName: Optional[str]
     # lastName: Optional[str]
@@ -1731,6 +1766,22 @@ class User:
             except ValueError:
                 _LOGGER.warning("Invalid lastLogin format: %s", last_login_str)
 
+        created_at_str = payload.get("createdAt")
+        created_at = None
+        if created_at_str:
+            try:
+                created_at = datetime.fromisoformat(created_at_str)
+            except ValueError:
+                _LOGGER.warning("Invalid createdAt format: %s", created_at_str)
+
+        updated_at_str = payload.get("updatedAt")
+        updated_at = None
+        if updated_at_str:
+            try:
+                updated_at = datetime.fromisoformat(updated_at_str)
+            except ValueError:
+                _LOGGER.warning("Invalid updatedAt format: %s", updated_at_str)
+
         return User(
             id=payload.get("id"),
             InviteLinkUser=payload.get("InviteLinkUser"),
@@ -1742,8 +1793,8 @@ class User:
             # segments=first_site.get("segments", []),
             # lastLogin=datetime.fromisoformat(payload.get("lastLogin")),
             lastLogin=last_login,
-            createdAt=datetime.fromisoformat(payload.get("createdAt")),
-            updatedAt=datetime.fromisoformat(payload.get("updatedAt")),
+            createdAt=created_at,
+            updatedAt=updated_at,
             email=payload.get("email"),
             reference=payload.get("reference"),
             connectionsStatus=payload.get("connectionsStatus"),
@@ -1773,7 +1824,11 @@ class User:
             # propositionType=first_site.get("propositionType"),
             smartCharging=payload.get("smartCharging", {}),
             smartTrading=payload.get("smartTrading", {}),
-            connections=payload.get("connections", {}),
+            connections=[
+                Connection.from_dict(c)
+                for c in payload.get("connections") or []
+                if isinstance(c, dict)
+            ],
             externalDetails=UserExternalDetails.from_dict(payload.get("externalDetails", {})),
         )
 

@@ -9,10 +9,12 @@ from syrupy.assertion import SnapshotAssertion
 from python_frank_energie.exceptions import AuthException, RequestException
 from python_frank_energie.models import (
     Authentication,
+    Connection,
     Invoices,
     MarketPrices,
     Me,
     MonthSummary,
+    User,
 )
 
 from . import load_fixtures
@@ -84,6 +86,37 @@ def test_me_error_message():
         Me.from_dict({"errors": [{"message": "help me"}]})
 
     assert "help me" in str(excinfo.value)
+
+
+#
+# Tests for User Model.
+#
+
+
+def test_user_with_expected_parameters():
+    """Test User.from_dict parses connections as Connection objects."""
+    user = User.from_dict(json.loads(load_fixtures("me.json")))
+    assert user
+    assert len(user.connections) > 0
+    assert all(isinstance(conn, Connection) for conn in user.connections)
+    
+    # Attribute access
+    conn = user.connections[0]
+    assert conn.connectionId == "d1v9jvd1jnj0-vd1j09jb-1vd-vfwdon"
+    
+    # Dict-like access (for backwards compatibility with HA custom component)
+    assert conn["connectionId"] == "d1v9jvd1jnj0-vd1j09jb-1vd-vfwdon"
+    assert conn.get("connectionId") == "d1v9jvd1jnj0-vd1j09jb-1vd-vfwdon"
+    assert conn.get("estimatedFeedIn") == 0
+    assert conn.get("nonExistentKey", "default") == "default"
+    
+    ext = conn.get("externalDetails")
+    assert ext is not None
+    assert ext.get("gridOperator") == "Stedin"
+    
+    addr = ext.get("address")
+    assert addr is not None
+    assert addr.get("city") == "AMSTERDAM"
 
 
 #
