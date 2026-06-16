@@ -1,7 +1,7 @@
 """Data models enable parsing and processing of the Frank Energie API responses in a structured manner."""
 
 # python_frank_energie/models.py
-# version 2026.05.31
+# version 2026.06.16
 from __future__ import annotations
 
 """ Important Design Rule
@@ -123,10 +123,14 @@ class ContractPriceResolutionChangeResultData:
             effective_date=value,
         )
 
+    @property
+    def effectiveDate(self) -> date | None:
+        """Backward compatibility alias."""
+        return self.effective_date
 
-@dataclass(slots=True)
+@dataclass
 class ContractPriceResolutionChangeResult:
-    """Contract price resolution change result."""
+    """Result of a contract price resolution change request."""
 
     success: bool = False
     reason: str | None = None
@@ -137,20 +141,32 @@ class ContractPriceResolutionChangeResult:
         cls,
         data: dict[str, object],
     ) -> ContractPriceResolutionChangeResult:
-        """Create an instance from an API response."""
+        """Create an instance from API response data."""
+
         result_data = data.get("data")
-        reason = data.get("reason")
 
         return cls(
             success=bool(data.get("success", False)),
-            reason=reason if isinstance(reason, str) else None,
-            data=(
-                ContractPriceResolutionChangeResultData.from_dict(result_data)
+            reason=(
+                str(data["reason"])
+                if data.get("reason") is not None
+                else None
+            ),
+            data=ContractPriceResolutionChangeResultData.from_dict(
+                result_data
                 if isinstance(result_data, dict)
                 else None
             ),
         )
 
+    @property
+    def effectiveDate(self) -> date | None:
+        """Backward compatibility alias."""
+        return (
+            self.data.effective_date
+            if self.data is not None
+            else None
+        )
 
 @dataclass
 class Authentication:
@@ -722,8 +738,8 @@ class PeriodUsageAndCosts:
 class ContractPriceResolutionState:
     """State for price resolution settings."""
 
-    activeOption: str = None
-    availableOptions: list[str] = field(default_factory=list)
+    active_option: str | None = None
+    available_options: list[str] = field(default_factory=list)
     changeRequestEffectiveDate: date | str | None = None
     isChangeRequestPossible: bool = None
     upcomingChange: date | str | None = None
@@ -748,6 +764,16 @@ class ContractPriceResolutionState:
             upcomingChangeEffectiveDate=parse_date(data.get("upcomingChangeEffectiveDate")),
         )
 
+    # deprecated Backward-compatible aliases for camelCase properties
+    @property
+    def activeOption(self) -> str | None:
+        """Backward compatibility alias."""
+        return self.active_option
+
+    @property
+    def availableOptions(self) -> list[str]:
+        """Backward compatibility alias."""
+        return self.available_options
 
 @dataclass
 class UserSites:
@@ -5011,31 +5037,62 @@ class SmartBatteries:
 class SmartBatterySettings:
     """Configuration settings for a smart battery."""
 
-    battery_mode: str | None
-    imbalance_trading_strategy: str | None
-    self_consumption_trading_allowed: bool | None
-    self_consumption_trading_threshold_price: float | None
+    battery_mode: str | None = None
+    created_at: datetime | None = None
+    imbalance_trading_strategy: str | None = None
+    self_consumption_trading_allowed: bool | None = None
+    self_consumption_trading_threshold_price: float | None = None
+    updated_at: datetime | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, object] | None) -> SmartBatterySettings | None:
-        """Parse API response into settings model."""
+    def from_dict(
+        cls,
+        data: dict[str, object] | None,
+    ) -> SmartBatterySettings | None:
+        """
+        Create a SmartBatterySettings instance from API data.
+
+        Args:
+            data: API response data.
+
+        Returns:
+            Parsed SmartBatterySettings instance.
+        """
 
         if not data:
             return None
 
         return cls(
-            battery_mode=data.get("batteryMode", None),
-            imbalance_trading_strategy=data.get("imbalanceTradingStrategy", None),
-            self_consumption_trading_allowed=data.get("selfConsumptionTradingAllowed", None),
-            self_consumption_trading_threshold_price=data.get("selfConsumptionTradingThresholdPrice", None),
-        )
-
-    def __str__(self) -> str:
-        return (
-            f"BatteryMode={self.battery_mode}, "
-            f"Strategy={self.imbalance_trading_strategy}, "
-            f"SelfConsumptionAllowed={self.self_consumption_trading_allowed}, "
-            f"ThresholdPrice={self.self_consumption_trading_threshold_price}"
+            battery_mode=(
+                str(data["batteryMode"])
+                if data.get("batteryMode") is not None
+                else None
+            ),
+            imbalance_trading_strategy=(
+                str(data["imbalanceTradingStrategy"])
+                if data.get("imbalanceTradingStrategy") is not None
+                else None
+            ),
+            self_consumption_trading_allowed=(
+                bool(data["selfConsumptionTradingAllowed"])
+                if data.get("selfConsumptionTradingAllowed") is not None
+                else None
+            ),
+            self_consumption_trading_threshold_price=(
+                float(data["selfConsumptionTradingThresholdPrice"])
+                if data.get("selfConsumptionTradingThresholdPrice") is not None
+                else None
+            ),
+            created_at=(
+                datetime.fromisoformat(data["createdAt"].replace("Z", "+00:00")).astimezone(UTC)
+                if data.get("createdAt") is not None
+                else None
+            ),
+            updated_at=(
+                datetime.fromisoformat(data["updatedAt"].replace("Z", "+00:00")).astimezone(UTC)
+                if data.get("updatedAt") is not None
+                else None
+            ),
         )
 
 
@@ -5719,6 +5776,7 @@ class UserSmartFeedInStatus(DictLikeMixin):
             user_created_at=_parse_datetime(payload["userCreatedAt"]),
             user_id=payload["userId"],
         )
+
 
 
 @dataclass
