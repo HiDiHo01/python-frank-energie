@@ -1,11 +1,11 @@
 """Authentication handling for Frank Energie integration."""
 # python_frank_energie/authentication.py
 
+import base64
+import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
-
-import jwt
 
 from .exceptions import AuthException
 
@@ -83,6 +83,11 @@ class Authentication:
     def auth_token_valid(self, tz: timezone = UTC) -> bool:
         """Check if authToken is still valid according to the expiration timestamp.
 
+        Decodes the JWT payload via base64 (without signature verification) to
+        read the ``exp`` claim.  We are a client — we do not hold the server's
+        signing key and do not need to verify the signature here; the server
+        validates it when the token is actually used for an API call.
+
         Args:
             tz: The timezone to compare against. Defaults to UTC.
 
@@ -90,15 +95,16 @@ class Authentication:
             True if the token has not expired; otherwise, False.
         """
         try:
-            decoded = jwt.decode(self.authToken, algorithms=["HS256"], options={"verify_signature": False})  # nosec B106 - intentional: client-side expiry check only, no signing secret available
-        except jwt.DecodeError as err:
-            _LOGGER.warning("Failed to decode authToken: %s", err)
-            return False
+            # JWT is three base64url segments separated by '.'; payload is index 1
+            payload_b64 = self.authToken.split(".")[1]
+            # base64url uses '-' and '_'; restore padding
+            payload_b64 += "=" * (4 - len(payload_b64) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64))
         except Exception as err:
-            _LOGGER.error("Unexpected error decoding authToken: %s", err)
+            _LOGGER.warning("Failed to decode authToken payload: %s", err)
             return False
 
-        expiry = decoded.get("exp")
+        expiry = payload.get("exp")
         if not expiry:
             _LOGGER.warning("Token does not contain 'exp' field")
             return False
