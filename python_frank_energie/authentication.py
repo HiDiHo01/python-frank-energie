@@ -3,14 +3,14 @@
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 from jwt.exceptions import InvalidTokenError
 
 from .exceptions import AuthException
 
-_LOGGER = logging.getLogger(name)
+_LOGGER = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class Authentication:
