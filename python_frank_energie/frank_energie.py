@@ -136,41 +136,30 @@ class FrankEnergie:
     @property
     def is_authenticated(self) -> bool:
         """Return True when valid authentication tokens are available."""
-    
-        return bool(
-            self._auth is not None
-            and self._auth.refreshToken
-            and self._auth.authToken
-        )
+
+        return bool(self._auth is not None and self._auth.refreshToken and self._auth.authToken)
 
     async def validate_authentication(self) -> bool:
         """Validate the current authentication tokens."""
-    
+
         if not self.is_authenticated:
             return False
-    
+
         try:
             async with self._renew_lock:
-                if (
-                    self._auth is not None
-                    and self._auth.is_expired
-                ):
+                if self._auth is not None and self._auth.is_expired:
                     await self.renew_token()
         except (AuthException, AuthRequiredException):
             return False
-    
+
         return True
 
     def _requires_token_refresh(
         self,
         operation_name: str,
     ) -> bool:
-        return (
-            operation_name != self.RENEW_TOKEN_OPERATIONNAME
-            and self._auth is not None
-            and self._auth.is_expired
-        )
-    
+        return operation_name != self.RENEW_TOKEN_OPERATIONNAME and self._auth is not None and self._auth.is_expired
+
     @staticmethod
     def generate_system_user_agent() -> str:
         """Generate the system user-agent string for API requests."""
@@ -216,19 +205,11 @@ class FrankEnergie:
         if self._requires_token_refresh(query.operation_name):
             async with self._renew_lock:
                 if self._requires_token_refresh(query.operation_name):
-                    _LOGGER.debug(
-                        "Access token expired; attempting token renewal"
-                    )
+                    _LOGGER.debug("Access token expired; attempting token renewal")
                     await self.renew_token()
 
-        if (
-            self._auth is not None
-            and query.operation_name
-            not in self.AUTH_HEADER_EXEMPT_OPERATIONS
-        ):
-            headers["Authorization"] = (
-                f"Bearer {self._auth.authToken}"
-            )
+        if self._auth is not None and query.operation_name not in self.AUTH_HEADER_EXEMPT_OPERATIONS:
+            headers["Authorization"] = f"Bearer {self._auth.authToken}"
 
         if extra_headers:
             headers.update(extra_headers)
@@ -596,9 +577,7 @@ class FrankEnergie:
                 "Month summary failed (%s)",
                 type(e).__name__,
             )
-            raise FrankEnergieException(
-                f"Failed to fetch month summary: {e}"
-            ) from e
+            raise FrankEnergieException(f"Failed to fetch month summary: {e}") from e
 
     async def month_insights(self, site_reference: str, date: str) -> MonthInsights:
         """Retrieve the month insights for the specified month.
@@ -1146,9 +1125,7 @@ class FrankEnergie:
 
         return bool(response.get("data", {}).get("smartHvacDisable", {}).get("success", False))
 
-    async def smart_hvac_update_settings(
-        self, device_id: str, settings: dict[str, Any]
-    ) -> bool:
+    async def smart_hvac_update_settings(self, device_id: str, settings: dict[str, Any]) -> bool:
         """Update settings for a smart HVAC device.
 
         Calls the ``SmartHvacUpdateSettings`` GraphQL mutation.
@@ -1203,9 +1180,7 @@ class FrankEnergie:
     # Smart controls — API stubs for future use (not yet used by HA)
     # -------------------------------------------------------------------------
 
-    async def smart_battery_update_settings(
-        self, device_id: str, settings: dict[str, Any]
-    ) -> bool:
+    async def smart_battery_update_settings(self, device_id: str, settings: dict[str, Any]) -> bool:
         """Update settings for a smart battery device.
 
         Calls the ``SmartBatteryUpdateSettings`` GraphQL mutation.
@@ -2465,9 +2440,7 @@ class FrankEnergie:
             response = await self._query(query)
             period_usage = PeriodUsageAndCosts.from_dict(response)
             if period_usage is None:
-                raise FrankEnergieException(
-                    "Kon verbruik en kosten niet ophalen voor opgegeven periode."
-                )
+                raise FrankEnergieException("Kon verbruik en kosten niet ophalen voor opgegeven periode.")
             return period_usage
         except Exception as err:
             _LOGGER.exception(
@@ -2633,7 +2606,6 @@ class FrankEnergie:
             smart_battery_summary=summary,
         )
 
-
     async def smart_battery_sessions(
         self, device_id: str, start_date: date, end_date: date
     ) -> SmartBatterySessions | None:
@@ -2761,7 +2733,6 @@ class FrankEnergie:
 
         response = await self._query(query)
         return SmartPvSystems.from_dict(response)
-
 
     SMART_PV_SYSTEM_SUMMARY_QUERY = """
         query SmartPvSystemSummary($deviceId: String!) {

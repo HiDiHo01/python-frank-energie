@@ -128,6 +128,7 @@ class ContractPriceResolutionChangeResultData:
         """Backward compatibility alias."""
         return self.effective_date
 
+
 @dataclass
 class ContractPriceResolutionChangeResult:
     """Result of a contract price resolution change request."""
@@ -146,29 +147,20 @@ class ContractPriceResolutionChangeResult:
         result_data = data.get("data")
 
         parsed_data = (
-            ContractPriceResolutionChangeResultData.from_dict(result_data)
-            if isinstance(result_data, dict)
-            else None
+            ContractPriceResolutionChangeResultData.from_dict(result_data) if isinstance(result_data, dict) else None
         )
 
         return cls(
             success=bool(data.get("success", False)),
-            reason=(
-                str(data["reason"])
-                if data.get("reason") is not None
-                else None
-            ),
+            reason=(str(data["reason"]) if data.get("reason") is not None else None),
             data=parsed_data,
         )
 
     @property
     def effectiveDate(self) -> date | None:
         """Backward compatibility alias."""
-        return (
-            self.data.effective_date
-            if self.data is not None
-            else None
-        )
+        return self.data.effective_date if self.data is not None else None
+
 
 @dataclass
 class Authentication:
@@ -269,9 +261,7 @@ class Authentication:
             return True
 
         # gives a 5-minute refresh window and avoids edge cases where a request starts just before expiration
-        return datetime.now(UTC) >= (
-            self.expires_at - timedelta(minutes=5)
-        )
+        return datetime.now(UTC) >= (self.expires_at - timedelta(minutes=5))
 
 
 @dataclass
@@ -931,6 +921,7 @@ class InviteLink:
     def treesAmountPerConnection(self) -> int:
         """Backward compatibility alias."""
         return self.trees_amount_per_connection
+
 
 @dataclass
 class PushNotificationPriceAlert:
@@ -1824,11 +1815,7 @@ class User:
             # propositionType=first_site.get("propositionType"),
             smartCharging=payload.get("smartCharging", {}),
             smartTrading=payload.get("smartTrading", {}),
-            connections=[
-                Connection.from_dict(c)
-                for c in payload.get("connections") or []
-                if isinstance(c, dict)
-            ],
+            connections=[Connection.from_dict(c) for c in payload.get("connections") or [] if isinstance(c, dict)],
             externalDetails=UserExternalDetails.from_dict(payload.get("externalDetails", {})),
         )
 
@@ -2103,28 +2090,20 @@ class MonthSummary:
         summary_id = payload.get("_id")
         actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")
         expected_costs = payload.get("expectedCosts")
-        expected_costs_until = payload.get(
-            "expectedCostsUntilLastMeterReadingDate"
-        )
+        expected_costs_until = payload.get("expectedCostsUntilLastMeterReadingDate")
         last_reading = payload.get("lastMeterReadingDate")
         completeness = payload.get("meterReadingDayCompleteness")
         gas_excluded = payload.get("gasExcluded")
         typename = payload.get("__typename")
 
-        if (
-            expected_costs is None
-            and last_reading is None
-            and actual_costs is None
-        ):
+        if expected_costs is None and last_reading is None and actual_costs is None:
             return None
 
         if not isinstance(summary_id, str):
             raise RequestException("Invalid _id")
 
         if not isinstance(actual_costs, (int, float)):
-            raise RequestException(
-                "Invalid actualCostsUntilLastMeterReadingDate"
-            )
+            raise RequestException("Invalid actualCostsUntilLastMeterReadingDate")
 
         if not isinstance(last_reading, str):
             raise RequestException("Invalid lastMeterReadingDate")
@@ -2133,17 +2112,13 @@ class MonthSummary:
             expected_costs_until,
             (int, float),
         ):
-            raise RequestException(
-                "Invalid expectedCostsUntilLastMeterReadingDate"
-            )
+            raise RequestException("Invalid expectedCostsUntilLastMeterReadingDate")
 
         if not isinstance(expected_costs, (int, float, type(None))):
             raise RequestException("Invalid expectedCosts")
 
         if not isinstance(completeness, int):
-            raise RequestException(
-                "Invalid meterReadingDayCompleteness"
-            )
+            raise RequestException("Invalid meterReadingDayCompleteness")
 
         if not isinstance(gas_excluded, bool):
             raise RequestException("Invalid gasExcluded")
@@ -2160,11 +2135,9 @@ class MonthSummary:
             else None
         )
 
-        costs_per_day_till_now = (
-            MonthSummary.calculate_costs_per_day_till_now(
-                float(actual_costs),
-                last_reading,
-            )
+        costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(
+            float(actual_costs),
+            last_reading,
         )
 
         return MonthSummary(
@@ -2178,11 +2151,7 @@ class MonthSummary:
             meterReadingDayCompleteness=completeness,
             gasExcluded=gas_excluded,
             typename=typename,
-            expectedCosts=(
-                float(expected_costs)
-                if expected_costs is not None
-                else None
-            ),
+            expectedCosts=(float(expected_costs) if expected_costs is not None else None),
             expectedCostsPerDay=expected_costs_per_day,
         )
 
@@ -5155,15 +5124,9 @@ class SmartBatterySettings:
             return None
 
         return cls(
-            battery_mode=(
-                str(data["batteryMode"])
-                if data.get("batteryMode") is not None
-                else None
-            ),
+            battery_mode=(str(data["batteryMode"]) if data.get("batteryMode") is not None else None),
             imbalance_trading_strategy=(
-                str(data["imbalanceTradingStrategy"])
-                if data.get("imbalanceTradingStrategy") is not None
-                else None
+                str(data["imbalanceTradingStrategy"]) if data.get("imbalanceTradingStrategy") is not None else None
             ),
             self_consumption_trading_allowed=(
                 bool(data["selfConsumptionTradingAllowed"])
@@ -5536,7 +5499,6 @@ class old_SmartBatteryDetails:
         )
 
         summary_data = data.get("smartBatterySummary", {})
-        last_update = datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
 
         smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
 
@@ -5804,7 +5766,7 @@ class old_SmartPvSystems(DictLikeMixin):
         if not response:
             return cls(systems=[])
         pv_dicts = response.get("data", {}).get("smartPvSystems", [])
-        systems=[SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)]
+        systems = [SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)]
         return cls(systems=systems)
 
 
@@ -5868,7 +5830,6 @@ class UserSmartFeedInStatus(DictLikeMixin):
             user_created_at=_parse_datetime(payload["userCreatedAt"]),
             user_id=payload["userId"],
         )
-
 
 
 @dataclass
