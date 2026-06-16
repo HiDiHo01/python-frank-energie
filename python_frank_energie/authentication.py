@@ -124,16 +124,3 @@ class Authentication:
     def __repr__(self) -> str:
         """Hide sensitive token values."""
         return "Authentication(auth_token=***, refresh_token=***)"
-
-
-@dataclass
-class AuthenticationResult:
-    """Class to hold authentication result after login or refresh.
-
-    Attributes:
-        authToken: The current valid auth token.
-        refreshToken: The token used to refresh the auth token.
-    """
-
-    authToken: str
-    refreshToken: str
