@@ -4,17 +4,10 @@
 # version 2026.06.16
 from __future__ import annotations
 
-""" Important Design Rule
-Do not move interval logic out of Price
-Do not put collection logic inside Price
-
-This split is what keeps the model maintainable.
-"""
-
 import calendar
 import logging
 from collections import defaultdict
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from enum import Enum
@@ -107,7 +100,7 @@ class ContractPriceResolutionChangeResultData:
     def from_dict(
         cls,
         data: dict[str, object],
-    ) -> "ContractPriceResolutionChangeResultData":
+    ) -> ContractPriceResolutionChangeResultData:
         """Create an instance from an API response."""
         value = data.get("effectiveDate")
 
@@ -159,6 +152,11 @@ class ContractPriceResolutionChangeResult:
     @property
     def effectiveDate(self) -> date | None:
         """Backward compatibility alias."""
+        return self.data.effective_date if self.data is not None else None
+
+    @property
+    def effective_date(self) -> date | None:
+        """Return the effective date of the resolution change, if available."""
         return self.data.effective_date if self.data is not None else None
 
 
@@ -2469,17 +2467,11 @@ class Price:
     market_price_tax: float = 0.0
     sourcing_markup_price: float = 0.0
     energy_tax_price: float = 0.0
-    total: float = 0.0
-    per_unit: str | None = None
     unit: str | None = None
     tax_rate: float = 0.0
     tax: float = 0.0
     start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
-    for_now: bool = False
-    for_today: bool = False
-    for_tomorrow: bool = False
-    for_upcoming: bool = False
     market_price_including_tax: float = 0.0
     market_price_including_tax_and_markup: float = 0.0
 
@@ -2570,20 +2562,11 @@ class Price:
 
         self.per_unit = data["perUnit"]
 
-    def per_unit(self) -> str:
-        """Return the unit of the price."""
-        if self.per_unit:
-            return self.per_unit
-        return None
-
     def __str__(self) -> str:
         """Return a string representation of this price entry."""
-        return "%s -> %s: %.4f %s" % (
-            self.date_from.isoformat() if self.date_from else "N/A",
-            self.date_till.isoformat() if self.date_till else "N/A",
-            self.total,
-            self.per_unit or "",
-        )
+        date_from_str = self.date_from.isoformat() if self.date_from else "N/A"
+        date_till_str = self.date_till.isoformat() if self.date_till else "N/A"
+        return f"{date_from_str} -> {date_till_str}: {self.total:.4f} {self.per_unit or ''}"
 
     @property
     def ET(self, data) -> str:  # not in use anymore
@@ -2746,13 +2729,14 @@ class Price:
         return self._total
 
     @staticmethod
-    def average_price_for_current_hour(prices: list[object]) -> Price:
-        current = self.prices_for_current_hour()
+    def average_price_for_current_hour(prices: list[object]) -> float | None:
+        """Return the average price for the current hour across a list of prices."""
+        current = [p for p in prices if getattr(p, "for_now", False)]
 
         if not current:
             return None
 
-        return sum(p.price for p in current) / len(current)
+        return sum(p.total for p in current) / len(current)
 
     def calculate_stats1(self, prices: list[Price]) -> dict[str, float]:
         if not prices:
@@ -3104,11 +3088,13 @@ class PriceData:
 
     @property
     def upcoming_min(self) -> Price | None:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        """Return the upcoming price entry with the lowest total."""
+        return min(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def upcoming_max(self) -> Price | None:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        """Return the upcoming price entry with the highest total."""
+        return max(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def old_elec_previoushour(self):
@@ -3157,14 +3143,6 @@ class PriceData:
         return next((price for price in self.price_data if price.date_from <= next_hour <= price.date_till), None)
 
     @property
-    def older_avg(self: list[PriceData]) -> float | None:
-        """Calcutale the average price."""
-        if not self:
-            return mean(hour.total for hour in self.all)
-        else:
-            return None
-
-    @property
     def older_avg(self) -> float | None:
         """Calculate the average price of prices."""
         if not self.price_data:
@@ -3177,11 +3155,7 @@ class PriceData:
 
         return sum(values) / len(values)
 
-    @property
-    def old_avg(prices) -> float | None:
-        """Calculate the average price of a list of prices"""
-        return mean(prices) if prices else None
-
+    @staticmethod
     def avg(prices: Iterable[float]) -> float | None:
         """Calculate the average price of a list of prices."""
         prices_list = list(prices)
@@ -3191,6 +3165,7 @@ class PriceData:
 
         return mean(prices_list)
 
+    @staticmethod
     def safe_avg(values: Iterable[float | int]) -> float | None:
         """Return average of numeric values or None if empty."""
         values_list = [float(v) for v in values if v is not None]
@@ -3341,7 +3316,8 @@ class PriceData:
             result.append(data)
         return result
 
-    def calculate_stats(self):
+    def calculate_stats(self) -> dict:
+        """Calculate summary statistics for electricity and gas prices."""
         electricity_prices = [price.total for price in self if price.electricity]
         gas_prices = [price.total for price in self if price.gas]
 
@@ -3358,62 +3334,6 @@ class PriceData:
             "electricity": {"mean": electricity_mean, "min": electricity_min, "max": electricity_max},
             "gas": {"mean": gas_mean, "min": gas_min, "max": gas_max},
         }
-
-    def calculate_stats(data):
-        print(data)
-        electricity_prices = data.MarketPrices.electricity
-        gas_prices = data.MarketPrices.gas
-
-        # Calculate total market price and total market price tax and the total price
-        total_market_price = sum(price.market_price for price in electricity_prices)
-        total_market_price_with_tax = sum(price.market_price_with_tax for price in electricity_prices)
-        total_price = sum(price.total for price in electricity_prices)
-
-        # Calculate average prices
-        average_market_price = total_market_price / len(electricity_prices)
-        average_market_price_with_tax = total_market_price_with_tax / len(electricity_prices)
-        average_total_price = total_price / len(electricity_prices)
-
-        # Find the minimum and maximum prices
-        min_market_price = min(price.market_price for price in electricity_prices)
-        max_market_price = max(price.market_price for price in electricity_prices)
-        min_market_price_with_tax = min(price.market_price_with_tax for price in electricity_prices)
-        max_market_price_with_tax = max(price.market_price_with_tax for price in electricity_prices)
-        min_total_price = min(price.total for price in electricity_prices)
-        max_total_price = max(price.total for price in electricity_prices)
-
-        # Find the time interval with the highest market price
-        max_market_price_interval = max(electricity_prices, key=lambda x: x["marketPrice"])
-        max_market_price_from = datetime.fromisoformat(max_market_price_interval["from"])
-        max_market_price_till = datetime.fromisoformat(max_market_price_interval["till"])
-
-        # Find the time interval with the lowest market price
-        min_market_price_interval = min(electricity_prices, key=lambda x: x["marketPrice"])
-        min_market_price_from = datetime.fromisoformat(min_market_price_interval["from"])
-        min_market_price_till = datetime.fromisoformat(min_market_price_interval["till"])
-
-        # Compile the statistics into a dictionary
-        stats = {
-            "total_market_price": total_market_price,
-            "total_market_price_tax": total_market_price_with_tax,
-            "total_price": total_price,
-            "average_market_price": average_market_price,
-            "average_market_price_with_tax": average_market_price_with_tax,
-            "average_total_price": average_total_price,
-            "min_market_price": min_market_price,
-            "max_market_price": max_market_price,
-            "min_market_price_from": min_market_price_from,
-            "min_market_price_till": min_market_price_till,
-            "max_market_price_from": max_market_price_from,
-            "max_market_price_till": max_market_price_till,
-        }
-
-        return stats
-
-    @property
-    def today_prices(self) -> list[Price]:
-        """Get a list of all the prices for today."""
-        return list(filter(lambda hour: hour.for_today, self.price_data))
 
     @property
     def today_market_avg(self) -> float:
@@ -3460,7 +3380,7 @@ class PriceData:
     @property
     def all_avg(self):
         """Get the average of all prices."""
-        all_prices = [price for price in self.price_data]
+        all_prices = list(self.price_data)
 
         if not all_prices:
             return None
@@ -3526,10 +3446,6 @@ class PriceData:
     @property
     def tomorrow_avg(self) -> PriceDataAvg | None:
         """Get the average of tomorrow's prices."""
-        now = datetime.now(UTC).astimezone()
-        tomorrow = now + timedelta(days=1)
-        tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow_end = tomorrow_start + timedelta(days=1)
 
         # tomorrow_prices = [
         #     price for price in self.price_data
@@ -3670,54 +3586,6 @@ class PriceData:
         return None
 
     @property
-    def old_upcoming_min(self) -> Price:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
-
-    @property
-    def upcoming_min(self) -> Price | None:
-        """Return the upcoming hour with the lowest total price."""
-        if not self.upcoming:
-            return None
-
-        min_hour = None
-        min_value = None
-
-        for hour in self.upcoming:
-            value = getattr(hour, "total", None)
-            if value is None:
-                continue
-
-            if min_value is None or value < min_value:
-                min_value = value
-                min_hour = hour
-
-        return min_hour
-
-    @property
-    def old_upcoming_max(self) -> Price:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
-
-    @property
-    def upcoming_max(self) -> Price | None:
-        """Return the upcoming hour with the highest total price."""
-        if not self.upcoming:
-            return None
-
-        max_hour = None
-        max_value = None
-
-        for hour in self.upcoming:
-            value = getattr(hour, "total", None)
-            if value is None:
-                continue
-
-            if max_value is None or value > max_value:
-                max_value = value
-                max_hour = hour
-
-        return max_hour
-
-    @property
     def length(self) -> int:
         """Return the number of price entries."""
         if not self.price_data:
@@ -3822,34 +3690,16 @@ class PriceData:
 
 
 @dataclass
-class Old_PriceData:
-    """Price data for a period of time."""
+class Old_PriceData:  # noqa: N801
+    """Price data for a period of time (legacy, kept for compatibility)."""
 
-    # price_data: list[Price] = []
-    price_data: list[Price] = field(default_factory=list)  # was: = []
+    price_data: list[Price] = field(default_factory=list)
     energy_type: str | None = None
-    current_hour: Price | None = None
-    previous_hour: Price | None = None
-    next_hour: Price | None = None
-    upcoming_min: Price | None = None
-    upcoming_max: Price | None = None
-    upcoming_avg: PriceDataAvg | None = None
-    upcoming_prices: list[Price] | None = None
-    elec_previoushour: float | None = None
-    elec_nexthour: float | None = None
     gas_unit: str | None = None
     elec_unit: str | None = None
     gas_resolution: str | None = None
     elec_resolution: str | None = None
     resolution_minutes: int = 60
-
-    """" 
-    PriceDataAvg = namedtuple('PriceDataAvg', [
-        'values', 'total', 'market_price_with_tax_and_markup',
-        'market_markup_price', 'market_price_with_tax',
-        'market_price_tax', 'market_price'
-    ])
-    """
 
     # def __init__(self, prices: Optional[list['Price']] = None, energy_type: Optional[str] = None):
     #     self.price_data = [Price({**price, "energy_type": energy_type})
@@ -4047,11 +3897,13 @@ class Old_PriceData:
 
     @property
     def upcoming_min(self) -> Price | None:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        """Return the upcoming price entry with the lowest total."""
+        return min(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def upcoming_max(self) -> Price | None:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total, default=None)
+        """Return the upcoming price entry with the highest total."""
+        return max(list(self.upcoming), key=lambda hour: hour.total, default=None)
 
     @property
     def old_elec_previoushour(self):
@@ -4098,14 +3950,6 @@ class Old_PriceData:
         """Return the electricity price for the next hour."""
         next_hour = datetime.now(UTC) + timedelta(hours=1)
         return next((price for price in self.price_data if price.date_from <= next_hour <= price.date_till), None)
-
-    @property
-    def older_avg(self: list[PriceData]) -> float | None:
-        """Calcutale the average price."""
-        if not self:
-            return mean(hour.total for hour in self.all)
-        else:
-            return None
 
     @property
     def older_avg(self) -> float | None:
@@ -4284,79 +4128,17 @@ class Old_PriceData:
             result.append(data)
         return result
 
-    def calculate_stats(self):
+    def calculate_stats(self) -> dict:
+        """Calculate summary statistics for electricity and gas prices."""
         electricity_prices = [price.total for price in self if price.electricity]
-        gas_prices = [price.total for price in self if price.gas]
 
         electricity_mean = mean(electricity_prices)
-        gas_mean = mean(gas_prices)
-
         electricity_min = min(electricity_prices)
-        gas_min = min(gas_prices)
-
         electricity_max = max(electricity_prices)
-        gas_max = max(gas_prices)
 
         return {
             "electricity": {"mean": electricity_mean, "min": electricity_min, "max": electricity_max},
-            "gas": {"mean": gas_mean, "min": gas_min, "max": gas_max},
         }
-
-    def calculate_stats(data):
-        print(data)
-        electricity_prices = data.MarketPrices.electricity
-        gas_prices = data.MarketPrices.gas
-
-        # Calculate total market price and total market price tax and the total price
-        total_market_price = sum(price.market_price for price in electricity_prices)
-        total_market_price_with_tax = sum(price.market_price_with_tax for price in electricity_prices)
-        total_price = sum(price.total for price in electricity_prices)
-
-        # Calculate average prices
-        average_market_price = total_market_price / len(electricity_prices)
-        average_market_price_with_tax = total_market_price_with_tax / len(electricity_prices)
-        average_total_price = total_price / len(electricity_prices)
-
-        # Find the minimum and maximum prices
-        min_market_price = min(price.market_price for price in electricity_prices)
-        max_market_price = max(price.market_price for price in electricity_prices)
-        min_market_price_with_tax = min(price.market_price_with_tax for price in electricity_prices)
-        max_market_price_with_tax = max(price.market_price_with_tax for price in electricity_prices)
-        min_total_price = min(price.total for price in electricity_prices)
-        max_total_price = max(price.total for price in electricity_prices)
-
-        # Find the time interval with the highest market price
-        max_market_price_interval = max(electricity_prices, key=lambda x: x["marketPrice"])
-        max_market_price_from = datetime.fromisoformat(max_market_price_interval["from"])
-        max_market_price_till = datetime.fromisoformat(max_market_price_interval["till"])
-
-        # Find the time interval with the lowest market price
-        min_market_price_interval = min(electricity_prices, key=lambda x: x["marketPrice"])
-        min_market_price_from = datetime.fromisoformat(min_market_price_interval["from"])
-        min_market_price_till = datetime.fromisoformat(min_market_price_interval["till"])
-
-        # Compile the statistics into a dictionary
-        stats = {
-            "total_market_price": total_market_price,
-            "total_market_price_tax": total_market_price_with_tax,
-            "total_price": total_price,
-            "average_market_price": average_market_price,
-            "average_market_price_with_tax": average_market_price_with_tax,
-            "average_total_price": average_total_price,
-            "min_market_price": min_market_price,
-            "max_market_price": max_market_price,
-            "min_market_price_from": min_market_price_from,
-            "min_market_price_till": min_market_price_till,
-            "max_market_price_from": max_market_price_from,
-            "max_market_price_till": max_market_price_till,
-        }
-
-        return stats
-
-    @property
-    def today_prices(self) -> list[Price]:
-        """Get a list of all the prices for today."""
-        return list(filter(lambda hour: hour.for_today, self.price_data))
 
     @property
     def today_market_avg(self) -> float:
@@ -4403,7 +4185,7 @@ class Old_PriceData:
     @property
     def all_avg(self):
         """Get the average of all prices."""
-        all_prices = [price for price in self.price_data]
+        all_prices = list(self.price_data)
 
         if not all_prices:
             return None
@@ -4469,10 +4251,6 @@ class Old_PriceData:
     @property
     def tomorrow_avg(self) -> PriceDataAvg | None:
         """Get the average of tomorrow's prices."""
-        now = datetime.now(UTC).astimezone()
-        tomorrow = now + timedelta(days=1)
-        tomorrow_start = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-        tomorrow_end = tomorrow_start + timedelta(days=1)
 
         # tomorrow_prices = [
         #     price for price in self.price_data
@@ -4611,54 +4389,6 @@ class Old_PriceData:
         if tomorrow_prices:
             return round(mean(tomorrow_prices), DEFAULT_ROUND)
         return None
-
-    @property
-    def old_upcoming_min(self) -> Price:
-        return min([hour for hour in self.upcoming], key=lambda hour: hour.total)
-
-    @property
-    def upcoming_min(self) -> Price | None:
-        """Return the upcoming hour with the lowest total price."""
-        if not self.upcoming:
-            return None
-
-        min_hour = None
-        min_value = None
-
-        for hour in self.upcoming:
-            value = getattr(hour, "total", None)
-            if value is None:
-                continue
-
-            if min_value is None or value < min_value:
-                min_value = value
-                min_hour = hour
-
-        return min_hour
-
-    @property
-    def old_upcoming_max(self) -> Price:
-        return max([hour for hour in self.upcoming], key=lambda hour: hour.total)
-
-    @property
-    def upcoming_max(self) -> Price | None:
-        """Return the upcoming hour with the highest total price."""
-        if not self.upcoming:
-            return None
-
-        max_hour = None
-        max_value = None
-
-        for hour in self.upcoming:
-            value = getattr(hour, "total", None)
-            if value is None:
-                continue
-
-            if max_value is None or value > max_value:
-                max_value = value
-                max_hour = hour
-
-        return max_hour
 
     @property
     def length(self) -> int:
@@ -5031,9 +4761,9 @@ class Session:
                 cumulative_trading_result=float(payload["cumulativeTradingResult"]),
             )
         except KeyError as exc:
-            raise RequestException("Missing expected field in session: %s" % exc) from exc
+            raise RequestException(f"Missing expected field in session: {exc}") from exc
         except ValueError as exc:
-            raise RequestException("Invalid data format in session payload: %s" % exc) from exc
+            raise RequestException(f"Invalid data format in session payload: {exc}") from exc
 
 
 # @dataclass
@@ -5241,10 +4971,10 @@ class SmartBattery:
 
         capacity_value = data.get("capacity")
 
-        capacity: float | None = None
+        _capacity: float | None = None
         if capacity_value is not None:
             try:
-                capacity = float(capacity_value)
+                _capacity = float(capacity_value)
             except (TypeError, ValueError):
                 _LOGGER.debug(
                     "Invalid battery capacity received for device %s: %s",
@@ -5317,9 +5047,9 @@ class SmartBatterySession:
                 trade_index=payload.get("tradeIndex"),
             )
         except KeyError as exc:
-            raise ValueError("Missing expected field in session: %s" % exc) from exc
-        except ValueError as exc:
-            raise ValueError("Invalid data format in session payload: %s" % exc) from exc
+            raise ValueError(f"Missing expected field in session: {exc}") from exc
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid data format in session payload: {exc}") from exc
 
 
 @dataclass
@@ -5657,7 +5387,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
         dt = datetime.fromisoformat(value.rstrip("Z"))
         return dt.replace(tzinfo=ZoneInfo("UTC"))
     except ValueError as err:
-        raise ValueError("Invalid datetime string: %s" % value) from err
+        raise ValueError(f"Invalid datetime string: {value}") from err
 
 
 def test_parse_datetime(value: object) -> datetime | None:
@@ -5675,13 +5405,13 @@ def test_parse_datetime(value: object) -> datetime | None:
         return None
 
     if not isinstance(value, str):
-        raise ValueError("Expected string for datetime parsing, got: %s" % type(value).__name__)
+        raise ValueError(f"Expected string for datetime parsing, got: {type(value).__name__}")
 
     try:
         dt = parse_datetime(value)
     except (ValueError, TypeError) as err:
         _LOGGER.debug("Failed to parse datetime string '%s': %s", value, err)
-        raise ValueError("Invalid datetime string: %s" % value) from err
+        raise ValueError(f"Invalid datetime string: {value}") from err
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=ZoneInfo("UTC"))

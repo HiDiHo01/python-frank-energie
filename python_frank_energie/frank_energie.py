@@ -4,19 +4,13 @@
 
 import asyncio
 import logging
+import platform
 import re
+import sys
 import time
-from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any, TypeVar
-
-T = TypeVar("T")
-
-_LOGGER = logging.getLogger(__name__)
-
-import platform
-import sys
 
 import aiohttp
 from aiohttp import ClientError, ClientSession, ClientTimeout
@@ -24,9 +18,8 @@ from aiohttp import ClientError, ClientSession, ClientTimeout
 from .exceptions import AuthException, AuthRequiredException, FrankEnergieException, NetworkError, RequestException
 from .models import (
     Authentication,
-    ContractPriceResolutionState,
     ContractPriceResolutionChangeResult,
-    ContractPriceResolutionChangeResultData,
+    ContractPriceResolutionState,
     EnergyConsumption,
     EnodeChargers,
     EnodeVehicle,
@@ -49,6 +42,10 @@ from .models import (
     UserSites,
     UserSmartFeedInStatus,
 )
+
+T = TypeVar("T")
+
+_LOGGER = logging.getLogger(__name__)
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -363,7 +360,7 @@ class FrankEnergie:
                     response,
                 )
                 raise FrankEnergieException(
-                    "Request failed for '%s': GraphQL validation error — check query and variables." % active_query
+                    f"Request failed for '{active_query}': GraphQL validation error — check query and variables."
                 )
 
             # --- Expected "no data" cases (not failures) ---
@@ -392,7 +389,7 @@ class FrankEnergie:
 
             # --- Critical errors ---
             elif message.startswith("No connections found for user"):
-                raise FrankEnergieException("Request failed: %s" % message)
+                raise FrankEnergieException(f"Request failed: {message}")
             elif message == "request-error:request-not-supported-in-country":
                 _LOGGER.error("Request not supported in user's country: %s", error_obj)
                 continue
@@ -667,7 +664,7 @@ class FrankEnergie:
         try:
             return MonthInsights.from_dict(response_dict)
         except Exception as exc:
-            raise FrankEnergieException("Failed to parse MonthInsights response: %s" % exc) from exc
+            raise FrankEnergieException(f"Failed to parse MonthInsights response: {exc}") from exc
 
     async def enode_chargers(self, site_reference: str, start_date: date) -> dict[str, EnodeChargers]:
         """Retrieve the enode charger information for the specified site reference.
@@ -1803,7 +1800,7 @@ class FrankEnergie:
             raise AuthRequiredException
 
         if connection_id is None:
-            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
+            raise ValueError("connection_id must be provided")
 
         if resolution is None:
             raise ValueError("resolution must be provided")
@@ -1903,73 +1900,6 @@ class FrankEnergie:
             return ContractPriceResolutionState.from_dict(data)
         except Exception as e:
             _LOGGER.error("Failed to set contract price resolution state: %s", e)
-            return None
-
-    async def contract_price_resolution_request_change(
-        self, connection_id: str | None = None, resolution: Resolution | None = None
-    ) -> ContractPriceResolutionChangeResult | None:
-        """
-        Request a change to the contract price resolution.
-
-        Args:
-            connection_id: The ID of the connection. Must not be None.
-            resolution: The price resolution to change to (e.g., Resolution.PT15M, Resolution.PT60M). Must not be None.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            ValueError: If connection_id or resolution is None, or if resolution is invalid.
-
-        Returns:
-            ContractPriceResolutionChangeResult: Result of the change request.
-        """
-        if self._auth is None:
-            raise AuthRequiredException
-
-        if connection_id is None:
-            raise ValueError(ERROR_CONNECTION_ID_REQUIRED)
-
-        if resolution is None:
-            raise ValueError("resolution must be provided")
-
-        try:
-            resolution_enum = Resolution(resolution)
-        except ValueError as e:
-            raise ValueError(
-                f"resolution must be a valid Resolution enum or one of: {[r.value for r in Resolution]}"
-            ) from e
-
-        query = FrankEnergieQuery(
-            """
-            mutation ContractPriceResolutionRequestChange($connectionId: String!, $resolution: PriceResolution!) {
-              contractPriceResolutionRequestChange(
-                connectionId: $connectionId
-                resolution: $resolution
-              ) {
-                data {
-                  effectiveDate
-                }
-                reason
-                success
-              }
-            }
-            """,
-            "ContractPriceResolutionRequestChange",
-            {"connectionId": connection_id, "resolution": resolution_enum.value},
-        )
-
-        try:
-            _LOGGER.debug(
-                "Requesting contract price resolution change for connection ID: %s to %s",
-                connection_id,
-                resolution_enum.value,
-            )
-            response = await self._query(query)
-            data = response["data"]["contractPriceResolutionRequestChange"]
-            return ContractPriceResolutionChangeResult.from_dict(data)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to request contract price resolution change")
             return None
 
     # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
@@ -2370,7 +2300,7 @@ class FrankEnergie:
 
         if isinstance(start_date, str):
             try:
-                start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
+                _start_date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
             except ValueError as e:
                 raise ValueError("start_date moet in het formaat 'YYYY-MM-DD' zijn") from e
 
@@ -2923,7 +2853,7 @@ class FrankEnergie:
                 if date_obj > datetime.now(UTC).date():
                     raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
             except ValueError as e:
-                raise ValueError("De 'start_date' heeft geen geldig datumformaat: %s" % e)
+                raise ValueError(f"De 'start_date' heeft geen geldig datumformaat: {e}") from e
 
     async def __aenter__(self):
         """Async enter.

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
-from jwt.exceptions import InvalidTokenError
 
 from .exceptions import AuthException
 
@@ -81,7 +80,7 @@ class Authentication:
             return True
         return datetime.now(UTC) >= (self.expires_at - timedelta(minutes=5))
 
-    def auth_token_valid(self, tz: timezone = timezone.utc) -> bool:
+    def auth_token_valid(self, tz: timezone = UTC) -> bool:
         """Check if authToken is still valid according to the expiration timestamp.
 
         Args:
@@ -104,7 +103,7 @@ class Authentication:
             _LOGGER.warning("Token does not contain 'exp' field")
             return False
 
-        return datetime.fromtimestamp(expiry, tz=timezone.utc) > datetime.now(tz=tz)
+        return datetime.fromtimestamp(expiry, tz=UTC) > datetime.now(tz=tz)
 
     @property
     def authToken(self) -> str:
