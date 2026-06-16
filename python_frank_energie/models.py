@@ -33,6 +33,7 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
+_UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
 
 
 def _parse_iso_datetime(value: str | datetime | None, field_name: str = "datetime") -> datetime | None:
@@ -62,7 +63,7 @@ def _parse_iso_datetime(value: str | datetime | None, field_name: str = "datetim
         parsed = value
     else:
         try:
-            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(str(value).replace("Z", _UTC_SUFFIX))
         except ValueError:
             _LOGGER.warning("Invalid %s format: %s", field_name, value)
             return None
@@ -2518,29 +2519,13 @@ class Price:
 
         if date_from_str:
             try:
-                # Step 1: Replace 'Z' with '+00:00' to indicate UTC
-                date_str = date_from_str.replace("Z", "+00:00")
-
-                # Step 2: Parse the date string to a datetime object
-                dt = datetime.fromisoformat(date_str)
-
-                # Step 3: Convert the datetime object to ISO 8601 format
-                iso_format_date = dt.isoformat()
-                self.date_from = datetime.fromisoformat(iso_format_date)  # Regular datetime
+                self.date_from = datetime.fromisoformat(date_from_str.replace("Z", _UTC_SUFFIX))
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_from_str)
 
         if date_till_str:
             try:
-                # Step 1: Replace 'Z' with '+00:00' to indicate UTC
-                date_str = date_till_str.replace("Z", "+00:00")
-
-                # Step 2: Parse the date string to a datetime object
-                dt = datetime.fromisoformat(date_str)
-
-                # Step 3: Convert the datetime object to ISO 8601 format
-                iso_format_date = dt.isoformat()
-                self.date_till = datetime.fromisoformat(iso_format_date)  # Regular datetime
+                self.date_till = datetime.fromisoformat(date_till_str.replace("Z", _UTC_SUFFIX))
             except ValueError:
                 logging.warning("Invalid ISO date format: '%s'", date_till_str)
 
@@ -4867,12 +4852,12 @@ class SmartBatterySettings:
                 else None
             ),
             created_at=(
-                datetime.fromisoformat(data["createdAt"].replace("Z", "+00:00")).astimezone(UTC)
+                datetime.fromisoformat(data["createdAt"].replace("Z", _UTC_SUFFIX)).astimezone(UTC)
                 if data.get("createdAt") is not None
                 else None
             ),
             updated_at=(
-                datetime.fromisoformat(data["updatedAt"].replace("Z", "+00:00")).astimezone(UTC)
+                datetime.fromisoformat(data["updatedAt"].replace("Z", _UTC_SUFFIX)).astimezone(UTC)
                 if data.get("updatedAt") is not None
                 else None
             ),
@@ -4903,7 +4888,7 @@ class SmartBatterySummary:
             ValueError: If 'lastUpdate' is missing or invalid.
         """
         try:
-            last_update = datetime.fromisoformat(data["lastUpdate"].replace("Z", "+00:00")).astimezone(UTC)
+            last_update = datetime.fromisoformat(data["lastUpdate"].replace("Z", _UTC_SUFFIX)).astimezone(UTC)
         except (KeyError, ValueError) as e:
             raise ValueError("Invalid or missing 'lastUpdate' in smartBatterySummary") from e
 
@@ -4985,7 +4970,7 @@ class SmartBattery:
                 return value.astimezone(UTC)
             if isinstance(value, str):
                 try:
-                    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+                    return datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
                 except ValueError:
                     _LOGGER.debug("Invalid datetime value for battery %s: %s", device_id, value)
             return None
@@ -5222,7 +5207,7 @@ class old_SmartBatteryDetails:
 
 def parse_utc_isoformat(value: str) -> datetime:
     """Convert ISO8601 datetime string to UTC-aware datetime."""
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+    return datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
 
 
 def parse_datetime(value: Any) -> datetime | None:
