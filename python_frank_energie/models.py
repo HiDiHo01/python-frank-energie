@@ -756,8 +756,8 @@ class ContractPriceResolutionState:
             return date.fromisoformat(value)
 
         return cls(
-            activeOption=data.get("activeOption"),
-            availableOptions=data.get("availableOptions", []),
+            active_option=data.get("activeOption"),
+            available_options=data.get("availableOptions", []),
             changeRequestEffectiveDate=parse_date(data.get("changeRequestEffectiveDate")),
             isChangeRequestPossible=data.get("isChangeRequestPossible"),
             upcomingChange=data.get("upcomingChange"),
