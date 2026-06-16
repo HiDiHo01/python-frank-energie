@@ -5520,8 +5520,21 @@ class UserSmartFeedInStatus(DictLikeMixin):
     user_id: str
 
     @classmethod
-    def from_dict(cls, data: dict[str, object]) -> UserSmartFeedInStatus:
-        payload = data.get("data", {}).get("userSmartFeedIn") or data
+    def from_dict(cls, data: dict[str, object]) -> UserSmartFeedInStatus | None:
+        """Parse the ``UserSmartFeedIn`` GraphQL response.
+
+        Returns ``None`` when the API reports no feed-in contract for this
+        user (i.e. ``userSmartFeedIn`` is ``null`` in the response).  We do
+        NOT attempt a feature-flag pre-flight check before calling this
+        endpoint because there is no field in the user or connection data that
+        reliably indicates feed-in eligibility.  Returning ``None`` here is
+        the correct sentinel value; the coordinator treats it as "feature not
+        available for this user" without logging an error.
+        """
+        payload = data.get("data", {}).get("userSmartFeedIn")
+        if payload is None:
+            # API returns null for users without a feed-in contract.
+            return None
         return cls(
             has_accepted_terms=payload["hasAcceptedTerms"],
             is_activated=payload["isActivated"],
