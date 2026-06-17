@@ -232,8 +232,6 @@ class FrankEnergie:
         self._last_variables = query.variables
         self._operation_name = query.operation_name
 
-
-
         payload: dict[str, object] = query.to_dict()
 
         _LOGGER.debug(
@@ -375,9 +373,7 @@ class FrankEnergie:
                     path,
                     response,
                 )
-                raise FrankEnergieException(
-                    "Request failed: Graphql validation error"
-                )
+                raise FrankEnergieException("Request failed: Graphql validation error")
 
             # --- Expected "no data" cases (not failures) ---
             elif message.startswith("No marketprices found for segment"):
@@ -453,17 +449,17 @@ class FrankEnergie:
 
         try:
             response = await self._query(query)
-
             if response is None:
-                return None
+                raise AuthException("Login failed. No response received.")
 
             auth = Authentication.from_dict(response)
+            if auth is None:
+                raise AuthException("Login failed. Authentication data missing.")
 
             self._auth = auth
-
             return auth
 
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, AuthException):
             raise
 
         except Exception as err:
@@ -1412,7 +1408,7 @@ class FrankEnergie:
         """Fetch authenticated user data."""
 
         if self._auth is None:
-            raise AuthRequiredException
+            raise AuthRequiredException("Authentication is required.")
 
         if site_reference is None or not isinstance(site_reference, str) or not site_reference.strip():
             raise ValueError("A valid non-empty site_reference must be provided.")
@@ -1740,7 +1736,7 @@ class FrankEnergie:
 
     async def UserSites(self, site_reference: str | None = None) -> UserSites:
         if self._auth is None:
-            raise AuthRequiredException
+            raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
             """
@@ -1772,22 +1768,27 @@ class FrankEnergie:
 
         return UserSites.from_dict(response)
 
-    async def contract_price_resolution_state(self, connection_id: str | None = None) -> ContractPriceResolutionState:
+    async def contract_price_resolution_state(
+        self,
+        connection_id: str | None = None,
+    ) -> ContractPriceResolutionState | None:
         """
         Fetch the contract price resolution state for a given connection.
 
         Args:
-            connection_id: The ID of the connection to query. Must not be None.
+            connection_id: The ID of the connection to query.
 
         Raises:
             AuthRequiredException: If authentication has not been performed.
             ValueError: If connection_id is None.
 
         Returns:
-            ContractPriceResolutionState: Parsed response from the API.
+            ContractPriceResolutionState | None:
+                The contract price resolution state, or None if the
+                response is invalid or cannot be parsed.
         """
         if self._auth is None:
-            raise AuthRequiredException
+            raise AuthRequiredException("Authentication is required.")
 
         if connection_id is None:
             raise ValueError("connection_id must be provided")
@@ -1812,35 +1813,48 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Fetching contract price resolution state for connection ID: %s", connection_id)
             response = await self._query(query)
-            # extract the actual field returned by the API
-            data = response["data"]["contractPriceResolutionState"]
+
+            if not isinstance(response, dict):
+                _LOGGER.error(
+                    "Unexpected response type for contractPriceResolutionState: %r",
+                    response,
+                )
+                return None
+
+            response_data = response.get("data")
+            if not isinstance(response_data, dict):
+                _LOGGER.error(
+                    "Unexpected response data structure for contractPriceResolutionState: %s",
+                    response,
+                )
+                return None
+
+            data = response_data.get("contractPriceResolutionState")
+            if not isinstance(data, dict):
+                _LOGGER.error(
+                    "Unexpected contractPriceResolutionState structure: %s",
+                    response_data,
+                )
+                return None
+
             return ContractPriceResolutionState.from_dict(data)
-        except Exception as e:
-            _LOGGER.error("Failed to fetch contract price resolution state: %s", e)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception("Failed to fetch contract price resolution state")
             return None
 
     async def contract_price_resolution_request_change(
-        self, connection_id: str | None = None, resolution: Resolution | None = None
+        self,
+        connection_id: str | None = None,
+        resolution: Resolution | None = None,
     ) -> ContractPriceResolutionChangeResult | None:
-        """
-        Request a change to the contract price resolution.
-
-        Args:
-            connection_id: The ID of the connection. Must not be None.
-            resolution: The price resolution to change to (e.g., Resolution.PT15M, Resolution.PT60M). Must not be None.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            ValueError: If connection_id or resolution is None, or if resolution is invalid.
-
-        Returns:
-            ContractPriceResolutionChangeResult: Result of the change request.
-        """
+        """Request a change to the contract price resolution."""
         if self._auth is None:
-            raise AuthRequiredException
+            raise AuthRequiredException("Authentication is required.")
 
-        if connection_id is None:
-            raise ValueError("connection_id must be provided")
+        if not isinstance(connection_id, str) or not connection_id.strip():
+            raise ValueError("connection_id must be provided and be a non-empty string")
 
         if resolution is None:
             raise ValueError("resolution must be provided")
@@ -1855,92 +1869,75 @@ class FrankEnergie:
         query = FrankEnergieQuery(
             """
             mutation ContractPriceResolutionRequestChange($connectionId: String!, $resolution: PriceResolution!) {
-              contractPriceResolutionRequestChange(
+            contractPriceResolutionRequestChange(
                 connectionId: $connectionId
                 resolution: $resolution
-              ) {
+            ) {
                 data {
-                  effectiveDate
+                effectiveDate
                 }
                 reason
                 success
-              }
+            }
             }
             """,
             "ContractPriceResolutionRequestChange",
-            {"connectionId": connection_id, "resolution": resolution_enum.value},
+            {
+                "connectionId": connection_id,
+                "resolution": resolution_enum.value,
+            },
         )
 
         try:
             _LOGGER.debug(
-                "Requesting contract price resolution change for connection ID: %s to %s",
+                "Requesting contract price resolution change for connection ID %s to %s",
                 connection_id,
                 resolution_enum.value,
             )
+
             response = await self._query(query)
-            data = response["data"]["contractPriceResolutionRequestChange"]
-            return ContractPriceResolutionChangeResult.from_dict(data)
+
+            return self._parse_contract_price_resolution_change_response(
+                response,
+            )
+
         except asyncio.CancelledError:
             raise
         except Exception:
             _LOGGER.exception("Failed to request contract price resolution change")
             return None
 
-    async def old_set_contract_price_resolution_state(
-        self, connection_id: str, resolution: str
-    ) -> ContractPriceResolutionState:
-        """
-        Set the contract price resolution state for a given connection.
-
-        Args:
-            connection_id: The ID of the connection to update. Must not be None.
-            resolution: The resolution to set (e.g. 'PT15M' or 'PT60M').
-
-        Raises:
-            AuthRequiredException: If authentication has not been performed.
-            ValueError: If connection_id or resolution is None.
-
-        Returns:
-            ContractPriceResolutionState: Parsed response from the API.
-        """
-        if self._auth is None:
-            raise AuthRequiredException
-
-        if connection_id is None:
-            raise ValueError("connection_id must be provided")
-
-        if resolution is None:
-            raise ValueError("resolution must be provided")
-
-        query = FrankEnergieQuery(
-            """
-            mutation SetContractPriceResolutionState($connectionId: String!, $resolution: String!) {
-                setContractPriceResolutionState(connectionId: $connectionId, resolution: $resolution) {
-                    activeOption
-                    availableOptions
-                    changeRequestEffectiveDate
-                    isChangeRequestPossible
-                    upcomingChange
-                    upcomingChangeEffectiveDate
-                }
-            }
-            """,
-            "SetContractPriceResolutionState",
-            {"connectionId": connection_id, "resolution": resolution},
-        )
-
-        try:
-            _LOGGER.debug(
-                "Setting contract price resolution state for connection ID %s to %s",
-                connection_id,
-                resolution,
+    def _parse_contract_price_resolution_change_response(
+        self,
+        response: dict[str, object] | None,
+    ) -> ContractPriceResolutionChangeResult | None:
+        """Parse a contract price resolution change response."""
+        if not isinstance(response, dict):
+            _LOGGER.error(
+                "Unexpected response type for contractPriceResolutionRequestChange: %r",
+                response,
             )
-            response = await self._query(query)
-            data = response["data"]["setContractPriceResolutionState"]
-            return ContractPriceResolutionState.from_dict(data)
-        except Exception as e:
-            _LOGGER.error("Failed to set contract price resolution state: %s", e)
             return None
+
+        response_data = response.get("data")
+
+        if not isinstance(response_data, dict):
+            _LOGGER.error(
+                "Unexpected response data structure for contractPriceResolutionRequestChange: %s",
+                response,
+            )
+            return None
+
+        result = response_data.get("contractPriceResolutionRequestChange")
+
+        if not isinstance(result, dict):
+            _LOGGER.error(
+                "Unexpected contractPriceResolutionRequestChange structure: %s",
+                response_data,
+            )
+            return None
+
+        return ContractPriceResolutionChangeResult.from_dict(result)
 
     # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
     # query UserSmartCharging {\\n  userSmartCharging {\\n    isActivated\\n    provider\\n    userCreatedAt\\n    userId\\n    isAvailableInCountry\\n    needsSubscription\\n    subscription {\\n      startDate\\n      endDate\\n      id\\n      proposition {\\n        product\\n        countryCode\\n      }\\n    }\\n  }\\n}\\n\",\"operationName\":\"UserSmartCharging\"}
@@ -2236,7 +2233,6 @@ class FrankEnergie:
         resolution: str | None = "PT15M",
     ) -> MarketPrices:
         """Get customer market prices."""
-
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
@@ -2414,6 +2410,7 @@ class FrankEnergie:
             )
             raise FrankEnergieException("Kon verbruik en kosten niet ophalen voor opgegeven periode.") from err
 
+    # async def smart_batteries(self) -> SmartBatteries: # < better for HA, but less explicit about possible None return
     async def smart_batteries(self) -> SmartBatteries | None:
         """Get the users smart batteries.
         For this to work, the user must have a smart battery connected to their account and smart-trading must be enabled.

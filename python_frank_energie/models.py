@@ -206,11 +206,7 @@ class ContractPriceResolutionChangeResult:
         )
 
         success_val = data.get("success", False)
-        success = (
-            success_val.lower() in ("true", "1")
-            if isinstance(success_val, str)
-            else bool(success_val)
-        )
+        success = success_val.lower() in ("true", "1") if isinstance(success_val, str) else bool(success_val)
 
         reason_val = data.get("reason")
         reason = reason_val if isinstance(reason_val, str) else None

@@ -556,9 +556,11 @@ class TestFrankEnergieAuthenticationExtended:
         """Test login with None response from query."""
         client = FrankEnergie()
 
-        with patch.object(client, "_query", return_value=None):
-            result = await client.login("test@example.com", "password")
-            assert result is None
+        with (
+            patch.object(client, "_query", return_value=None),
+            pytest.raises(AuthException, match="Login failed. No response received."),
+        ):
+            await client.login("test@example.com", "password")
 
 
 #
@@ -618,6 +620,7 @@ class TestFrankEnergieSessionManagement:
     async def test_frank_energie_ensure_session_creates_new(self):
         """Test _ensure_session creates new session when none exists."""
         import aiohttp
+
         real_session_class = aiohttp.ClientSession
         client = FrankEnergie()
 
