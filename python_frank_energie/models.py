@@ -2427,25 +2427,7 @@ class EnodeCharger:
 
         charge_settings = ChargeSettings.from_dict(charge_settings_data)
 
-        raw_battery_capacity = charge_state_data.get("batteryCapacity")
-        raw_battery_level = charge_state_data.get("batteryLevel")
-        raw_charge_limit = charge_state_data.get("chargeLimit")
-        raw_range = charge_state_data.get("range")
-        raw_is_fully_charged = charge_state_data.get("isFullyCharged")
-
-        charge_state = ChargeState(
-            battery_capacity=float(raw_battery_capacity) if raw_battery_capacity is not None else None,
-            battery_level=int(raw_battery_level) if raw_battery_level is not None else None,
-            charge_limit=int(raw_charge_limit) if raw_charge_limit is not None else None,
-            charge_rate=float(charge_state_data["chargeRate"]) if charge_state_data.get("chargeRate") is not None else None,
-            charge_time_remaining=charge_state_data.get("chargeTimeRemaining"),
-            is_charging=bool(charge_state_data["isCharging"]),
-            is_fully_charged=bool(raw_is_fully_charged) if raw_is_fully_charged is not None else None,
-            is_plugged_in=bool(charge_state_data["isPluggedIn"]),
-            last_updated=_parse_iso_datetime(charge_state_data.get("lastUpdated")),
-            power_delivery_state=charge_state_data["powerDeliveryState"],
-            range=int(raw_range) if raw_range is not None else None,
-        )
+        charge_state = ChargeState.from_dict(charge_state_data)
 
         interventions = [
             Intervention(description=intervention["description"], title=intervention["title"])
@@ -3344,18 +3326,14 @@ class PriceData:
         market_price_markup_avg = round(mean(price.sourcing_markup_price for price in all_prices), DEFAULT_ROUND)
         market_price_avg = round(mean(price.market_price for price in all_prices), DEFAULT_ROUND)
 
-        return type(
-            "PriceDataAvg",
-            (object,),
-            {
-                "values": all_prices,
-                "total": avg,
-                "market_price_with_tax_and_markup": market_price_with_tax_and_markup_avg,
-                "market_markup_price": market_price_markup_avg,
-                "market_price_with_tax": market_price_with_tax_avg,
-                "market_price_tax": market_price_tax_avg,
-                "market_price": market_price_avg,
-            },
+        return PriceDataAvg(
+            values=all_prices,
+            total=avg,
+            market_price_with_tax_and_markup=market_price_with_tax_and_markup_avg,
+            market_markup_price=market_price_markup_avg,
+            market_price_with_tax=market_price_with_tax_avg,
+            market_price_tax=market_price_tax_avg,
+            market_price=market_price_avg,
         )
 
     @property
@@ -4185,7 +4163,6 @@ class SmartBatterySession:
 
 
 @dataclass
-@dataclass
 class SmartBatterySessions:
     """Collection of smart battery trading sessions."""
 
@@ -4213,17 +4190,24 @@ class SmartBatterySessions:
 
         payload = data.get("data")
         if not payload:
-            # return None
             raise RequestException("Unexpected response")
 
+        if not isinstance(payload, Mapping):
+            raise RequestException("Missing 'data' in SmartBatterySessions response")
+
         smart_battery_session_data = payload.get("smartBatterySessions")
+        if not isinstance(smart_battery_session_data, Mapping):
+            raise RequestException("Missing 'smartBatterySessions' in response")
 
         _LOGGER.debug("SmartBatterySessions data: %s", smart_battery_session_data)
 
         def _safe_float(val: Any) -> float | None:
             if val is None or val == "":
                 return None
-            return float(val)
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return None
 
         return SmartBatterySessions(
             device_id=smart_battery_session_data.get("deviceId"),
@@ -4698,10 +4682,26 @@ class UserSmartFeedInStatus(DictLikeMixin):
         the correct sentinel value; the coordinator treats it as "feature not
         available for this user" without logging an error.
         """
-        payload = data.get("data", {}).get("userSmartFeedIn")
+        if errors := data.get("errors"):
+            message = (
+                errors[0].get("message")
+                if isinstance(errors, list) and errors and isinstance(errors[0], dict)
+                else "Unknown error"
+            )
+            raise RequestException(str(message))
+
+        root = data.get("data")
+        if not isinstance(root, Mapping):
+            raise RequestException("Missing 'data' in userSmartFeedIn response")
+
+        payload = root.get("userSmartFeedIn")
         if payload is None:
             # API returns null for users without a feed-in contract.
             return None
+
+        if not isinstance(payload, Mapping):
+            raise RequestException("Unexpected userSmartFeedIn payload type")
+
         return cls(
             has_accepted_terms=payload["hasAcceptedTerms"],
             is_activated=payload["isActivated"],

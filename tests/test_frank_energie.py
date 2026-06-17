@@ -937,7 +937,7 @@ class TestFrankEnergieAPIEndpointsAuth:
         """Test period usage and costs when not authenticated."""
         client = FrankEnergie()
 
-        with pytest.raises(AuthRequiredException, match="Authenticatie is vereist"):
+        with pytest.raises(AuthRequiredException, match="Authentication is required"):
             await client.period_usage_and_costs("site_ref_123", "2023-01")
 
     @pytest.mark.asyncio
@@ -1025,7 +1025,7 @@ class TestFrankEnergieUtilityMethods:
         mock_response.raise_for_status.return_value = None
 
         with patch("requests.post") as mock_post:
-            mock_post.return_value.__enter__.return_value = mock_response
+            mock_post.return_value = mock_response
 
             result = client.introspect_schema()
 
@@ -1157,6 +1157,7 @@ class TestFrankEnergieWindowsPlatformHandling:
         from unittest.mock import MagicMock
 
         original_platform = sys.platform
+        original_policy_class = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
         mock_policy_class = MagicMock()
         mock_policy = MagicMock()
         mock_policy_class.return_value = mock_policy
@@ -1177,8 +1178,11 @@ class TestFrankEnergieWindowsPlatformHandling:
                 mock_set_policy.assert_called_with(mock_policy)
         finally:
             sys.platform = original_platform
-            if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
-                del asyncio.WindowsSelectorEventLoopPolicy
+            if original_policy_class is None:
+                if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+                    del asyncio.WindowsSelectorEventLoopPolicy
+            else:
+                asyncio.WindowsSelectorEventLoopPolicy = original_policy_class
 
 
 #

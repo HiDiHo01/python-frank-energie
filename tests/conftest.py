@@ -20,12 +20,11 @@ def pytest_runtest_setup(item):
 
 @pytest.fixture(autouse=True)
 def force_enable_socket():
-    """Force enable sockets for all tests by restoring the true socket class."""
-    import socket
+    """Force enable sockets for all tests."""
     try:
         import pytest_socket
-        socket.socket = pytest_socket._true_socket
-    except Exception:
+        pytest_socket.enable_socket()
+    except ImportError:
         pass
 
 

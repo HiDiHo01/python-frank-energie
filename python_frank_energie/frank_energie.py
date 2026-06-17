@@ -691,10 +691,9 @@ class FrankEnergie:
             start_date: The start date for filtering the enode charger information.
 
         Returns:
-            The enode charger information.
+            The enode charger information, or an empty dict if not authenticated.
 
         Raises:
-            AuthRequiredException: If the client is not authenticated.
             FrankEnergieException: If the request fails.
         """
         if not self.is_authenticated:
@@ -2331,7 +2330,7 @@ class FrankEnergie:
         """
 
         if not self.is_authenticated:
-            raise AuthRequiredException("Authenticatie is vereist.")
+            raise AuthRequiredException("Authentication is required.")
 
         if not site_reference:
             raise ValueError("De 'site_reference' mag niet leeg zijn.")
@@ -2909,9 +2908,9 @@ class FrankEnergie:
                 }
             }
         """
-        with requests.post(self.DATA_URL, json={"query": query}, timeout=10) as response:
-            response.raise_for_status()
-            return response.json()
+        response = requests.post(self.DATA_URL, json={"query": query}, timeout=10)
+        response.raise_for_status()
+        return response.json()
 
     def get_diagnostic_data(self) -> str:
         """Get diagnostic data."""
