@@ -1814,6 +1814,13 @@ class FrankEnergie:
             _LOGGER.debug("Fetching contract price resolution state for connection ID: %s", connection_id)
             response = await self._query(query)
 
+            if not isinstance(response, dict):
+                _LOGGER.error(
+                    "Unexpected response type for contractPriceResolutionState: %r",
+                    response,
+                )
+                return None
+
             response_data = response.get("data")
             if not isinstance(response_data, dict):
                 _LOGGER.error(
@@ -1902,9 +1909,16 @@ class FrankEnergie:
 
     def _parse_contract_price_resolution_change_response(
         self,
-        response: dict[str, object],
+        response: dict[str, object] | None,
     ) -> ContractPriceResolutionChangeResult | None:
         """Parse a contract price resolution change response."""
+        if not isinstance(response, dict):
+            _LOGGER.error(
+                "Unexpected response type for contractPriceResolutionRequestChange: %r",
+                response,
+            )
+            return None
+
         response_data = response.get("data")
 
         if not isinstance(response_data, dict):
