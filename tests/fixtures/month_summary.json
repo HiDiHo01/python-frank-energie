@@ -1,12 +1,14 @@
 {
     "data": {
         "monthSummary": {
+            "_id": "summary_123",
             "actualCostsUntilLastMeterReadingDate": 12.34,
             "expectedCostsUntilLastMeterReadingDate": 20.00,
             "expectedCosts": 50.00,
             "lastMeterReadingDate": "2023-01-01",
             "meterReadingDayCompleteness": 1,
-            "gasExcluded": false
+            "gasExcluded": false,
+            "__typename": "MonthSummary"
         }
     }
 }

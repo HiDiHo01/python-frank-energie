@@ -119,9 +119,11 @@ async def test_contract_price_resolution_request_change_raises_cancelled_error()
     import asyncio
 
     api = _make_api()
-    with patch.object(api, "_query", new=AsyncMock(side_effect=asyncio.CancelledError)):
-        with pytest.raises(asyncio.CancelledError):
-            await api.contract_price_resolution_request_change("conn-123", "PT15M")
+    with (
+        patch.object(api, "_query", new=AsyncMock(side_effect=asyncio.CancelledError)),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await api.contract_price_resolution_request_change("conn-123", "PT15M")
 
 
 def test_parse_date():
