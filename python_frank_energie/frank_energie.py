@@ -58,7 +58,7 @@ _LOGGER = logging.getLogger(__name__)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-VERSION = "2026.3.21"
+VERSION = "2026.6.18"
 
 
 class FrankEnergieQuery:
