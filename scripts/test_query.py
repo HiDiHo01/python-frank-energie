@@ -14,8 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from python_frank_energie import FrankEnergie
 
@@ -95,7 +94,7 @@ async def execute_query() -> int:
         else:
             _LOGGER.warning("No electricity prices available.")
             return 1
-        
+
         if gas_entries:
             _LOGGER.debug("Gas prices:")
 

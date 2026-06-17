@@ -13,13 +13,19 @@
       "sessions": [
         {
           "cumulativeTradingResult": 1.608739184750002,
+          "cumulativeResult": 1.608739184750002,
           "date": "2024-05-01",
-          "tradingResult": 1.608739184750002
+          "tradingResult": 1.608739184750002,
+          "result": 1.608739184750002,
+          "status": "COMPLETED"
         },
         {
           "cumulativeTradingResult": 1.9284529955000018,
+          "cumulativeResult": 1.9284529955000018,
           "date": "2024-05-02",
-          "tradingResult": 0.3197138107499999
+          "tradingResult": 0.3197138107499999,
+          "result": 0.3197138107499999,
+          "status": "COMPLETED"
         }
       ],
       "totalTradingResult": 26.10297351000001

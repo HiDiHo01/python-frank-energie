@@ -1,13 +1,22 @@
 """Test for Frank Energie."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.exceptions import AuthException, AuthRequiredException
+from python_frank_energie.exceptions import (
+    AuthException,
+    AuthRequiredException,
+    FrankEnergieException,
+    NetworkError,
+    SmartChargingNotEnabledException,
+    SmartTradingNotEnabledException,
+)
+from python_frank_energie.frank_energie import VERSION, FrankEnergieQuery, sanitize_query
 
 from . import load_fixtures
 
@@ -144,7 +153,7 @@ async def test_renew_token_no_auth_header(aresponses):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, "a", "b")  # noqa: S106
-        api._auth = Authentication(authToken="expired_token", refreshToken="refresh_token")
+        api._auth = Authentication(auth_token="expired_token", refresh_token="refresh_token")
         auth = await api.renew_token()
         await api.close()
 
@@ -371,7 +380,7 @@ async def test_user_prices(aresponses):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
-        prices = await api.user_prices(datetime.now(UTC), "1234AB 10")
+        prices = await api.user_prices("1234AB 10", "NL", datetime.now(UTC))
         await api.close()
 
     assert prices.electricity is not None
@@ -385,18 +394,6 @@ async def test_user_prices(aresponses):
 # Additional comprehensive unit tests for FrankEnergie API implementation
 # Testing framework: pytest with aresponses (following existing patterns)
 #
-
-# Import additional required modules for comprehensive testing
-from datetime import timedelta
-from unittest.mock import AsyncMock, patch
-
-from python_frank_energie.exceptions import (
-    FrankEnergieException,
-    NetworkError,
-    SmartChargingNotEnabledException,
-    SmartTradingNotEnabledException,
-)
-from python_frank_energie.frank_energie import VERSION, FrankEnergieQuery, sanitize_query
 
 #
 # FrankEnergieQuery class tests
@@ -521,7 +518,7 @@ class TestFrankEnergieAuthenticationExtended:
         client = FrankEnergie()
 
         with patch("python_frank_energie.frank_energie._LOGGER") as mock_logger:
-            client.auth
+            _ = client.auth
             mock_logger.error.assert_called_once_with(
                 "Using .auth directly is deprecated. Use .is_authenticated instead."
             )
@@ -559,9 +556,11 @@ class TestFrankEnergieAuthenticationExtended:
         """Test login with None response from query."""
         client = FrankEnergie()
 
-        with patch.object(client, "_query", return_value=None):
-            result = await client.login("test@example.com", "password")
-            assert result is None
+        with (
+            patch.object(client, "_query", return_value=None),
+            pytest.raises(AuthException, match="Login failed. No response received."),
+        ):
+            await client.login("test@example.com", "password")
 
 
 #
@@ -620,12 +619,14 @@ class TestFrankEnergieSessionManagement:
     @pytest.mark.asyncio
     async def test_frank_energie_ensure_session_creates_new(self):
         """Test _ensure_session creates new session when none exists."""
+        import aiohttp
+
+        real_session_class = aiohttp.ClientSession
         client = FrankEnergie()
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            mock_session = AsyncMock(spec=aiohttp.ClientSession)
+        with patch("python_frank_energie.frank_energie.ClientSession") as mock_session_class:
+            mock_session = AsyncMock(spec=real_session_class)
             mock_session_class.return_value = mock_session
-
             await client._ensure_session()
 
             assert client._session == mock_session
@@ -932,14 +933,14 @@ class TestFrankEnergieAPIEndpointsAuth:
         client = FrankEnergie()
 
         with pytest.raises(AuthRequiredException):
-            await client.user_prices("site_ref_123", date.today())
+            await client.user_prices("site_ref_123", "NL", date.today())
 
     @pytest.mark.asyncio
     async def test_frank_energie_period_usage_and_costs_not_authenticated(self):
         """Test period usage and costs when not authenticated."""
         client = FrankEnergie()
 
-        with pytest.raises(AuthRequiredException, match="Authenticatie is vereist"):
+        with pytest.raises(AuthRequiredException, match="Authentication is required"):
             await client.period_usage_and_costs("site_ref_123", "2023-01")
 
     @pytest.mark.asyncio
@@ -1027,7 +1028,7 @@ class TestFrankEnergieUtilityMethods:
         mock_response.raise_for_status.return_value = None
 
         with patch("requests.post") as mock_post:
-            mock_post.return_value.__enter__.return_value = mock_response
+            mock_post.return_value = mock_response
 
             result = client.introspect_schema()
 
@@ -1090,7 +1091,10 @@ class TestFrankEnergieEdgeCasesAndRobustness:
             result = await client._query(query)
 
             assert result == {}
-            mock_logger.debug.assert_called_with("No response data.")
+            mock_logger.debug.assert_any_call(
+                "Empty API response received for operation [%s]",
+                "Test",
+            )
 
     @pytest.mark.asyncio
     async def test_frank_energie_query_logging_behavior(self):
@@ -1113,9 +1117,8 @@ class TestFrankEnergieEdgeCasesAndRobustness:
             mock_logger.debug.assert_called()
             debug_calls = mock_logger.debug.call_args_list
 
-            # Should log headers and payload
-            assert any("Request headers" in str(call) for call in debug_calls)
-            assert any("Request payload" in str(call) for call in debug_calls)
+            assert any("Executing GraphQL operation" in str(call) for call in debug_calls)
+            assert any("completed in" in str(call) for call in debug_calls)
 
     @pytest.mark.asyncio
     async def test_frank_energie_smart_battery_sessions_date_formatting(self):
@@ -1154,8 +1157,16 @@ class TestFrankEnergieWindowsPlatformHandling:
         """Test Windows event loop policy is set."""
         import asyncio
         import sys
+        from unittest.mock import MagicMock
 
         original_platform = sys.platform
+        original_policy_class = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+        mock_policy_class = MagicMock()
+        mock_policy = MagicMock()
+        mock_policy_class.return_value = mock_policy
+
+        # Set the attribute before changing the platform to bypass standard library __getattr__ bug
+        asyncio.WindowsSelectorEventLoopPolicy = mock_policy_class
         try:
             sys.platform = "win32"
             with patch("asyncio.set_event_loop_policy") as mock_set_policy:
@@ -1167,9 +1178,14 @@ class TestFrankEnergieWindowsPlatformHandling:
                 importlib.reload(python_frank_energie.frank_energie)
 
                 # Verify Windows event loop policy was set
-                mock_set_policy.assert_called_with(asyncio.WindowsSelectorEventLoopPolicy())
+                mock_set_policy.assert_called_with(mock_policy)
         finally:
             sys.platform = original_platform
+            if original_policy_class is None:
+                if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
+                    del asyncio.WindowsSelectorEventLoopPolicy
+            else:
+                asyncio.WindowsSelectorEventLoopPolicy = original_policy_class
 
 
 #
@@ -1295,11 +1311,11 @@ def test_frank_energie_is_smart_charging_attribute():
 @pytest.mark.asyncio
 async def test_prices_with_default_dates():
     """Test prices method with default date handling."""
-    from datetime import date, timedelta
+    from datetime import date
 
     client = FrankEnergie()
 
-    mock_response = {"data": {"marketPricesElectricity": [], "marketPricesGas": []}}
+    mock_response = {"data": {"marketPrices": {"electricityPrices": [], "gasPrices": []}}}
 
     with patch.object(client, "_query", return_value=mock_response) as mock_query:
         await client.prices()
@@ -1308,10 +1324,7 @@ async def test_prices_with_default_dates():
         variables = query_obj.variables
 
         today = date.today()
-        tomorrow = today + timedelta(days=1)
-
-        assert variables["startDate"] == str(today)
-        assert variables["endDate"] == str(tomorrow)
+        assert variables["date"] == str(today)
 
 
 @pytest.mark.asyncio
@@ -1345,7 +1358,7 @@ async def test_user_prices_date_validation():
 
     with patch.object(client, "_query", return_value=mock_response) as mock_query:
         start_date = date(2023, 1, 1)
-        await client.user_prices("site_ref", start_date)
+        await client.user_prices("site_ref", "NL", start_date)
 
         call_args = mock_query.call_args
         query_obj = call_args[0][0]
