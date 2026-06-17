@@ -122,7 +122,7 @@ async def test_renew_token_invalid_response(aresponses):
 
 @pytest.mark.asyncio
 async def test_renew_token_logging(aresponses, caplog):
-    """Test that authentication and renewal decisions generate debug log statements."""
+    """Test that validate_authentication generates correct logs."""
     import logging
     from datetime import UTC, datetime, timedelta
 
@@ -155,6 +155,12 @@ async def test_renew_token_logging(aresponses, caplog):
             # Validate authentication (should log the expiry check but NOT log renewal required)
             await api.validate_authentication()
 
+            # Assertions for first call (non-expired)
+            assert any("Token expiry check: now=" in record.message for record in caplog.records)
+            assert not any("Token renewal required: expires_at=" in record.message for record in caplog.records)
+
+            caplog.clear()
+
             # Now set to expired in the past
             expired_time = datetime.now(UTC) - timedelta(minutes=10)
             api._auth = ModelsAuth(
@@ -166,9 +172,105 @@ async def test_renew_token_logging(aresponses, caplog):
 
             await api.validate_authentication()
 
-        # Check logs
+        # Assertions for second call (expired)
         assert any("Token expiry check: now=" in record.message for record in caplog.records)
         assert any("Token renewal required: expires_at=" in record.message for record in caplog.records)
-        assert any("Authentication token updated; expires_at=" in record.message for record in caplog.records)
 
+        await api.close()
+
+
+@pytest.mark.asyncio
+async def test_requires_token_refresh_logging(caplog):
+    """Test that _requires_token_refresh logs properly for expiring and non-expiring tokens."""
+    import logging
+    from datetime import UTC, datetime, timedelta
+
+    from python_frank_energie.models import Authentication as ModelsAuth
+
+    api = FrankEnergie()
+
+    # 1. Non-expiring token (expires_at is in the future)
+    future_expiry = datetime.now(UTC) + timedelta(minutes=10)
+    api._auth = ModelsAuth(
+        authToken="a.b.c",
+        refreshToken="b",
+        expires_at=future_expiry,
+        version=None,
+    )
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        res = api._requires_token_refresh("SomeOperation")
+        assert res is False
+
+    assert any("Token expiry check: now=" in record.message for record in caplog.records)
+    assert not any("Token renewal required: expires_at=" in record.message for record in caplog.records)
+
+    # 2. Expiring token (expires_at in the past)
+    expired_time = datetime.now(UTC) - timedelta(minutes=10)
+    api._auth = ModelsAuth(
+        authToken="a.b.c",
+        refreshToken="b",
+        expires_at=expired_time,
+        version=None,
+    )
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG):
+        res = api._requires_token_refresh("SomeOperation")
+        assert res is True
+
+    assert any("Token expiry check: now=" in record.message for record in caplog.records)
+    assert any("Token renewal required: expires_at=" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_login_logging(aresponses, caplog):
+    """Test that login happy path asserts the token update log."""
+    import logging
+
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=load_fixtures("authentication.json"),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session)
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            await api.login("a", "b")  # noqa: S106
+
+        assert any("Authentication token updated; expires_at=" in record.message for record in caplog.records)
+        await api.close()
+
+
+@pytest.mark.asyncio
+async def test_renew_token_happy_path_logging(aresponses, caplog):
+    """Test that renew_token happy path asserts the token update log."""
+    import logging
+
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=load_fixtures("authentication.json"),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            await api.renew_token()
+
+        assert any("Authentication token updated; expires_at=" in record.message for record in caplog.records)
         await api.close()

@@ -242,6 +242,7 @@ class Authentication:
     refreshToken: str
     version: str | None
     expires_at: datetime | None = None
+    TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> Authentication:
@@ -328,7 +329,7 @@ class Authentication:
             return bool(self.authToken and len(self.authToken.split(".")) >= 3)
 
         # gives a 5-minute refresh window and avoids edge cases where a request starts just before expiration
-        return datetime.now(UTC) >= (self.expires_at - timedelta(minutes=5))
+        return datetime.now(UTC) >= (self.expires_at - self.TOKEN_RENEWAL_MARGIN)
 
 
 @dataclass

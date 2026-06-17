@@ -97,7 +97,6 @@ class FrankEnergie:
     AUTH_HEADER_EXEMPT_OPERATIONS = {
         RENEW_TOKEN_OPERATIONNAME,
     }
-    TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
     def __init__(
         self,
@@ -157,25 +156,11 @@ class FrankEnergie:
         if not self.is_authenticated:
             return False
 
-        now_utc = datetime.now(UTC)
-        if self._auth is not None and self._auth.expires_at:
-            remaining = self._auth.expires_at - now_utc
-            _LOGGER.debug(
-                "Token expiry check: now=%s expires_at=%s remaining=%s",
-                now_utc.isoformat(),
-                self._auth.expires_at.isoformat(),
-                remaining,
-            )
+        self._log_token_status()
 
         try:
             async with self._renew_lock:
                 if self._auth is not None and self._auth.is_expired:
-                    if self._auth.expires_at:
-                        _LOGGER.debug(
-                            "Token renewal required: expires_at=%s threshold=%s minutes",
-                            self._auth.expires_at.isoformat(),
-                            self.TOKEN_RENEWAL_MARGIN.total_seconds() / 60,
-                        )
                     await self.renew_token()
         except (AuthException, AuthRequiredException):
             return False
@@ -192,24 +177,29 @@ class FrankEnergie:
         if self._auth is None:
             return False
 
-        now_utc = datetime.now(UTC)
-        if self._auth.expires_at:
-            remaining = self._auth.expires_at - now_utc
-            _LOGGER.debug(
-                "Token expiry check: now=%s expires_at=%s remaining=%s",
-                now_utc.isoformat(),
-                self._auth.expires_at.isoformat(),
-                remaining,
-            )
+        self._log_token_status()
+        return self._auth.is_expired
 
-        is_expired = self._auth.is_expired
-        if is_expired and self._auth.expires_at:
+    def _log_token_status(self) -> None:
+        """Log the current token expiry status and if renewal is required."""
+        if self._auth is None or not self._auth.expires_at:
+            return
+
+        now_utc = datetime.now(UTC)
+        remaining = self._auth.expires_at - now_utc
+        _LOGGER.debug(
+            "Token expiry check: now=%s expires_at=%s remaining=%s",
+            now_utc.isoformat(),
+            self._auth.expires_at.isoformat(),
+            remaining,
+        )
+
+        if self._auth.is_expired:
             _LOGGER.debug(
                 "Token renewal required: expires_at=%s threshold=%s minutes",
                 self._auth.expires_at.isoformat(),
-                self.TOKEN_RENEWAL_MARGIN.total_seconds() / 60,
+                Authentication.TOKEN_RENEWAL_MARGIN.total_seconds() / 60,
             )
-        return is_expired
 
     @staticmethod
     def generate_system_user_agent() -> str:
