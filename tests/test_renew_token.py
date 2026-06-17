@@ -118,3 +118,57 @@ async def test_renew_token_invalid_response(aresponses):
             await api.renew_token()
 
         await api.close()
+
+
+@pytest.mark.asyncio
+async def test_renew_token_logging(aresponses, caplog):
+    """Test that authentication and renewal decisions generate debug log statements."""
+    import logging
+    from datetime import UTC, datetime, timedelta
+
+    from python_frank_energie.models import Authentication as ModelsAuth
+
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=load_fixtures("authentication.json"),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+
+        # Set an auth token with a known expires_at in the future
+        future_expiry = datetime.now(UTC) + timedelta(minutes=10)
+        api._auth = ModelsAuth(
+            authToken="a.b.c",
+            refreshToken="b",
+            expires_at=future_expiry,
+            version=None,
+        )
+
+        with caplog.at_level(logging.DEBUG):
+            # Validate authentication (should log the expiry check but NOT log renewal required)
+            await api.validate_authentication()
+
+            # Now set to expired in the past
+            expired_time = datetime.now(UTC) - timedelta(minutes=10)
+            api._auth = ModelsAuth(
+                authToken="a.b.c",
+                refreshToken="b",
+                expires_at=expired_time,
+                version=None,
+            )
+
+            await api.validate_authentication()
+
+        # Check logs
+        assert any("Token expiry check: now=" in record.message for record in caplog.records)
+        assert any("Token renewal required: expires_at=" in record.message for record in caplog.records)
+        assert any("Authentication token updated; expires_at=" in record.message for record in caplog.records)
+
+        await api.close()
