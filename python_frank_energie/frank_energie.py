@@ -58,7 +58,7 @@ _LOGGER = logging.getLogger(__name__)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-VERSION = "2026.6.18"
+VERSION = "2026.6.19"
 
 
 class FrankEnergieQuery:
@@ -823,6 +823,9 @@ class FrankEnergie:
             #     _LOGGER.debug("Unexpected format for 'enodeChargers': %s", chargers)
             #     return []
             return EnodeChargers.from_dict(chargers_data)
+        except SmartChargingNotEnabledException as error:
+            _LOGGER.debug("Smart charging not enabled: %s", error)
+            return {}
         except Exception as error:
             _LOGGER.debug("Error in enode_chargers: %s", error)
             _LOGGER.exception("Unexpected error during query: %s", error)
@@ -2484,6 +2487,9 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Querying smart batteries")
             response = await self._query(query)
+        except SmartTradingNotEnabledException as e:
+            _LOGGER.debug("Smart trading not enabled: %s", e)
+            return SmartBatteries([])
         except Exception as e:
             _LOGGER.error("Failed to query smart batteries: %s", e)
             return SmartBatteries([])
@@ -2874,7 +2880,9 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Querying enode vehicles")
             response = await self._query(query)
-            # return response["data"]["enodeVehicles"]
+        except SmartChargingNotEnabledException as e:
+            _LOGGER.debug("Smart charging not enabled: %s", e)
+            return None
         except Exception as e:
             _LOGGER.error("Failed to query enode vehicles: %s", e)
             return None

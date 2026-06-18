@@ -15,7 +15,7 @@ from .models import (
     PriceData,
 )
 
-__version__ = "2026.3.21"
+__version__ = "2026.6.19"
 
 __all__ = [
     # Core client
