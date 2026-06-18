@@ -737,8 +737,11 @@ class EnergyCategory:
                 # TODO: Check if this is the correct behavior
                 return None
 
-            usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else None
-            costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else None
+            usage_val = data.get("usageTotal")
+            usage_total = float(usage_val) if usage_val is not None else None
+
+            costs_val = data.get("costsTotal")
+            costs_total = float(costs_val) if costs_val is not None else None
 
             return EnergyCategory(
                 usage_total=usage_total,
