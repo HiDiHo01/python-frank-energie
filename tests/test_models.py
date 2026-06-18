@@ -558,8 +558,8 @@ class TestEnergyCategory:
             "items": [],
         }
         category = EnergyCategory.from_dict(data)
-        assert category.usage_total == 12.34
-        assert category.costs_total == 5.67
+        assert category.usage_total == pytest.approx(12.34)
+        assert category.costs_total == pytest.approx(5.67)
         assert category.unit == "KWH"
 
     def test_energy_category_with_none_values(self):
