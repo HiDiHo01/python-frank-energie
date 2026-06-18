@@ -2002,7 +2002,7 @@ class MonthSummary:
     expectedCostsUntilLastMeterReadingDate: float
     lastMeterReadingDate: str
     costs_per_day_till_now: float
-    meterReadingDayCompleteness: int
+    meterReadingDayCompleteness: float
     gasExcluded: bool
     typename: str
     expectedCosts: float | None = None
