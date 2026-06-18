@@ -721,8 +721,8 @@ class UsageItem:
 class EnergyCategory:
     """Representeert een energiecategorie zoals gas, elektriciteit of teruglevering."""
 
-    usage_total: float
-    costs_total: float
+    usage_total: float | None
+    costs_total: float | None
     unit: str
     items: list[UsageItem]
     # costs_this_month: float = 0.0
@@ -737,8 +737,8 @@ class EnergyCategory:
                 # TODO: Check if this is the correct behavior
                 return None
 
-            usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else 0.00
-            costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else 0.00
+            usage_total = float(data["usageTotal"]) if data.get("usageTotal") is not None else None
+            costs_total = float(data["costsTotal"]) if data.get("costsTotal") is not None else None
 
             return EnergyCategory(
                 usage_total=usage_total,

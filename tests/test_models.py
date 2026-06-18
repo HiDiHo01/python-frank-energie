@@ -11,6 +11,7 @@ from python_frank_energie.models import (
     Authentication,
     ChargeState,
     Connection,
+    EnergyCategory,
     EnodeCharger,
     EnodeChargers,
     Invoices,
@@ -543,3 +544,44 @@ class TestChargeStateNoCarScenario:
         assert state.is_fully_charged is False
         assert state.range == 250
         assert state.is_charging is True
+
+
+class TestEnergyCategory:
+    """Tests for the EnergyCategory model, specifically around null-handling for Issue #79."""
+
+    def test_energy_category_with_valid_usage_and_costs(self):
+        """Test parsing when usageTotal and costsTotal are populated floats."""
+        data = {
+            "usageTotal": 12.34,
+            "costsTotal": 5.67,
+            "unit": "KWH",
+            "items": [],
+        }
+        category = EnergyCategory.from_dict(data)
+        assert category.usage_total == 12.34
+        assert category.costs_total == 5.67
+        assert category.unit == "KWH"
+
+    def test_energy_category_with_none_values(self):
+        """Test parsing when usageTotal and costsTotal are None (Issue #79)."""
+        data = {
+            "usageTotal": None,
+            "costsTotal": None,
+            "unit": "KWH",
+            "items": [],
+        }
+        category = EnergyCategory.from_dict(data)
+        assert category.usage_total is None
+        assert category.costs_total is None
+        assert category.unit == "KWH"
+
+    def test_energy_category_with_missing_keys(self):
+        """Test parsing when usageTotal and costsTotal are missing (Issue #79)."""
+        data = {
+            "unit": "KWH",
+            "items": [],
+        }
+        category = EnergyCategory.from_dict(data)
+        assert category.usage_total is None
+        assert category.costs_total is None
+        assert category.unit == "KWH"
