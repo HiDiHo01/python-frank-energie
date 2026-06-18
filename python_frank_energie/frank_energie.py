@@ -823,7 +823,7 @@ class FrankEnergie:
             #     _LOGGER.debug("Unexpected format for 'enodeChargers': %s", chargers)
             #     return []
             return EnodeChargers.from_dict(chargers_data)
-        except (SmartChargingNotEnabledException, SmartTradingNotEnabledException) as error:
+        except SmartChargingNotEnabledException as error:
             _LOGGER.debug("Smart charging not enabled: %s", error)
             return {}
         except Exception as error:
@@ -2487,7 +2487,7 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Querying smart batteries")
             response = await self._query(query)
-        except (SmartChargingNotEnabledException, SmartTradingNotEnabledException) as e:
+        except SmartTradingNotEnabledException as e:
             _LOGGER.debug("Smart trading not enabled: %s", e)
             return SmartBatteries([])
         except Exception as e:
@@ -2880,7 +2880,7 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Querying enode vehicles")
             response = await self._query(query)
-        except (SmartChargingNotEnabledException, SmartTradingNotEnabledException) as e:
+        except SmartChargingNotEnabledException as e:
             _LOGGER.debug("Smart charging not enabled: %s", e)
             return None
         except Exception as e:
