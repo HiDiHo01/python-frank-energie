@@ -111,7 +111,6 @@ class FrankEnergie:
         self._auth: Authentication | None = None
         self._last_query: FrankEnergieQuery | None = None
         self._last_variables: dict[str, object] | None = None
-        self._operation_name: str | None = None
         self._renew_lock = asyncio.Lock()
         self._site_reference: str | None = None
         self._user_country: str | None = None
@@ -234,6 +233,13 @@ class FrankEnergie:
         if not hasattr(query, "to_dict") or not callable(query.to_dict):
             raise TypeError("Query object must implement a to_dict().")
 
+        operation_name = query.operation_name
+
+        if not operation_name:
+            raise ValueError(
+                "GraphQL operation name must not be empty"
+            )
+
         start = time.monotonic()
 
         # "User-Agent": self.generate_system_user_agent(), # not working properly
@@ -260,13 +266,13 @@ class FrankEnergie:
 
         self._last_query = query
         self._last_variables = query.variables
-        self._operation_name = query.operation_name
+        operation_name = query.operation_name
 
         payload: dict[str, object] = query.to_dict()
 
         _LOGGER.debug(
             "Executing GraphQL operation [%s] with variables: %s",
-            self._operation_name,
+            operation_name,
             self._last_variables,
         )
 
@@ -282,7 +288,7 @@ class FrankEnergie:
             if not response:
                 _LOGGER.debug(
                     "Empty API response received for operation [%s]",
-                    self._operation_name,
+                    operation_name,
                 )
                 return {}
 
@@ -297,7 +303,7 @@ class FrankEnergie:
             duration = time.monotonic() - start
             _LOGGER.debug(
                 "GraphQL operation [%s] completed in %.2fs",
-                self._operation_name,
+                operation_name,
                 duration,
             )
 
@@ -306,14 +312,14 @@ class FrankEnergie:
         except TimeoutError as err:
             _LOGGER.error(
                 "Frank Energie API timeout during operation [%s]",
-                self._operation_name,
+                operation_name,
             )
             raise NetworkError("Frank Energie API timeout") from err
 
         except aiohttp.ClientResponseError as error:
             _LOGGER.error(
                 "Frank Energie API error during operation [%s]: %s",
-                self._operation_name,
+                operation_name,
                 error,
             )
             if error.status == HTTPStatus.UNAUTHORIZED:
@@ -329,27 +335,17 @@ class FrankEnergie:
         except ClientError as err:
             _LOGGER.error(
                 "Frank Energie HTTP client error during [%s]: %s",
-                self._operation_name,
+                operation_name,
                 err,
             )
             raise NetworkError(f"Frank Energie HTTP error: {err}") from err
         except KeyError as err:
             _LOGGER.error(
                 "Unexpected API response structure during [%s]: missing key %s",
-                self._operation_name,
+                operation_name,
                 err,
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
-        # except Exception as error:
-        #     _LOGGER.exception(
-        #         "Unexpected error during GraphQL operation [%s]: %s",
-        #         self._operation_name,
-        #         error,
-        #     )
-        #     raise FrankEnergieException(f"Unexpected error: {error}") from error
-        finally:
-            # Zorg dat foutlogging altijd correcte context krijgt
-            self._operation_name = None
 
     def _handle_errors(self, response: dict[str, object]) -> None:
         """
