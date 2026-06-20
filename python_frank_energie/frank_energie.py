@@ -995,6 +995,9 @@ class FrankEnergie:
         if "id" not in input_data:
             raise ValueError("input_data must include the charge settings 'id' field.")
 
+        api_input = {**input_data}
+        api_input["vehicleId"] = api_input.pop("id")
+
         query = FrankEnergieQuery(
             """
             mutation EnodeUpdateVehicleChargeSettings($input: EnodeUpdateVehicleChargeSettingsInputType!) {
@@ -1002,7 +1005,7 @@ class FrankEnergie:
             }
             """,
             "EnodeUpdateVehicleChargeSettings",
-            {"input": input_data},
+            {"input": api_input},
         )
 
         try:
@@ -1045,6 +1048,9 @@ class FrankEnergie:
         if "id" not in input_data:
             raise ValueError("input_data must include the charge settings 'id' field.")
 
+        api_input = {**input_data}
+        api_input["chargerId"] = api_input.pop("id")
+
         query = FrankEnergieQuery(
             """
             mutation EnodeUpdateChargerChargeSettings($input: EnodeUpdateChargerChargeSettingsInputType!) {
@@ -1052,7 +1058,7 @@ class FrankEnergie:
             }
             """,
             "EnodeUpdateChargerChargeSettings",
-            {"input": input_data},
+            {"input": api_input},
         )
 
         try:
