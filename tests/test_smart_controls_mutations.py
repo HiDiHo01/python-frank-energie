@@ -297,6 +297,13 @@ async def test_enode_update_vehicle_charge_settings_raises_when_id_missing():
 
 
 @pytest.mark.asyncio
+async def test_enode_update_vehicle_charge_settings_raises_when_vehicleId_present():
+    api = _make_api()
+    with pytest.raises(ValueError, match="Conflicting identifiers"):
+        await api.enode_update_vehicle_charge_settings({**VALID_VEHICLE_INPUT, "vehicleId": "another-id"})
+
+
+@pytest.mark.asyncio
 async def test_enode_update_vehicle_charge_settings_returns_false_on_graphql_error():
     api = _make_api()
     mock_response = {"errors": [{"message": "Vehicle not found"}]}
@@ -380,6 +387,13 @@ async def test_enode_update_charger_charge_settings_raises_when_id_missing():
     api = _make_api()
     with pytest.raises(ValueError, match="'id' field"):
         await api.enode_update_charger_charge_settings({"deadline": "2026-05-29T07:00:00Z"})
+
+
+@pytest.mark.asyncio
+async def test_enode_update_charger_charge_settings_raises_when_chargerId_present():
+    api = _make_api()
+    with pytest.raises(ValueError, match="Conflicting identifiers"):
+        await api.enode_update_charger_charge_settings({**VALID_CHARGER_INPUT, "chargerId": "another-id"})
 
 
 @pytest.mark.asyncio
