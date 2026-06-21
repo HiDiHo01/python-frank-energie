@@ -236,9 +236,7 @@ class FrankEnergie:
         operation_name = query.operation_name
 
         if not operation_name:
-            raise ValueError(
-                "GraphQL operation name must not be empty"
-            )
+            raise ValueError("GraphQL operation name must not be empty")
 
         start = time.monotonic()
 
@@ -980,9 +978,7 @@ class FrankEnergie:
             raise ValueError("input_data must include the charge settings 'id' field.")
 
         if target_key in input_data:
-            raise ValueError(
-                f"Conflicting identifiers: input_data cannot contain both 'id' and '{target_key}'."
-            )
+            raise ValueError(f"Conflicting identifiers: input_data cannot contain both 'id' and '{target_key}'.")
 
         api_input = {**input_data}
         api_input[target_key] = api_input.pop("id")
