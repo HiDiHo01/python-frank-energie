@@ -1616,6 +1616,26 @@ class SmartTrading:
 
 
 @dataclass
+class SmartHvac:
+    isActivated: bool | None = None
+    userCreatedAt: str | None = None
+    userId: str | None = None
+    isAvailableInCountry: bool | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> SmartHvac | None:
+        """Parse SmartHvac from dictionary."""
+        if not data:
+            return None
+        return cls(
+            isActivated=data.get("isActivated"),
+            userCreatedAt=data.get("userCreatedAt"),
+            userId=data.get("userId"),
+            isAvailableInCountry=data.get("isAvailableInCountry"),
+        )
+
+
+@dataclass
 class ExternalDetails:
     reference: str | None = None
     person: Person | None = None
@@ -1776,6 +1796,7 @@ class User:
     friendsCount: int | None = 0
     smartCharging: SmartCharging | None = None
     smartTrading: SmartTrading | None = None
+    smartHvac: SmartHvac | None = None
     externalDetails: UserExternalDetails = field(default_factory=UserExternalDetails)
     deliveryEndDate: date | None = None
 
@@ -1839,6 +1860,7 @@ class User:
             # propositionType=first_site.get("propositionType"),
             smartCharging=payload.get("smartCharging", {}),
             smartTrading=payload.get("smartTrading", {}),
+            smartHvac=SmartHvac.from_dict(payload.get("smartHvac")),
             connections=[Connection.from_dict(c) for c in payload.get("connections") or [] if isinstance(c, dict)],
             externalDetails=UserExternalDetails.from_dict(payload.get("externalDetails", {})),
         )
@@ -2307,9 +2329,9 @@ class ChargeState(DictLikeMixin):
             battery_level=int(raw_battery_level) if raw_battery_level is not None else None,
             charge_limit=int(raw_charge_limit) if raw_charge_limit is not None else None,
             charge_rate=float(data["chargeRate"]) if data.get("chargeRate") is not None else None,
-            charge_time_remaining=int(data["chargeTimeRemaining"])
-            if data.get("chargeTimeRemaining") is not None
-            else None,
+            charge_time_remaining=(
+                int(data["chargeTimeRemaining"]) if data.get("chargeTimeRemaining") is not None else None
+            ),
             is_charging=bool(data["isCharging"]),
             is_fully_charged=bool(raw_is_fully_charged) if raw_is_fully_charged is not None else None,
             is_plugged_in=bool(data["isPluggedIn"]),

@@ -18,6 +18,7 @@ from python_frank_energie.models import (
     MarketPrices,
     Me,
     MonthSummary,
+    SmartHvac,
     User,
 )
 
@@ -192,6 +193,79 @@ def test_user_datetime_z_suffix_parses():
     assert user.createdAt is not None, "createdAt should parse with Z suffix"
     assert user.updatedAt is not None, "updatedAt should parse with Z suffix"
     assert user.lastLogin.tzinfo is not None, "lastLogin should be timezone-aware"
+
+
+def test_user_smart_hvac_parses():
+    """smartHvac field is parsed correctly from user payload."""
+    payload = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "smartHvac": {
+                    "isActivated": True,
+                    "isAvailableInCountry": True,
+                    "userCreatedAt": "2026-06-20T17:00:00Z",
+                    "userId": "test-user-id",
+                },
+            }
+        }
+    }
+    user = User.from_dict(payload)
+    assert user.smartHvac == SmartHvac(
+        isActivated=True,
+        isAvailableInCountry=True,
+        userCreatedAt="2026-06-20T17:00:00Z",
+        userId="test-user-id",
+    )
+
+
+def test_user_smart_hvac_parses_missing_and_null():
+    """smartHvac parses correctly when missing, null, or partially populated."""
+    # 1. Missing smartHvac
+    payload_missing = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+            }
+        }
+    }
+    user_missing = User.from_dict(payload_missing)
+    assert user_missing.smartHvac is None
+
+    # 2. Null smartHvac
+    payload_null = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "smartHvac": None,
+            }
+        }
+    }
+    user_null = User.from_dict(payload_null)
+    assert user_null.smartHvac is None
+
+    # 3. Partially populated smartHvac
+    payload_partial = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "smartHvac": {
+                    "isActivated": False,
+                },
+            }
+        }
+    }
+    user_partial = User.from_dict(payload_partial)
+    assert user_partial.smartHvac == SmartHvac(
+        isActivated=False,
+        isAvailableInCountry=None,
+        userCreatedAt=None,
+        userId=None,
+    )
 
 
 #
