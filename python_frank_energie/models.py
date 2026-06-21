@@ -1622,6 +1622,18 @@ class SmartHvac:
     userId: str | None = None
     isAvailableInCountry: bool | None = None
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> SmartHvac | None:
+        """Parse SmartHvac from dictionary."""
+        if not data:
+            return None
+        return cls(
+            isActivated=data.get("isActivated"),
+            userCreatedAt=data.get("userCreatedAt"),
+            userId=data.get("userId"),
+            isAvailableInCountry=data.get("isAvailableInCountry"),
+        )
+
 
 @dataclass
 class ExternalDetails:
@@ -1848,7 +1860,7 @@ class User:
             # propositionType=first_site.get("propositionType"),
             smartCharging=payload.get("smartCharging", {}),
             smartTrading=payload.get("smartTrading", {}),
-            smartHvac=payload.get("smartHvac", {}),
+            smartHvac=SmartHvac.from_dict(payload.get("smartHvac")),
             connections=[Connection.from_dict(c) for c in payload.get("connections") or [] if isinstance(c, dict)],
             externalDetails=UserExternalDetails.from_dict(payload.get("externalDetails", {})),
         )

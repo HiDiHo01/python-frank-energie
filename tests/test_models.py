@@ -18,6 +18,7 @@ from python_frank_energie.models import (
     MarketPrices,
     Me,
     MonthSummary,
+    SmartHvac,
     User,
 )
 
@@ -211,12 +212,60 @@ def test_user_smart_hvac_parses():
         }
     }
     user = User.from_dict(payload)
-    assert user.smartHvac == {
-        "isActivated": True,
-        "isAvailableInCountry": True,
-        "userCreatedAt": "2026-06-20T17:00:00Z",
-        "userId": "test-user-id",
+    assert user.smartHvac == SmartHvac(
+        isActivated=True,
+        isAvailableInCountry=True,
+        userCreatedAt="2026-06-20T17:00:00Z",
+        userId="test-user-id",
+    )
+
+
+def test_user_smart_hvac_parses_missing_and_null():
+    """smartHvac parses correctly when missing, null, or partially populated."""
+    # 1. Missing smartHvac
+    payload_missing = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+            }
+        }
     }
+    user_missing = User.from_dict(payload_missing)
+    assert user_missing.smartHvac is None
+
+    # 2. Null smartHvac
+    payload_null = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "smartHvac": None,
+            }
+        }
+    }
+    user_null = User.from_dict(payload_null)
+    assert user_null.smartHvac is None
+
+    # 3. Partially populated smartHvac
+    payload_partial = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "smartHvac": {
+                    "isActivated": False,
+                },
+            }
+        }
+    }
+    user_partial = User.from_dict(payload_partial)
+    assert user_partial.smartHvac == SmartHvac(
+        isActivated=False,
+        isAvailableInCountry=None,
+        userCreatedAt=None,
+        userId=None,
+    )
 
 
 #

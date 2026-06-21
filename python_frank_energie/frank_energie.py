@@ -45,6 +45,7 @@ from .models import (
     SmartBatteryDetails,
     SmartBatterySessions,
     SmartBatterySummary,
+    SmartHvac,
     SmartPvSystems,
     SmartPvSystemSummary,
     User,
@@ -391,22 +392,15 @@ class FrankEnergie:
             elif message == "user-error:auth-required":
                 raise AuthRequiredException("Authentication required")
             elif message == "Graphql validation error":
-                if active_query == "SmartHvacStatus":
-                    _LOGGER.debug(
-                        "GraphQL validation error - query %s: %s path=%s (response: %s)",
-                        active_query,
-                        message,
-                        path,
-                        response,
-                    )
-                else:
-                    _LOGGER.error(
-                        "GraphQL validation error - query %s: %s path=%s (response: %s)",
-                        active_query,
-                        message,
-                        path,
-                        response,
-                    )
+                log_level = logging.DEBUG if active_query == "SmartHvacStatus" else logging.ERROR
+                _LOGGER.log(
+                    log_level,
+                    "GraphQL validation error - query %s: %s path=%s (response: %s)",
+                    active_query,
+                    message,
+                    path,
+                    response,
+                )
                 raise FrankEnergieException("Request failed: Graphql validation error")
 
             # --- Expected "no data" cases (not failures) ---
@@ -2169,7 +2163,7 @@ class FrankEnergie:
             raise FrankEnergieException("Failed to parse authenticated user data")
         return user
 
-    async def smart_hvac_status(self) -> dict[str, Any] | None:
+    async def smart_hvac_status(self) -> SmartHvac | None:
         """Fetch smart HVAC status."""
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -2192,7 +2186,8 @@ class FrankEnergie:
         response = await self._query(query)
         if not isinstance(response, dict):
             raise RequestException("Invalid response type for 'smart_hvac_status' query")
-        return response.get("data", {}).get("me", {}).get("smartHvac")
+        raw = response.get("data", {}).get("me", {}).get("smartHvac")
+        return SmartHvac.from_dict(raw)
 
     async def be_prices(self, start_date: date | None = None, end_date: date | None = None) -> MarketPrices:
         """Get belgium market prices."""
