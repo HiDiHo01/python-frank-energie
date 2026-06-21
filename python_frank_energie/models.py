@@ -2141,7 +2141,7 @@ class MonthSummary:
         if not isinstance(expected_costs, (int, float, type(None))):
             raise RequestException("Invalid expectedCosts")
 
-        if not isinstance(completeness, float):
+        if not isinstance(completeness, (int, float)):
             raise RequestException("Invalid meterReadingDayCompleteness")
 
         if not isinstance(gas_excluded, bool):
