@@ -103,7 +103,7 @@ def log_session_data(session: Any) -> None:
 
 
 async def main():
-    """Main function loop."""
+    """Run the main function loop."""
     EMAIL = os.getenv("FRANK_ENERGIE_EMAIL")
     PASSWORD = os.getenv("FRANK_ENERGIE_PASSWORD")
 

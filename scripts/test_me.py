@@ -18,7 +18,7 @@ PASSWORD: str | None = os.getenv("FRANK_ENERGIE_PASSWORD")
 
 async def main() -> None:
     """
-    Main asynchronous function to authenticate and retrieve user info
+    Run the main asynchronous function to authenticate and retrieve user info
     from the Frank Energie API.
     """
     if not EMAIL or not PASSWORD:
