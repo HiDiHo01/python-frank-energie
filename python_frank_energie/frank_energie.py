@@ -1,4 +1,5 @@
 """Frank Energie API implementation."""
+
 # python_frank_energie/frank_energie.py
 # version 2026.06.10
 
@@ -58,7 +59,7 @@ _LOGGER = logging.getLogger(__name__)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-VERSION = "2026.6.19"
+VERSION = "2026.6.21"
 
 
 class FrankEnergieQuery:
@@ -236,9 +237,7 @@ class FrankEnergie:
         operation_name = query.operation_name
 
         if not operation_name:
-            raise ValueError(
-                "GraphQL operation name must not be empty"
-            )
+            raise ValueError("GraphQL operation name must not be empty")
 
         start = time.monotonic()
 
@@ -294,7 +293,7 @@ class FrankEnergie:
 
             # _LOGGER.debug("Response body: %s", response)
 
-            self._handle_errors(response)
+            self._handle_errors(response, operation_name)
 
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
@@ -347,7 +346,7 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
-    def _handle_errors(self, response: dict[str, object]) -> None:
+    def _handle_errors(self, response: dict[str, object], operation_name: str | None = None) -> None:
         """
         Handle common GraphQL error messages and raise specific exceptions when needed.
 
@@ -371,7 +370,7 @@ class FrankEnergie:
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
             raise FrankEnergieException("Invalid GraphQL error structure")
 
-        active_query = getattr(self, "_operation_name", "<unknown>")
+        active_query = operation_name or getattr(self, "_operation_name", "<unknown>")
 
         for error_obj in errors_obj:
             if not isinstance(error_obj, dict):
@@ -392,13 +391,22 @@ class FrankEnergie:
             elif message == "user-error:auth-required":
                 raise AuthRequiredException("Authentication required")
             elif message == "Graphql validation error":
-                _LOGGER.error(
-                    "GraphQL validation error - query %s: %s path=%s (response: %s)",
-                    active_query,
-                    message,
-                    path,
-                    response,
-                )
+                if active_query == "SmartHvacStatus":
+                    _LOGGER.debug(
+                        "GraphQL validation error - query %s: %s path=%s (response: %s)",
+                        active_query,
+                        message,
+                        path,
+                        response,
+                    )
+                else:
+                    _LOGGER.error(
+                        "GraphQL validation error - query %s: %s path=%s (response: %s)",
+                        active_query,
+                        message,
+                        path,
+                        response,
+                    )
                 raise FrankEnergieException("Request failed: Graphql validation error")
 
             # --- Expected "no data" cases (not failures) ---
@@ -2160,6 +2168,31 @@ class FrankEnergie:
         if user is None:
             raise FrankEnergieException("Failed to parse authenticated user data")
         return user
+
+    async def smart_hvac_status(self) -> dict[str, Any] | None:
+        """Fetch smart HVAC status."""
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        query = FrankEnergieQuery(
+            """
+            query SmartHvacStatus {
+                me {
+                    smartHvac {
+                        isActivated
+                        isAvailableInCountry
+                        userCreatedAt
+                        userId
+                    }
+                }
+            }
+            """,
+            "SmartHvacStatus",
+        )
+        response = await self._query(query)
+        if not isinstance(response, dict):
+            raise RequestException("Invalid response type for 'smart_hvac_status' query")
+        return response.get("data", {}).get("me", {}).get("smartHvac")
 
     async def be_prices(self, start_date: date | None = None, end_date: date | None = None) -> MarketPrices:
         """Get belgium market prices."""

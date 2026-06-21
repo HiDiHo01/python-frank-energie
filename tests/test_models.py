@@ -194,6 +194,31 @@ def test_user_datetime_z_suffix_parses():
     assert user.lastLogin.tzinfo is not None, "lastLogin should be timezone-aware"
 
 
+def test_user_smart_hvac_parses():
+    """smartHvac field is parsed correctly from user payload."""
+    payload = {
+        "data": {
+            "me": {
+                "id": "test-id",
+                "email": "test@example.com",
+                "smartHvac": {
+                    "isActivated": True,
+                    "isAvailableInCountry": True,
+                    "userCreatedAt": "2026-06-20T17:00:00Z",
+                    "userId": "test-user-id",
+                },
+            }
+        }
+    }
+    user = User.from_dict(payload)
+    assert user.smartHvac == {
+        "isActivated": True,
+        "isAvailableInCountry": True,
+        "userCreatedAt": "2026-06-20T17:00:00Z",
+        "userId": "test-user-id",
+    }
+
+
 #
 # Tests for MonthSummary Model.
 #
