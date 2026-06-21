@@ -297,6 +297,13 @@ async def test_enode_update_vehicle_charge_settings_raises_when_id_missing():
 
 
 @pytest.mark.asyncio
+async def test_enode_update_vehicle_charge_settings_raises_when_vehicleId_present():
+    api = _make_api()
+    with pytest.raises(ValueError, match="Conflicting identifiers"):
+        await api.enode_update_vehicle_charge_settings({**VALID_VEHICLE_INPUT, "vehicleId": "another-id"})
+
+
+@pytest.mark.asyncio
 async def test_enode_update_vehicle_charge_settings_returns_false_on_graphql_error():
     api = _make_api()
     mock_response = {"errors": [{"message": "Vehicle not found"}]}
@@ -327,7 +334,9 @@ async def test_enode_update_vehicle_charge_settings_sends_input_as_variable():
     with patch.object(api, "_query", new=AsyncMock(return_value=mock_response)) as mock_q:
         await api.enode_update_vehicle_charge_settings(VALID_VEHICLE_INPUT)
     called_query = mock_q.call_args[0][0]
-    assert called_query.variables["input"] == VALID_VEHICLE_INPUT
+    expected_input = {**VALID_VEHICLE_INPUT}
+    expected_input["vehicleId"] = expected_input.pop("id")
+    assert called_query.variables["input"] == expected_input
     assert called_query.operation_name == "EnodeUpdateVehicleChargeSettings"
 
 
@@ -381,6 +390,13 @@ async def test_enode_update_charger_charge_settings_raises_when_id_missing():
 
 
 @pytest.mark.asyncio
+async def test_enode_update_charger_charge_settings_raises_when_chargerId_present():
+    api = _make_api()
+    with pytest.raises(ValueError, match="Conflicting identifiers"):
+        await api.enode_update_charger_charge_settings({**VALID_CHARGER_INPUT, "chargerId": "another-id"})
+
+
+@pytest.mark.asyncio
 async def test_enode_update_charger_charge_settings_returns_false_on_graphql_error():
     api = _make_api()
     mock_response = {"errors": [{"message": "Charger not found"}]}
@@ -404,7 +420,9 @@ async def test_enode_update_charger_charge_settings_sends_correct_operation_name
         await api.enode_update_charger_charge_settings(VALID_CHARGER_INPUT)
     called_query = mock_q.call_args[0][0]
     assert called_query.operation_name == "EnodeUpdateChargerChargeSettings"
-    assert called_query.variables["input"] == VALID_CHARGER_INPUT
+    expected_input = {**VALID_CHARGER_INPUT}
+    expected_input["chargerId"] = expected_input.pop("id")
+    assert called_query.variables["input"] == expected_input
 
 
 @pytest.mark.asyncio

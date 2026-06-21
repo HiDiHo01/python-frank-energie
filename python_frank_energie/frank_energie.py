@@ -236,9 +236,7 @@ class FrankEnergie:
         operation_name = query.operation_name
 
         if not operation_name:
-            raise ValueError(
-                "GraphQL operation name must not be empty"
-            )
+            raise ValueError("GraphQL operation name must not be empty")
 
         start = time.monotonic()
 
@@ -970,6 +968,22 @@ class FrankEnergie:
 
         return bool(response.get("data", {}).get("smartFeedInDisable", {}).get("success", False))
 
+    def _map_charge_settings_input(self, input_data: dict[str, Any], target_key: str) -> dict[str, Any]:
+        """Validate input_data has 'id' and map it to target_key in a new dictionary.
+
+        Raises:
+            ValueError: If 'id' is missing, or if both 'id' and target_key are present in input_data.
+        """
+        if "id" not in input_data:
+            raise ValueError("input_data must include the charge settings 'id' field.")
+
+        if target_key in input_data:
+            raise ValueError(f"Conflicting identifiers: input_data cannot contain both 'id' and '{target_key}'.")
+
+        api_input = {**input_data}
+        api_input[target_key] = api_input.pop("id")
+        return api_input
+
     async def enode_update_vehicle_charge_settings(self, input_data: dict[str, Any]) -> bool:
         """Update the charge settings for a specific Enode vehicle.
 
@@ -987,13 +1001,12 @@ class FrankEnergie:
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
-            ValueError: If ``input_data`` is missing the required ``id`` field.
+            ValueError: If ``input_data`` is missing the required ``id`` field or both 'id' and 'vehicleId' are present.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
-        if "id" not in input_data:
-            raise ValueError("input_data must include the charge settings 'id' field.")
+        api_input = self._map_charge_settings_input(input_data, "vehicleId")
 
         query = FrankEnergieQuery(
             """
@@ -1002,7 +1015,7 @@ class FrankEnergie:
             }
             """,
             "EnodeUpdateVehicleChargeSettings",
-            {"input": input_data},
+            {"input": api_input},
         )
 
         try:
@@ -1037,13 +1050,12 @@ class FrankEnergie:
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
-            ValueError: If ``input_data`` is missing the required ``id`` field.
+            ValueError: If ``input_data`` is missing the required ``id`` field or both 'id' and 'chargerId' are present.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
-        if "id" not in input_data:
-            raise ValueError("input_data must include the charge settings 'id' field.")
+        api_input = self._map_charge_settings_input(input_data, "chargerId")
 
         query = FrankEnergieQuery(
             """
@@ -1052,7 +1064,7 @@ class FrankEnergie:
             }
             """,
             "EnodeUpdateChargerChargeSettings",
-            {"input": input_data},
+            {"input": api_input},
         )
 
         try:

@@ -218,7 +218,7 @@ class FrankEnergie:
             else:
                 raise AuthException("Login response doesn't contain expected data.")
         except (TimeoutError, ClientError) as error:
-            raise AuthException(f"Login failed: {error}")
+            raise AuthException(f"Login failed: {error}") from error
 
     async def test_query(self, site_reference: str, start_date: date) -> dict:
         """Retrieve period usage and costs."""
@@ -235,7 +235,7 @@ class FrankEnergie:
 
 
 async def main():
-    """Main function to authenticate and fetch GraphQL data."""
+    """Run the main function to authenticate and fetch GraphQL data."""
     async with aiohttp.ClientSession() as session:
         client = FrankEnergie(session)
         try:
