@@ -24,7 +24,8 @@ class Authentication:
     auth_token: str
     refresh_token: str
     version: str | None = None
-    expires_at: datetime | None = None
+    token_expires_at: datetime | None = None
+    refresh_token_expires_at: datetime | None = None
     TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
     @staticmethod
@@ -50,7 +51,10 @@ class Authentication:
         if not payload or "authToken" not in payload or "refreshToken" not in payload:
             raise AuthException("Unexpected response: Missing or incomplete payload")
 
-        return Authentication(auth_token=payload["authToken"], refresh_token=payload["refreshToken"])
+        return Authentication(
+            auth_token=payload["authToken"],
+            refresh_token=payload["refreshToken"]
+        )
 
     @staticmethod
     def _extract_payload(
@@ -77,9 +81,16 @@ class Authentication:
     @property
     def is_expired(self) -> bool:
         """Return True when the token should be refreshed."""
-        if self.expires_at is None:
+        if self.token_expires_at is None:
             return bool(self.authToken and len(self.authToken.split(".")) >= 3)
-        return datetime.now(UTC) >= (self.expires_at - self.TOKEN_RENEWAL_MARGIN)
+        return datetime.now(UTC) >= (self.token_expires_at - self.TOKEN_RENEWAL_MARGIN)
+
+    @property
+    def is_refresh_token_expired(self) -> bool:
+        """Return True when the refrrsh token should be refreshed."""
+        if self.refresh_token_expires_at is None:
+            return bool(self.refreshToken and len(self.refreshToken.split(".")) >= 3)
+        return datetime.now(UTC) >= (self.refresh_token_expires_at - timedelta(minutes=5))
 
     def auth_token_valid(self, tz: timezone = UTC) -> bool:
         """Check if authToken is still valid according to the expiration timestamp.
@@ -112,6 +123,37 @@ class Authentication:
 
         return datetime.fromtimestamp(expiry, tz=UTC) > datetime.now(tz=tz)
 
+    def auth_refresh_token_valid(self, tz: timezone = UTC) -> bool:
+        """Check if authToken is still valid according to the expiration timestamp.
+
+        Decodes the JWT payload via base64 (without signature verification) to
+        read the ``exp`` claim.  We are a client — we do not hold the server's
+        signing key and do not need to verify the signature here; the server
+        validates it when the token is actually used for an API call.
+
+        Args:
+            tz: The timezone to compare against. Defaults to UTC.
+
+        Returns:
+            True if the token has not expired; otherwise, False.
+        """
+        try:
+            # JWT is three base64url segments separated by '.'; payload is index 1
+            payload_b64 = self.refreshToken.split(".")[1]
+            # base64url uses '-' and '_'; restore padding
+            payload_b64 += "=" * (4 - len(payload_b64) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+        except Exception as err:
+            _LOGGER.warning("Failed to decode refreshToken payload: %s", err)
+            return False
+
+        refresh_expiry = payload.get("exp")
+        if not refresh_expiry:
+            _LOGGER.warning("Token does not contain 'exp' field")
+            return False
+
+        return datetime.fromtimestamp(refresh_expiry, tz=UTC) > datetime.now(tz=tz)
+
     @property
     def authToken(self) -> str:
         """Backward compatibility alias."""
@@ -125,3 +167,14 @@ class Authentication:
     def __repr__(self) -> str:
         """Hide sensitive token values."""
         return "Authentication(auth_token=***, refresh_token=***)"
+
+@dataclass
+class AuthenticationResult:
+    """Class to hold authentication result after login or refresh.
+
+    Attributes:
+        authToken: The current valid auth token.
+        refreshToken: The token used to refresh the auth token.
+    """
+    authToken: str
+    refreshToken: str

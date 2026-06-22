@@ -117,6 +117,8 @@ class FrankEnergie:
         self._site_reference: str | None = None
         self._user_country: str | None = None
         self._resolution: str | None = "PT60M"
+        self.access_token: str | None = None
+        self.refresh_token: str | None = None
 
         if auth_token or refresh_token:
             self._auth = Authentication(auth_token, refresh_token, version)
@@ -181,24 +183,42 @@ class FrankEnergie:
         self._log_token_status()
         return self._auth.is_expired
 
+    @property
+    def token_expires_at(self) -> datetime | None:
+        """Return the current authentication token expiration timestamp."""
+        return (
+            self._auth.token_expires_at
+            if self._auth is not None
+            else None
+        )
+    
+    @property
+    def refresh_token_expires_at(self) -> datetime | None:
+        """Return refresh token expiration."""
+        return (
+            self._auth.refresh_token_expires_at
+            if self._auth is not None
+            else None
+        )
+
     def _log_token_status(self) -> None:
         """Log the current token expiry status and if renewal is required."""
-        if self._auth is None or not self._auth.expires_at:
+        if self._auth is None or not self._auth.token_expires_at:
             return
 
         now_utc = datetime.now(UTC)
-        remaining = self._auth.expires_at - now_utc
+        remaining = self._auth.token_expires_at - now_utc
         _LOGGER.debug(
             "Token expiry check: now=%s expires_at=%s remaining=%s",
             now_utc.isoformat(),
-            self._auth.expires_at.isoformat(),
+            self._auth.token_expires_at.isoformat(),
             remaining,
         )
 
         if self._auth.is_expired:
             _LOGGER.debug(
                 "Token renewal required: expires_at=%s threshold=%s minutes",
-                self._auth.expires_at.isoformat(),
+                self._auth.token_expires_at.isoformat(),
                 Authentication.TOKEN_RENEWAL_MARGIN.total_seconds() / 60,
             )
 
@@ -485,7 +505,7 @@ class FrankEnergie:
                 raise AuthException("Login failed. Authentication data missing.")
 
             self._auth = auth
-            expires_str = auth.expires_at.isoformat() if auth.expires_at else "unknown/mock"
+            expires_str = auth.token_expires_at.isoformat() if auth.token_expires_at else "unknown/mock"
             _LOGGER.debug(
                 "Authentication token updated; expires_at=%s",
                 expires_str,
@@ -531,7 +551,7 @@ class FrankEnergie:
         response = await self._query(query)
         self._auth = Authentication.from_dict(response)
         if self._auth:
-            expires_str = self._auth.expires_at.isoformat() if self._auth.expires_at else "unknown/mock"
+            expires_str = self._auth.token_expires_at.isoformat() if self._auth.token_expires_at else "unknown/mock"
             _LOGGER.debug(
                 "Authentication token updated; expires_at=%s",
                 expires_str,

@@ -241,7 +241,8 @@ class Authentication:
     authToken: str
     refreshToken: str
     version: str | None
-    expires_at: datetime | None = None
+    token_expires_at: datetime | None = None
+    refresh_token_expires_at: datetime | None = None
     TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
     @staticmethod
@@ -279,7 +280,7 @@ class Authentication:
             raise AuthException("Invalid refreshToken")
 
         # --- Expiry extraction ---
-        expires_at: datetime | None = None
+        token_expires_at: datetime | None = None
         try:
             decoded: dict[str, object] = jwt.decode(
                 auth_token,
@@ -294,16 +295,39 @@ class Authentication:
                 _LOGGER.warning("authToken missing 'exp' claim; treating as expired")
                 raise AuthException("Missing or invalid 'exp' in JWT")
 
-            expires_at = datetime.fromtimestamp(exp, tz=UTC)
-            _LOGGER.debug("authToken expires at: %s", expires_at)
+            token_expires_at = datetime.fromtimestamp(exp, tz=UTC)
+            _LOGGER.debug("authToken expires at: %s", token_expires_at)
 
         except InvalidTokenError as err:
             _LOGGER.warning("Unable to decode authToken to extract expiration: %s", err)
 
+        # --- Expiry extraction ---
+        refresh_token_expires_at: datetime | None = None
+        try:
+            decoded: dict[str, object] = jwt.decode(
+                refresh_token,
+                options={"verify_signature": False},
+                algorithms=["HS256"],
+            )
+
+            _LOGGER.debug("refreshToken decoded claims keys: %s", list(decoded.keys()))
+
+            exp = decoded.get("exp")
+            if not isinstance(exp, (int, float)):
+                _LOGGER.warning("refreshToken missing 'exp' claim; treating as expired")
+                raise AuthException("Missing or invalid 'exp' in JWT")
+
+            refresh_token_expires_at = datetime.fromtimestamp(exp, tz=UTC)
+            _LOGGER.debug("authToken expires at: %s", refresh_token_expires_at)
+
+        except InvalidTokenError as err:
+            _LOGGER.warning("Unable to decode refreshToken to extract expiration: %s", err)
+
         return Authentication(
             authToken=auth_token,
             refreshToken=refresh_token,
-            expires_at=expires_at,
+            token_expires_at=token_expires_at,
+            refresh_token_expires_at=refresh_token_expires_at,
             version=version,
         )
 
@@ -323,13 +347,13 @@ class Authentication:
     @property
     def is_expired(self) -> bool:
         """Return True when the token is expired or about to expire based on the expires_at field."""
-        if self.expires_at is None:
+        if self.token_expires_at is None:
             # If the token is a dummy mock token (does not have JWT structure), do not treat it as expired.
             # This prevents unwanted renewToken calls in tests.
             return bool(self.authToken and len(self.authToken.split(".")) >= 3)
 
         # gives a 5-minute refresh window and avoids edge cases where a request starts just before expiration
-        return datetime.now(UTC) >= (self.expires_at - self.TOKEN_RENEWAL_MARGIN)
+        return datetime.now(UTC) >= (self.token_expires_at - self.TOKEN_RENEWAL_MARGIN)
 
 
 @dataclass
