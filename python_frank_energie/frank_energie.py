@@ -186,20 +186,12 @@ class FrankEnergie:
     @property
     def token_expires_at(self) -> datetime | None:
         """Return the current authentication token expiration timestamp."""
-        return (
-            self._auth.token_expires_at
-            if self._auth is not None
-            else None
-        )
-    
+        return self._auth.token_expires_at if self._auth is not None else None
+
     @property
     def refresh_token_expires_at(self) -> datetime | None:
         """Return refresh token expiration."""
-        return (
-            self._auth.refresh_token_expires_at
-            if self._auth is not None
-            else None
-        )
+        return self._auth.refresh_token_expires_at if self._auth is not None else None
 
     def _log_token_status(self) -> None:
         """Log the current token expiry status and if renewal is required."""

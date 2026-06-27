@@ -4677,7 +4677,9 @@ class SmartPvSystem(DictLikeMixin):
             provider=data["provider"],
             steering_status=data["steeringStatus"],
             updated_at=_parse_datetime(data["updatedAt"]),
-            panel_groups=[SmartPvSystemPanelGroup.from_dict(v) for v in data.get("SmartPvSystemPanelGroups", [])] if isinstance(data.get("SmartPvSystemPanelGroups"), list) else [],
+            panel_groups=[SmartPvSystemPanelGroup.from_dict(v) for v in data.get("SmartPvSystemPanelGroups", [])]
+            if isinstance(data.get("SmartPvSystemPanelGroups"), list)
+            else [],
         )
 
 
