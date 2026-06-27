@@ -51,10 +51,7 @@ class Authentication:
         if not payload or "authToken" not in payload or "refreshToken" not in payload:
             raise AuthException("Unexpected response: Missing or incomplete payload")
 
-        return Authentication(
-            auth_token=payload["authToken"],
-            refresh_token=payload["refreshToken"]
-        )
+        return Authentication(auth_token=payload["authToken"], refresh_token=payload["refreshToken"])
 
     @staticmethod
     def _extract_payload(
@@ -168,6 +165,7 @@ class Authentication:
         """Hide sensitive token values."""
         return "Authentication(auth_token=***, refresh_token=***)"
 
+
 @dataclass
 class AuthenticationResult:
     """Class to hold authentication result after login or refresh.
@@ -176,5 +174,6 @@ class AuthenticationResult:
         authToken: The current valid auth token.
         refreshToken: The token used to refresh the auth token.
     """
+
     authToken: str
     refreshToken: str

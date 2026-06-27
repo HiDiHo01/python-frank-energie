@@ -4616,6 +4616,33 @@ def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[s
 
 
 @dataclass
+class SmartPvSystemPanelGroup(DictLikeMixin):
+    """Represents a panel group (dakvlak) of a smart PV system."""
+
+    id: str
+    position: int | None
+    azimuth: int | None
+    tilt: int | None
+    capacity_kwp: float | None
+    annual_kwh: int | None
+    panel_count: int | None
+    installation_date: datetime | None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> SmartPvSystemPanelGroup:
+        return cls(
+            id=data.get("id"),
+            position=data.get("position"),
+            azimuth=data.get("azimuth"),
+            tilt=data.get("tilt"),
+            capacity_kwp=float(data["capacityKwp"]) if data.get("capacityKwp") is not None else None,
+            annual_kwh=int(data["annualKwh"]) if data.get("annualKwh") is not None else None,
+            panel_count=int(data["panelCount"]) if data.get("panelCount") is not None else None,
+            installation_date=_parse_datetime(data.get("installationDate")) if data.get("installationDate") else None,
+        )
+
+
+@dataclass
 class SmartPvSystem(DictLikeMixin):
     """Represents a single Frank Energie smart PV system."""
 
@@ -4632,6 +4659,7 @@ class SmartPvSystem(DictLikeMixin):
     provider: str
     steering_status: str
     updated_at: datetime
+    panel_groups: list[SmartPvSystemPanelGroup]
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystem:
@@ -4649,6 +4677,9 @@ class SmartPvSystem(DictLikeMixin):
             provider=data["provider"],
             steering_status=data["steeringStatus"],
             updated_at=_parse_datetime(data["updatedAt"]),
+            panel_groups=[SmartPvSystemPanelGroup.from_dict(v) for v in data.get("SmartPvSystemPanelGroups", [])]
+            if isinstance(data.get("SmartPvSystemPanelGroups"), list)
+            else [],
         )
 
 
@@ -4692,7 +4723,8 @@ class SmartPvSystemSummary(DictLikeMixin):
     operational_status: str
     operational_status_timestamp: datetime
     steering_status: str
-    total_bonus: float
+    total_bonus: float | None
+    total_result: float | None
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemSummary:
@@ -4701,7 +4733,8 @@ class SmartPvSystemSummary(DictLikeMixin):
             operational_status=payload["operationalStatus"],
             operational_status_timestamp=_parse_datetime(payload["operationalStatusTimestamp"]),
             steering_status=payload["steeringStatus"],
-            total_bonus=float(payload.get("totalBonus", 0.0)),
+            total_bonus=float(payload["totalBonus"]) if payload.get("totalBonus") is not None else None,
+            total_result=float(payload["totalResult"]) if payload.get("totalResult") is not None else None,
         )
 
 
