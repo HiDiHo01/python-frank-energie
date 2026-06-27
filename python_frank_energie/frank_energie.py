@@ -2780,6 +2780,16 @@ class FrankEnergie:
                 provider
                 steeringStatus
                 updatedAt
+                SmartPvSystemPanelGroups {
+                    id
+                    position
+                    azimuth
+                    tilt
+                    capacityKwp
+                    annualKwh
+                    panelCount
+                    installationDate
+                }
             }
         }
     """
@@ -2810,6 +2820,7 @@ class FrankEnergie:
                 operationalStatusTimestamp
                 steeringStatus
                 totalBonus
+                totalResult
             }
         }
     """

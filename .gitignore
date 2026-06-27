@@ -1,4 +1,5 @@
 # general things to ignore
+apk/
 build/
 dist/
 *.egg-info/
