@@ -4636,8 +4636,8 @@ class SmartPvSystemPanelGroup(DictLikeMixin):
             azimuth=data.get("azimuth"),
             tilt=data.get("tilt"),
             capacity_kwp=float(data["capacityKwp"]) if data.get("capacityKwp") is not None else None,
-            annual_kwh=data.get("annualKwh"),
-            panel_count=data.get("panelCount"),
+            annual_kwh=int(data["annualKwh"]) if data.get("annualKwh") is not None else None,
+            panel_count=int(data["panelCount"]) if data.get("panelCount") is not None else None,
             installation_date=_parse_datetime(data.get("installationDate")) if data.get("installationDate") else None,
         )
 
@@ -4723,8 +4723,8 @@ class SmartPvSystemSummary(DictLikeMixin):
     operational_status: str
     operational_status_timestamp: datetime
     steering_status: str
-    total_bonus: float
-    total_result: float
+    total_bonus: float | None
+    total_result: float | None
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemSummary:
@@ -4733,8 +4733,8 @@ class SmartPvSystemSummary(DictLikeMixin):
             operational_status=payload["operationalStatus"],
             operational_status_timestamp=_parse_datetime(payload["operationalStatusTimestamp"]),
             steering_status=payload["steeringStatus"],
-            total_bonus=float(payload.get("totalBonus", 0.0)),
-            total_result=float(payload.get("totalResult", 0.0)),
+            total_bonus=float(payload["totalBonus"]) if payload.get("totalBonus") is not None else None,
+            total_result=float(payload["totalResult"]) if payload.get("totalResult") is not None else None,
         )
 
 
