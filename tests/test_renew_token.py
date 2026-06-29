@@ -147,7 +147,7 @@ async def test_renew_token_logging(aresponses, caplog):
         api._auth = ModelsAuth(
             authToken="a.b.c",
             refreshToken="b",
-            expires_at=future_expiry,
+            token_expires_at=future_expiry,
             version=None,
         )
 
@@ -166,7 +166,7 @@ async def test_renew_token_logging(aresponses, caplog):
             api._auth = ModelsAuth(
                 authToken="a.b.c",
                 refreshToken="b",
-                expires_at=expired_time,
+                token_expires_at=expired_time,
                 version=None,
             )
 
@@ -194,7 +194,7 @@ async def test_requires_token_refresh_logging(caplog):
     api._auth = ModelsAuth(
         authToken="a.b.c",
         refreshToken="b",
-        expires_at=future_expiry,
+        token_expires_at=future_expiry,
         version=None,
     )
 
@@ -211,7 +211,7 @@ async def test_requires_token_refresh_logging(caplog):
     api._auth = ModelsAuth(
         authToken="a.b.c",
         refreshToken="b",
-        expires_at=expired_time,
+        token_expires_at=expired_time,
         version=None,
     )
 
