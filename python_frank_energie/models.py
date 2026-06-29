@@ -3939,7 +3939,6 @@ class Session:
                 status=str(payload["status"]),
                 trade_index=payload.get("tradeIndex"),
                 result=_safe_float(payload["result"]),
-                # trading_result=_safe_float(payload["tradingResult"]),
                 cumulative_result=_safe_float(payload["cumulativeResult"]),
                 cumulative_trading_result=_safe_float(payload["cumulativeTradingResult"]),
             )
