@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import calendar
 import logging
+import math
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -34,6 +35,19 @@ DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
+
+
+def _safe_float(val: Any) -> float | None:
+    """Safely convert a value to float, handling NaNs, Infs and rounding."""
+    if val is None or val == "":
+        return None
+    try:
+        f_val = float(val)
+        if math.isnan(f_val) or math.isinf(f_val):
+            return None
+        return round(f_val, 5)
+    except (TypeError, ValueError):
+        return None
 
 
 def _parse_iso_datetime(value: str | datetime | None, field_name: str = "datetime") -> datetime | None:
@@ -4197,8 +4211,8 @@ class SmartBatterySession:
         try:
             return SmartBatterySession(
                 date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
-                cumulative_result=payload["cumulativeResult"],
-                result=payload["result"],
+                cumulative_result=_safe_float(payload.get("cumulativeResult")),
+                result=_safe_float(payload.get("result")),
                 status=payload["status"],
                 trade_index=payload.get("tradeIndex"),
             )
@@ -4246,14 +4260,6 @@ class SmartBatterySessions:
             raise RequestException("Missing 'smartBatterySessions' in response")
 
         _LOGGER.debug("SmartBatterySessions data: %s", smart_battery_session_data)
-
-        def _safe_float(val: Any) -> float | None:
-            if val is None or val == "":
-                return None
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return None
 
         return SmartBatterySessions(
             device_id=smart_battery_session_data.get("deviceId"),
