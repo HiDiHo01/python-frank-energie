@@ -745,8 +745,8 @@ class UsageItem:
                 date=str(data["date"]),
                 from_time=str(data["from"]),
                 till_time=str(data["till"]),
-                usage=float(data["usage"]),
-                costs=float(data["costs"]),
+                usage=_safe_float(data["usage"]),
+                costs=_safe_float(data["costs"]),
                 unit=str(data["unit"]),
             )
         except KeyError as e:
@@ -2212,7 +2212,7 @@ class MonthSummary:
 
         expected_costs_per_day = (
             MonthSummary.calculate_expected_costs_per_day(
-                float(expected_costs),
+                _safe_float(expected_costs),
                 last_reading,
             )
             if expected_costs is not None
@@ -2220,13 +2220,13 @@ class MonthSummary:
         )
 
         costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(
-            float(actual_costs),
+            _safe_float(actual_costs),
             last_reading,
         )
 
         return MonthSummary(
             _id=summary_id,
-            actualCostsUntilLastMeterReadingDate=float(actual_costs),
+            actualCostsUntilLastMeterReadingDate=_safe_float(actual_costs),
             expectedCostsUntilLastMeterReadingDate=float(
                 expected_costs_until,
             ),
@@ -2235,7 +2235,7 @@ class MonthSummary:
             meterReadingDayCompleteness=completeness,
             gasExcluded=gas_excluded,
             typename=typename,
-            expectedCosts=(float(expected_costs) if expected_costs is not None else None),
+            expectedCosts=(_safe_float(expected_costs) if expected_costs is not None else None),
             expectedCostsPerDay=expected_costs_per_day,
         )
 
@@ -2363,7 +2363,7 @@ class ChargeState(DictLikeMixin):
         raw_is_fully_charged = data.get("isFullyCharged")
 
         return cls(
-            battery_capacity=float(raw_battery_capacity) if raw_battery_capacity is not None else None,
+            battery_capacity=_safe_float(raw_battery_capacity) if raw_battery_capacity is not None else None,
             battery_level=int(raw_battery_level) if raw_battery_level is not None else None,
             charge_limit=int(raw_charge_limit) if raw_charge_limit is not None else None,
             charge_rate=_safe_float(data.get("chargeRate")),
@@ -3182,7 +3182,7 @@ class PriceData:
     @staticmethod
     def safe_avg(values: Iterable[float | int]) -> float | None:
         """Return average of numeric values or None if empty."""
-        values_list = [float(v) for v in values if v is not None]
+        values_list = [_safe_float(v) for v in values if v is not None]
 
         if not values_list:
             return None
@@ -3607,7 +3607,7 @@ class PriceData:
                 continue
 
             try:
-                total += float(value)
+                total += _safe_float(value)
                 count += 1
             except (TypeError, ValueError):
                 continue
@@ -3938,10 +3938,10 @@ class Session:
                 date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
                 status=str(payload["status"]),
                 trade_index=payload.get("tradeIndex"),
-                result=float(payload["result"]),
-                # trading_result=float(payload["tradingResult"]),
-                cumulative_result=float(payload["cumulativeResult"]),
-                cumulative_trading_result=float(payload["cumulativeTradingResult"]),
+                result=_safe_float(payload["result"]),
+                # trading_result=_safe_float(payload["tradingResult"]),
+                cumulative_result=_safe_float(payload["cumulativeResult"]),
+                cumulative_trading_result=_safe_float(payload["cumulativeTradingResult"]),
             )
         except KeyError as exc:
             raise RequestException(f"Missing expected field in session: {exc}") from exc
