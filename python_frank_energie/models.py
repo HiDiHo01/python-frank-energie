@@ -37,17 +37,17 @@ LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
 
 
-def _safe_float(val: Any) -> float | None:
-    """Safely convert a value to float, handling NaNs, Infs and rounding."""
+def _safe_float(val: Any, precision: int | None = None, default: float | None = None) -> float | None:
+    """Safely convert a value to float, handling NaNs, Infs and optional rounding."""
     if val is None or val == "":
-        return None
+        return default
     try:
         f_val = float(val)
         if math.isnan(f_val) or math.isinf(f_val):
-            return None
-        return round(f_val, 5)
+            return default
+        return round(f_val, precision) if precision is not None else f_val
     except (TypeError, ValueError):
-        return None
+        return default
 
 
 def _parse_iso_datetime(value: str | datetime | None, field_name: str = "datetime") -> datetime | None:
@@ -433,7 +433,7 @@ class Invoice:
             id=str(data.get("id")),
             StartDate=start_date,
             PeriodDescription=str(data.get("periodDescription")),
-            TotalAmount=float(total_amount_raw),
+            TotalAmount=_safe_float(total_amount_raw),
         )
 
     @classmethod
@@ -776,10 +776,10 @@ class EnergyCategory:
                 return None
 
             usage_val = data.get("usageTotal")
-            usage_total = float(usage_val) if usage_val is not None else None
+            usage_total = _safe_float(usage_val) if usage_val is not None else None
 
             costs_val = data.get("costsTotal")
-            costs_total = float(costs_val) if costs_val is not None else None
+            costs_total = _safe_float(costs_val) if costs_val is not None else None
 
             return EnergyCategory(
                 usage_total=usage_total,
@@ -1974,12 +1974,12 @@ class Difference:
     @staticmethod
     def from_dict(data: dict) -> Difference:
         return Difference(
-            actualUsage=float(data.get("actualUsage", 0.0)),
-            actualAverageUnitPrice=float(data.get("actualAverageUnitPrice", 0.0)),
-            actualCosts=float(data.get("actualCosts", 0.0)),
-            expectedUsage=float(data.get("expectedUsage", 0.0)),
-            expectedAverageUnitPrice=float(data.get("expectedAverageUnitPrice", 0.0)),
-            expectedCosts=float(data.get("expectedCosts", 0.0)),
+            actualUsage=_safe_float(data.get("actualUsage"), default=0.0),
+            actualAverageUnitPrice=_safe_float(data.get("actualAverageUnitPrice"), default=0.0),
+            actualCosts=_safe_float(data.get("actualCosts"), default=0.0),
+            expectedUsage=_safe_float(data.get("expectedUsage"), default=0.0),
+            expectedAverageUnitPrice=_safe_float(data.get("expectedAverageUnitPrice"), default=0.0),
+            expectedCosts=_safe_float(data.get("expectedCosts"), default=0.0),
             unit=str(data.get("unit", "")),
         )
 
@@ -2036,19 +2036,19 @@ class MonthInsights:
 
         return MonthInsights(
             _id=str(data.get("_id", "")),
-            expectedCosts=float(data.get("expectedCosts", 0.0)),
-            expectedCostsGas=float(data.get("expectedCostsGas", 0.0)),
-            expectedCostsFixed=float(data.get("expectedCostsFixed", 0.0)),
-            expectedCostsElectricity=float(data.get("expectedCostsElectricity", 0.0)),
-            expectedCostsFeedIn=float(data.get("expectedCostsFeedIn", 0.0)),
-            expectedCostsUntilLastMeterReading=float(data.get("expectedCostsUntilLastMeterReading", 0.0)),
-            actualCostsUntilLastMeterReading=float(data.get("actualCostsUntilLastMeterReading", 0.0)),
+            expectedCosts=_safe_float(data.get("expectedCosts"), default=0.0),
+            expectedCostsGas=_safe_float(data.get("expectedCostsGas"), default=0.0),
+            expectedCostsFixed=_safe_float(data.get("expectedCostsFixed"), default=0.0),
+            expectedCostsElectricity=_safe_float(data.get("expectedCostsElectricity"), default=0.0),
+            expectedCostsFeedIn=_safe_float(data.get("expectedCostsFeedIn"), default=0.0),
+            expectedCostsUntilLastMeterReading=_safe_float(data.get("expectedCostsUntilLastMeterReading"), default=0.0),
+            actualCostsUntilLastMeterReading=_safe_float(data.get("actualCostsUntilLastMeterReading"), default=0.0),
             lastMeterReadingDate=dt,
             invoiceId=data.get("invoiceId"),
             gasDifference=Difference.from_dict(data.get("gasDifference", {})),
             electricityDifference=Difference.from_dict(data.get("electricityDifference", {})),
             feedInDifference=Difference.from_dict(data.get("feedInDifference", {})),
-            meterReadingDayCompleteness=float(data.get("meterReadingDayCompleteness", 0.0)),
+            meterReadingDayCompleteness=_safe_float(data.get("meterReadingDayCompleteness"), default=0.0),
             gasExcluded=bool(data.get("gasExcluded", False)),
         )
 
@@ -2366,7 +2366,7 @@ class ChargeState(DictLikeMixin):
             battery_capacity=float(raw_battery_capacity) if raw_battery_capacity is not None else None,
             battery_level=int(raw_battery_level) if raw_battery_level is not None else None,
             charge_limit=int(raw_charge_limit) if raw_charge_limit is not None else None,
-            charge_rate=float(data["chargeRate"]) if data.get("chargeRate") is not None else None,
+            charge_rate=_safe_float(data.get("chargeRate")),
             charge_time_remaining=(
                 int(data["chargeTimeRemaining"]) if data.get("chargeTimeRemaining") is not None else None
             ),
@@ -4047,9 +4047,7 @@ class SmartBatterySettings:
                 else None
             ),
             self_consumption_trading_threshold_price=(
-                float(data["selfConsumptionTradingThresholdPrice"])
-                if data.get("selfConsumptionTradingThresholdPrice") is not None
-                else None
+                _safe_float(data.get("selfConsumptionTradingThresholdPrice"))
             ),
             created_at=(
                 datetime.fromisoformat(data["createdAt"].replace("Z", _UTC_SUFFIX)).astimezone(UTC)
@@ -4155,10 +4153,6 @@ class SmartBattery:
         settings_data = data.get("settings")
 
         settings = SmartBatterySettings.from_dict(settings_data) if isinstance(settings_data, dict) else None
-
-        def _to_float(value: object) -> float | None:
-            if value is None:
-                return None
             try:
                 return float(value)
             except (TypeError, ValueError):
@@ -4178,11 +4172,11 @@ class SmartBattery:
         return cls(
             id=device_id,
             brand=data.get("brand"),
-            capacity=_to_float(data.get("capacity")),
+            capacity=_safe_float(data.get("capacity")),
             external_reference=data.get("externalReference"),
             provider=data.get("provider"),
-            max_charge_power=_to_float(data.get("maxChargePower")),
-            max_discharge_power=_to_float(data.get("maxDischargePower")),
+            max_charge_power=_safe_float(data.get("maxChargePower")),
+            max_discharge_power=_safe_float(data.get("maxDischargePower")),
             created_at=_parse_datetime(data.get("createdAt")),
             updated_at=_parse_datetime(data.get("updatedAt")),
             settings=settings,
@@ -4641,7 +4635,7 @@ class SmartPvSystemPanelGroup(DictLikeMixin):
             position=data.get("position"),
             azimuth=data.get("azimuth"),
             tilt=data.get("tilt"),
-            capacity_kwp=float(data["capacityKwp"]) if data.get("capacityKwp") is not None else None,
+            capacity_kwp=_safe_float(data.get("capacityKwp")),
             annual_kwh=int(data["annualKwh"]) if data.get("annualKwh") is not None else None,
             panel_count=int(data["panelCount"]) if data.get("panelCount") is not None else None,
             installation_date=_parse_datetime(data.get("installationDate")) if data.get("installationDate") else None,
@@ -4739,8 +4733,8 @@ class SmartPvSystemSummary(DictLikeMixin):
             operational_status=payload["operationalStatus"],
             operational_status_timestamp=_parse_datetime(payload["operationalStatusTimestamp"]),
             steering_status=payload["steeringStatus"],
-            total_bonus=float(payload["totalBonus"]) if payload.get("totalBonus") is not None else None,
-            total_result=float(payload["totalResult"]) if payload.get("totalResult") is not None else None,
+            total_bonus=_safe_float(payload.get("totalBonus")),
+            total_result=_safe_float(payload.get("totalResult")),
         )
 
 
@@ -4810,11 +4804,11 @@ class FeedInSession(DictLikeMixin):
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> FeedInSession:
         return cls(
-            bonus=float(data.get("bonus", 0.0)),
-            cumulative_bonus=float(data.get("cumulativeBonus", 0.0)),
+            bonus=_safe_float(data.get("bonus"), default=0.0),
+            cumulative_bonus=_safe_float(data.get("cumulativeBonus"), default=0.0),
             date=data["date"],
             status=data["status"],
-            volume=float(data.get("volume", 0.0)),
+            volume=_safe_float(data.get("volume"), default=0.0),
         )
 
 
@@ -4833,9 +4827,9 @@ class SmartFeedInSessionData(DictLikeMixin):
         payload = data.get("data", {}).get("smartFeedInSessions") or data
         sessions = [FeedInSession.from_dict(s) for s in (payload.get("sessions") or [])]
         return cls(
-            period_bonus=float(payload.get("periodBonus", 0.0)),
+            period_bonus=_safe_float(payload.get("periodBonus"), default=0.0),
             period_end_date=payload["periodEndDate"],
             period_start_date=payload["periodStartDate"],
-            period_volume=float(payload.get("periodVolume", 0.0)),
+            period_volume=_safe_float(payload.get("periodVolume"), default=0.0),
             sessions=sessions,
         )
