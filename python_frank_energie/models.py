@@ -4153,11 +4153,6 @@ class SmartBattery:
         settings_data = data.get("settings")
 
         settings = SmartBatterySettings.from_dict(settings_data) if isinstance(settings_data, dict) else None
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                _LOGGER.debug("Invalid float value for battery %s: %s", device_id, value)
-                return None
 
         def _parse_datetime(value: object) -> datetime | None:
             if isinstance(value, datetime):
