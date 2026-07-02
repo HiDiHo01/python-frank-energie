@@ -25,6 +25,10 @@ class FrankEnergieError(Exception):
     """Base class for all FrankEnergie-related errors."""
 
 
+class NoMarketPricesAvailableException(RequestException):
+    """No market prices are available yet."""
+
+
 class LoginError(FrankEnergieException):
     """Raised when login to FrankEnergie fails."""
 
