@@ -21,7 +21,7 @@ from dateutil.parser import parse
 from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, EmailStr
 
-from .exceptions import AuthException, RequestException
+from .exceptions import AuthException, RequestException, NoMarketPricesAvailableException
 
 try:
     from .time_periods import TimePeriod
@@ -3796,7 +3796,12 @@ class MarketPrices:
         _LOGGER.debug("BE Market Prices data: %s", data)
 
         if data.get("errors"):
-            raise RequestException(cls._extract_error(data, "Unknown API error"))
+            error = cls._extract_error(data, "Unknown API error")
+        
+            if error.startswith("No marketprices found"):
+                raise NoMarketPricesAvailableException(error)
+        
+            raise RequestException(error)
 
         root = data.get("data")
         if not isinstance(root, dict):
