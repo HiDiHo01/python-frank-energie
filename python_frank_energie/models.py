@@ -3928,40 +3928,6 @@ class MarketPrices:
         return default
 
 
-@dataclass
-class Session:
-    """A trading session for a battery."""
-
-    date: datetime
-    status: SessionStatus
-    # trading_result: float
-    trade_index: int | None
-    result: float
-    cumulative_result: float
-    cumulative_trading_result: float
-
-    @staticmethod
-    def from_dict(payload: dict[str, object]) -> SmartBatterySessions.Session:
-        """Parse the sessions payload from the SmartBatterySessions query result."""
-        _LOGGER.debug("Parsing SmartBatterySessions.Session response: %s", payload)
-
-        try:
-            return SmartBatterySessions.Session(
-                date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
-                source=payload["source"],
-                status=SessionStatus(payload["status"]) if payload.get("status") else SessionStatus.UNKNOWN,
-                type=payload["type"],
-                trade_index=payload.get("tradeIndex"),
-                result=_safe_float(payload["result"]),
-                cumulative_result=_safe_float(payload["cumulativeResult"]),
-                cumulative_trading_result=_safe_float(payload["cumulativeTradingResult"]),
-            )
-        except KeyError as exc:
-            raise RequestException(f"Missing expected field in session: {exc}") from exc
-        except ValueError as exc:
-            raise RequestException(f"Invalid data format in session payload: {exc}") from exc
-
-
 # @dataclass
 @dataclass(slots=True)
 class SmartBatteries:

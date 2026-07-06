@@ -6,10 +6,10 @@ import pytest
 from freezegun import freeze_time
 from syrupy.assertion import SnapshotAssertion
 
+from python_frank_energie.domain import SmartBatteryImbalanceStrategy, SmartBatteryMode
 from python_frank_energie.exceptions import AuthException, NoMarketPricesAvailableException, RequestException
 from python_frank_energie.models import (
     Authentication,
-    SmartBatterySettings,
     ChargeState,
     Connection,
     EnergyCategory,
@@ -19,6 +19,7 @@ from python_frank_energie.models import (
     MarketPrices,
     Me,
     MonthSummary,
+    SmartBatterySettings,
     SmartHvac,
     User,
 )
@@ -681,7 +682,6 @@ class TestEnergyCategory:
         assert category.costs_total is None
         assert category.unit == "KWH"
 
-from python_frank_energie.domain import SmartBatteryMode, SmartBatteryImbalanceStrategy
 
 def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values() -> None:
     """SmartBatterySettings.from_dict should defensively map unexpected upstream enum values to UNKNOWN."""
