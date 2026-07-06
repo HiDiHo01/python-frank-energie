@@ -21,7 +21,7 @@ from dateutil.parser import parse
 from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, EmailStr
 
-from .exceptions import AuthException, RequestException, NoMarketPricesAvailableException
+from .exceptions import AuthException, NoMarketPricesAvailableException, RequestException
 
 try:
     from .time_periods import TimePeriod
@@ -35,6 +35,7 @@ DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
+_ERROR_NO_MARKET_PRICES = "No marketprices found"
 
 
 def _safe_float(val: Any, precision: int | None = None, default: float | None = None) -> float | None:
@@ -3716,13 +3717,8 @@ class MarketPrices:
             first = errors[0]
             message = first.get("message") if isinstance(first, dict) else None
 
-            # API returns this as an "error", but it represents a valid empty dataset
-            if isinstance(message, str) and "No marketprices found" in message:
-                return cls(
-                    electricity=PriceData([], energy_type="electricity"),
-                    gas=PriceData([], energy_type="gas"),
-                    energy_country=energy_country,
-                )
+            if isinstance(message, str) and message.startswith(_ERROR_NO_MARKET_PRICES):
+                raise NoMarketPricesAvailableException(message)
 
             raise RequestException(str(message) if message else "Unknown error")
 
@@ -3797,10 +3793,10 @@ class MarketPrices:
 
         if data.get("errors"):
             error = cls._extract_error(data, "Unknown API error")
-        
-            if error.startswith("No marketprices found"):
+
+            if error.startswith(_ERROR_NO_MARKET_PRICES):
                 raise NoMarketPricesAvailableException(error)
-        
+
             raise RequestException(error)
 
         root = data.get("data")
@@ -3860,13 +3856,8 @@ class MarketPrices:
 
         error = cls._extract_error(data, None)
         if error:
-            if "No marketprices found" in error:
-                _LOGGER.debug("No user prices available yet: %s", error)
-                return cls(
-                    electricity=PriceData([], "electricity"),
-                    gas=PriceData([], "gas"),
-                    energy_country=energy_country,
-                )
+            if isinstance(error, str) and error.startswith(_ERROR_NO_MARKET_PRICES):
+                raise NoMarketPricesAvailableException(error)
             raise RequestException(error)
 
         if data.get("errors"):
@@ -3936,7 +3927,7 @@ class Session:
     @staticmethod
     def from_dict(payload: dict[str, object]) -> SmartBatterySessions.Session:
         """Parse the sessions payload from the SmartBatterySessions query result."""
-        _LOGGER.debug("🔁 Parsing SmartBatterySessions.Session response: %s", payload)
+        _LOGGER.debug("Parsing SmartBatterySessions.Session response: %s", payload)
 
         try:
             return SmartBatterySessions.Session(
@@ -4050,9 +4041,7 @@ class SmartBatterySettings:
                 if data.get("selfConsumptionTradingAllowed") is not None
                 else None
             ),
-            self_consumption_trading_threshold_price=(
-                _safe_float(data.get("selfConsumptionTradingThresholdPrice"))
-            ),
+            self_consumption_trading_threshold_price=(_safe_float(data.get("selfConsumptionTradingThresholdPrice"))),
             created_at=(
                 datetime.fromisoformat(data["createdAt"].replace("Z", _UTC_SUFFIX)).astimezone(UTC)
                 if data.get("createdAt") is not None
@@ -4200,7 +4189,7 @@ class SmartBatterySession:
     @staticmethod
     def from_dict(payload: dict[str, Any]) -> SmartBatterySession:
         """Parse the session payload from SmartBatterySessions."""
-        _LOGGER.debug("🔁 Parsing SmartBatterySession: %s", payload)
+        _LOGGER.debug("Parsing SmartBatterySession: %s", payload)
         try:
             return SmartBatterySession(
                 date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
@@ -4236,7 +4225,7 @@ class SmartBatterySessions:
     @staticmethod
     def from_dict(data: dict[str, Any]) -> SmartBatterySessions:
         """Parse the response from the SmartBatterySessions query."""
-        _LOGGER.debug("🔁 Parsing SmartBatterySessions response: %s", data)
+        _LOGGER.debug("Parsing SmartBatterySessions response: %s", data)
 
         if errors := data.get("errors"):
             raise RequestException(errors[0]["message"])
