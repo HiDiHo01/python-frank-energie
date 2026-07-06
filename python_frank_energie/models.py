@@ -22,6 +22,7 @@ from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, EmailStr
 
 from .exceptions import AuthException, NoMarketPricesAvailableException, RequestException
+from .domain import SmartPvOperationalStatus, SmartPvSteeringStatus, SmartPvOnboardingStatus
 
 try:
     from .time_periods import TimePeriod
@@ -4647,9 +4648,9 @@ class SmartPvSystem(DictLikeMixin):
     external_reference: str
     inverter_serial_numbers: list[str]
     model: str | None
-    onboarding_status: str
+    onboarding_status: SmartPvOnboardingStatus
     provider: str
-    steering_status: str
+    steering_status: SmartPvSteeringStatus
     updated_at: datetime
     panel_groups: list[SmartPvSystemPanelGroup]
 
@@ -4665,9 +4666,9 @@ class SmartPvSystem(DictLikeMixin):
             external_reference=data["externalReference"],
             inverter_serial_numbers=data.get("inverterSerialNumbers") or [],
             model=data.get("model"),
-            onboarding_status=data["onboardingStatus"],
+            onboarding_status=SmartPvOnboardingStatus(data["onboardingStatus"]),
             provider=data["provider"],
-            steering_status=data["steeringStatus"],
+            steering_status=SmartPvSteeringStatus(data["steeringStatus"]),
             updated_at=_parse_datetime(data["updatedAt"]),
             panel_groups=[SmartPvSystemPanelGroup.from_dict(v) for v in data.get("SmartPvSystemPanelGroups", [])]
             if isinstance(data.get("SmartPvSystemPanelGroups"), list)
@@ -4710,11 +4711,11 @@ class SmartPvSystems:
 
 @dataclass
 class SmartPvSystemSummary(DictLikeMixin):
-    """Real-time summary data for a specific PV system."""
+    """Represents a summary of a smart PV system."""
 
-    operational_status: str
-    operational_status_timestamp: datetime
-    steering_status: str
+    operational_status: SmartPvOperationalStatus
+    operational_status_timestamp: datetime | None
+    steering_status: SmartPvSteeringStatus
     total_bonus: float | None
     total_result: float | None
 
@@ -4722,9 +4723,9 @@ class SmartPvSystemSummary(DictLikeMixin):
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemSummary:
         payload = data.get("data", {}).get("smartPvSystemSummary") or data
         return cls(
-            operational_status=payload["operationalStatus"],
-            operational_status_timestamp=_parse_datetime(payload["operationalStatusTimestamp"]),
-            steering_status=payload["steeringStatus"],
+            operational_status=SmartPvOperationalStatus(payload["operationalStatus"]),
+            operational_status_timestamp=_parse_datetime(payload.get("operationalStatusTimestamp")),
+            steering_status=SmartPvSteeringStatus(payload["steeringStatus"]),
             total_bonus=_safe_float(payload.get("totalBonus")),
             total_result=_safe_float(payload.get("totalResult")),
         )
