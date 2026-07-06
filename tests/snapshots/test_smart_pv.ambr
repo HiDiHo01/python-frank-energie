@@ -33,7 +33,7 @@
           'is_fully_charged': False,
           'is_plugged_in': False,
           'last_updated': datetime.datetime(2026, 5, 28, 10, 53, 42, tzinfo=datetime.timezone.utc),
-          'power_delivery_state': 'UNPLUGGED',
+          'power_delivery_state': <PowerDeliveryState.UNPLUGGED: 'UNPLUGGED'>,
           'range': 173,
         }),
         'id': 'vehicle-123',
@@ -53,9 +53,9 @@
 # ---
 # name: test_smart_pv_system_summary
   dict({
-    'operational_status': 'OPERATIONAL',
+    'operational_status': <SmartPvOperationalStatus.OPERATIONAL: 'OPERATIONAL'>,
     'operational_status_timestamp': datetime.datetime(2026, 5, 28, 14, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')),
-    'steering_status': 'STEERING',
+    'steering_status': <SmartPvSteeringStatus.STEERING: 'STEERING'>,
     'total_bonus': 12.34,
     'total_result': None,
   })
@@ -75,11 +75,11 @@
           'SE123456',
         ]),
         'model': 'SE3000',
-        'onboarding_status': 'COMPLETED',
+        'onboarding_status': <SmartPvOnboardingStatus.COMPLETED: 'COMPLETED'>,
         'panel_groups': list([
         ]),
         'provider': 'SolarEdge',
-        'steering_status': 'ACTIVE',
+        'steering_status': <SmartPvSteeringStatus.ACTIVE: 'ACTIVE'>,
         'updated_at': datetime.datetime(2026, 5, 28, 12, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')),
       }),
     ]),

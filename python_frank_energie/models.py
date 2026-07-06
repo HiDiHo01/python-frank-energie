@@ -21,6 +21,17 @@ from dateutil.parser import parse
 from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, EmailStr
 
+from .domain import (
+    PowerDeliveryState,
+    ServiceStatus,
+    SessionStatus,
+    SmartBatteryImbalanceStrategy,
+    SmartBatteryMode,
+    SmartBatteryStatus,
+    SmartPvOnboardingStatus,
+    SmartPvOperationalStatus,
+    SmartPvSteeringStatus,
+)
 from .exceptions import AuthException, NoMarketPricesAvailableException, RequestException
 
 try:
@@ -904,7 +915,7 @@ class UserSites:
     propositionType: str | None
     reference: str
     segments: list[str]
-    status: str
+    status: ServiceStatus
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> UserSites:
@@ -937,8 +948,8 @@ class UserSites:
             lastMeterReadingDate=last_meter_reading_date,
             propositionType=first_site.get("propositionType"),
             reference=first_site.get("reference"),
-            segments=first_site.get("segments"),
-            status=first_site.get("status"),
+            segments=first_site.get("segments", []),
+            status=ServiceStatus(first_site.get("status")) if first_site.get("status") else ServiceStatus.UNKNOWN,
             deliverySites=[DeliverySite.from_dict(site) for site in user_sites] if "DeliverySite" in globals() else [],
         )
 
@@ -1478,8 +1489,8 @@ class Connection(DictLikeMixin):
     connectionId: str | None = None
     EAN: str | None = None
     segment: str | None = None
-    status: str | None = None
-    contractStatus: str | None = None
+    status: ServiceStatus | None = None
+    contractStatus: ServiceStatus | None = None
     estimatedFeedIn: float | None = None
     firstMeterReadingDate: str | None = None
     lastMeterReadingDate: str | None = None
@@ -1494,8 +1505,10 @@ class Connection(DictLikeMixin):
             connectionId=data.get("connectionId"),
             EAN=data.get("EAN"),
             segment=data.get("segment"),
-            status=data.get("status"),
-            contractStatus=data.get("contractStatus"),
+            status=ServiceStatus(data.get("status")) if data.get("status") else ServiceStatus.UNKNOWN,
+            contractStatus=ServiceStatus(data.get("contractStatus"))
+            if data.get("contractStatus")
+            else ServiceStatus.UNKNOWN,
             estimatedFeedIn=data.get("estimatedFeedIn"),
             firstMeterReadingDate=data.get("firstMeterReadingDate"),
             lastMeterReadingDate=data.get("lastMeterReadingDate"),
@@ -1599,7 +1612,7 @@ class activePaymentAuthorization:
     mandateId: str
     signedAt: str
     bankAccountNumber: str
-    status: str
+    status: ServiceStatus
 
     @staticmethod
     def from_dict(data: dict) -> activePaymentAuthorization:
@@ -1824,7 +1837,7 @@ class User:
     advancedPaymentAmount: float
     hasCO2Compensation: bool
     hasInviteLink: bool
-    status: str
+    status: ServiceStatus
     UserSettings: dict[str, object]
     PushNotificationPriceAlerts: list[object]
     # propositionType: str
@@ -1887,16 +1900,13 @@ class User:
             hasCO2Compensation=payload.get("hasCO2Compensation", False),
             treesCount=payload.get("treesCount", 0),
             friendsCount=payload.get("friendsCount", 0),
-            status=payload.get("status"),
+            status=ServiceStatus(payload["status"]) if payload.get("status") else ServiceStatus.UNKNOWN,
             websiteUrl=payload.get("websiteUrl"),
             customerSupportEmail=payload.get("customerSupportEmail"),
             UserSettings=payload.get("UserSettings", {}),
             PushNotificationPriceAlerts=payload.get("PushNotificationPriceAlerts", []),
             # propositionType=payload.get("deliverySites")[
             #     0].get("propositionType"),
-            # smartCharging=payload.get("deliverySites")[
-            #     0].get("smartCharging"),
-            # propositionType=first_site.get("propositionType"),
             smartCharging=payload.get("smartCharging", {}),
             smartTrading=payload.get("smartTrading", {}),
             smartHvac=SmartHvac.from_dict(payload.get("smartHvac")),
@@ -2333,7 +2343,7 @@ class ChargeState(DictLikeMixin):
     is_fully_charged: bool | None
     is_plugged_in: bool
     last_updated: datetime | None
-    power_delivery_state: str
+    power_delivery_state: PowerDeliveryState
     range: int | None
 
     @classmethod
@@ -2375,7 +2385,9 @@ class ChargeState(DictLikeMixin):
             is_fully_charged=bool(raw_is_fully_charged) if raw_is_fully_charged is not None else None,
             is_plugged_in=bool(data["isPluggedIn"]),
             last_updated=last_updated,
-            power_delivery_state=str(data["powerDeliveryState"]),
+            power_delivery_state=PowerDeliveryState(data["powerDeliveryState"])
+            if data.get("powerDeliveryState")
+            else PowerDeliveryState.UNKNOWN,
             range=int(raw_range) if raw_range is not None else None,
         )
 
@@ -3706,6 +3718,36 @@ class MarketPrices:
     #         self.energy_type = energy_type
 
     @classmethod
+    def _parse_prices(cls, prices_dict: dict[str, object], energy_country: str) -> MarketPrices:
+        electricity_raw = prices_dict.get("electricityPrices", [])
+        if not isinstance(electricity_raw, list):
+            _LOGGER.warning("electricityPrices is not a list: %s", type(electricity_raw))
+            electricity_raw = []
+
+        gas_raw = prices_dict.get("gasPrices", [])
+        if not isinstance(gas_raw, list):
+            _LOGGER.warning("gasPrices is not a list: %s", type(gas_raw))
+            gas_raw = []
+
+        if len(electricity_raw) == 0 and len(gas_raw) == 0:
+            _LOGGER.debug(
+                "Empty market prices response (electricity=%s, gas=%s)",
+                len(electricity_raw),
+                len(gas_raw),
+            )
+            return cls(
+                electricity=PriceData([], energy_type="electricity"),
+                gas=PriceData([], energy_type="gas"),
+                energy_country=energy_country,
+            )
+
+        return cls(
+            electricity=PriceData(electricity_raw, energy_type="electricity"),
+            gas=PriceData(gas_raw, energy_type="gas"),
+            energy_country=energy_country,
+        )
+
+    @classmethod
     def from_dict(cls, data: dict[str, object]) -> MarketPrices:
         """Parse the response from the marketPrices query."""
         energy_country = "NL"
@@ -3734,34 +3776,7 @@ class MarketPrices:
 
         _LOGGER.debug("Market Prices payload: %s", market_prices)
 
-        # --- Electricity ---
-        electricity_raw = market_prices.get("electricityPrices", [])
-        if not isinstance(electricity_raw, list):
-            _LOGGER.warning("electricityPrices is not a list: %s", type(electricity_raw))
-            electricity_raw = []
-
-        # --- Gas ---
-        gas_raw = market_prices.get("gasPrices", [])
-        if not isinstance(gas_raw, list):
-            _LOGGER.warning("gasPrices is not a list: %s", type(gas_raw))
-            gas_raw = []
-
-        if len(electricity_raw) == 0 and len(gas_raw) == 0:
-            _LOGGER.debug(
-                "Empty BE market prices response (electricity=%s, gas=%s)",
-                len(electricity_raw),
-                len(gas_raw),
-            )
-            return cls(
-                electricity=PriceData([], energy_type="electricity"),
-                gas=PriceData([], energy_type="gas"),
-                energy_country=energy_country,
-            )
-
-        electricity_price_data = PriceData(electricity_raw, energy_type="electricity")
-        gas_price_data = PriceData(gas_raw, energy_type="gas")
-
-        return cls(electricity=electricity_price_data, gas=gas_price_data, energy_country=energy_country)
+        return cls._parse_prices(market_prices, energy_country)
 
     @classmethod
     def from_be_dict(cls, data: dict[str, object]) -> MarketPrices:
@@ -3812,35 +3827,7 @@ class MarketPrices:
 
         _LOGGER.debug("BE Market Prices payload: %s", market_prices)
 
-        electricity_raw = market_prices.get("electricityPrices", [])
-
-        if not isinstance(electricity_raw, list):
-            _LOGGER.warning("electricityPrices is not a list: %s", type(electricity_raw))
-            electricity_raw = []
-
-        gas_raw = market_prices.get("gasPrices", [])
-
-        if not isinstance(gas_raw, list):
-            _LOGGER.warning("gasPrices is not a list: %s", type(gas_raw))
-            gas_raw = []
-
-        if len(electricity_raw) == 0 and len(gas_raw) == 0:
-            _LOGGER.debug(
-                "Empty BE market prices response (electricity=%s, gas=%s)",
-                len(electricity_raw),
-                len(gas_raw),
-            )
-            return cls(
-                electricity=PriceData([], energy_type="electricity"),
-                gas=PriceData([], energy_type="gas"),
-                energy_country=energy_country,
-            )
-
-        # Construct PriceData for electricity and gas similarly to other methods
-        electricity_price_data = PriceData(electricity_raw, energy_type="electricity")
-        gas_price_data = PriceData(gas_raw, energy_type="gas")
-
-        return cls(electricity=electricity_price_data, gas=gas_price_data, energy_country=energy_country)
+        return cls._parse_prices(market_prices, energy_country)
 
     @classmethod
     def from_userprices_dict(cls, data: dict[str, object], energy_country: str) -> MarketPrices:
@@ -3912,38 +3899,6 @@ class MarketPrices:
         return default
 
 
-@dataclass
-class Session:
-    """A trading session for a battery."""
-
-    date: datetime
-    status: str
-    # trading_result: float
-    trade_index: int | None
-    result: float
-    cumulative_result: float
-    cumulative_trading_result: float
-
-    @staticmethod
-    def from_dict(payload: dict[str, object]) -> SmartBatterySessions.Session:
-        """Parse the sessions payload from the SmartBatterySessions query result."""
-        _LOGGER.debug("Parsing SmartBatterySessions.Session response: %s", payload)
-
-        try:
-            return SmartBatterySessions.Session(
-                date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
-                status=str(payload["status"]),
-                trade_index=payload.get("tradeIndex"),
-                result=_safe_float(payload["result"]),
-                cumulative_result=_safe_float(payload["cumulativeResult"]),
-                cumulative_trading_result=_safe_float(payload["cumulativeTradingResult"]),
-            )
-        except KeyError as exc:
-            raise RequestException(f"Missing expected field in session: {exc}") from exc
-        except ValueError as exc:
-            raise RequestException(f"Invalid data format in session payload: {exc}") from exc
-
-
 # @dataclass
 @dataclass(slots=True)
 class SmartBatteries:
@@ -4006,11 +3961,11 @@ class SmartBatteries:
 class SmartBatterySettings:
     """Configuration settings for a smart battery."""
 
-    battery_mode: str | None = None
-    created_at: datetime | None = None
-    imbalance_trading_strategy: str | None = None
+    battery_mode: SmartBatteryMode | None = None
+    imbalance_trading_strategy: SmartBatteryImbalanceStrategy | None = None
     self_consumption_trading_allowed: bool | None = None
     self_consumption_trading_threshold_price: float | None = None
+    created_at: datetime | None = None
     updated_at: datetime | None = None
 
     @classmethod
@@ -4032,9 +3987,11 @@ class SmartBatterySettings:
             return None
 
         return cls(
-            battery_mode=(str(data["batteryMode"]) if data.get("batteryMode") is not None else None),
+            battery_mode=SmartBatteryMode(data["batteryMode"]) if data.get("batteryMode") else None,
             imbalance_trading_strategy=(
-                str(data["imbalanceTradingStrategy"]) if data.get("imbalanceTradingStrategy") is not None else None
+                SmartBatteryImbalanceStrategy(data["imbalanceTradingStrategy"])
+                if data.get("imbalanceTradingStrategy")
+                else None
             ),
             self_consumption_trading_allowed=(
                 bool(data["selfConsumptionTradingAllowed"])
@@ -4060,7 +4017,7 @@ class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
 
     last_known_state_of_charge: int
-    last_known_status: str
+    last_known_status: SmartBatteryStatus
     last_update: datetime
     total_result: float
 
@@ -4085,7 +4042,9 @@ class SmartBatterySummary:
 
         return cls(
             last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
-            last_known_status=data.get("lastKnownStatus", ""),
+            last_known_status=SmartBatteryStatus(data["lastKnownStatus"])
+            if data.get("lastKnownStatus")
+            else SmartBatteryStatus.UNKNOWN,
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
         )
@@ -4183,7 +4142,7 @@ class SmartBatterySession:
     date: date
     cumulative_result: float | None
     result: float | None
-    status: str
+    status: SessionStatus
     trade_index: int | None = None
 
     @staticmethod
@@ -4195,7 +4154,7 @@ class SmartBatterySession:
                 date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
                 cumulative_result=_safe_float(payload.get("cumulativeResult")),
                 result=_safe_float(payload.get("result")),
-                status=payload["status"],
+                status=SessionStatus(payload["status"]) if payload.get("status") else SessionStatus.UNKNOWN,
                 trade_index=payload.get("tradeIndex"),
             )
         except KeyError as exc:
@@ -4298,8 +4257,12 @@ class SmartBatteryDetails:
             settings_data = {}
 
         smart_battery_settings = SmartBatterySettings(
-            battery_mode=settings_data.get("batteryMode", ""),
-            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
+            battery_mode=SmartBatteryMode(settings_data["batteryMode"])
+            if settings_data.get("batteryMode")
+            else SmartBatteryMode.UNKNOWN,
+            imbalance_trading_strategy=SmartBatteryImbalanceStrategy(settings_data["imbalanceTradingStrategy"])
+            if settings_data.get("imbalanceTradingStrategy")
+            else SmartBatteryImbalanceStrategy.UNKNOWN,
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
             self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
         )
@@ -4313,77 +4276,6 @@ class SmartBatteryDetails:
 
         summary_data = data.get("smartBatterySummary", {})
         # last_update = datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
-
-        smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
-
-        return SmartBatteryDetails(smart_battery=smart_battery, smart_battery_summary=smart_battery_summary)
-
-
-@dataclass
-class old_SmartBatteryDetails:
-    """Complete smart battery data including configuration and summary."""
-
-    smart_battery: SmartBattery
-    smart_battery_summary: SmartBatterySummary
-    # smart_battery_settings: SmartBatterySettings | None = None
-
-    @staticmethod
-    def from_dict(data: dict[str, Any]) -> SmartBatteryDetails:
-        """Parse SmartBatteryDetails from a raw dictionary."""
-
-        sb_data = data.get("smartBattery", {})
-
-        if not sb_data:
-            raise ValueError("No smart battery data found")
-
-        _LOGGER.debug("SmartBatteryDetails %s", sb_data)
-
-        settings_data = sb_data.get("settings", {})
-        _LOGGER.debug("SmartBatterySettings %s", settings_data)
-        if not settings_data:
-            _LOGGER.warning("No settings data found in smart battery data")
-            settings_data = {}
-
-        smart_battery_settings = SmartBatterySettings(
-            battery_mode=settings_data.get("batteryMode", ""),
-            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
-            self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
-            self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
-        )
-
-        created_at_str = sb_data.get("createdAt")
-        updated_at_str = sb_data.get("updatedAt")
-        created_at_str = sb_data.get("created_at")
-        updated_at_str = sb_data.get("updated_at")
-        _LOGGER.debug("createdAttttt: %s, updatedAt: %s", created_at_str, updated_at_str)
-
-        try:
-            created_at = datetime.fromisoformat(created_at_str).astimezone(UTC) if created_at_str else None
-        except Exception:
-            _LOGGER.warning("Invalid or missing 'createdAt' in smart battery data: %s", created_at_str)
-            created_at = None
-
-        try:
-            updated_at = datetime.fromisoformat(updated_at_str).astimezone(UTC) if updated_at_str else None
-        except Exception:
-            _LOGGER.warning("Invalid or missing 'updatedAt' in smart battery data: %s", updated_at_str)
-            updated_at = None
-
-        smart_battery = SmartBattery(
-            brand=sb_data.get("brand", ""),
-            capacity=sb_data.get("capacity", 0.0),
-            external_reference=sb_data.get("externalReference", ""),
-            id=sb_data.get("id", ""),
-            settings=smart_battery_settings,
-            max_charge_power=sb_data.get("maxChargePower", 0.0),
-            max_discharge_power=sb_data.get("maxDischargePower", 0.0),
-            provider=sb_data.get("provider", ""),
-            updated_at=updated_at,
-            created_at=created_at,
-            sessions=[SmartBatterySession.from_dict(session) for session in sb_data.get("sessions", [])],
-        )
-
-        summary_data = data.get("smartBatterySummary", {})
 
         smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
 
@@ -4643,9 +4535,9 @@ class SmartPvSystem(DictLikeMixin):
     external_reference: str
     inverter_serial_numbers: list[str]
     model: str | None
-    onboarding_status: str
+    onboarding_status: SmartPvOnboardingStatus
     provider: str
-    steering_status: str
+    steering_status: SmartPvSteeringStatus
     updated_at: datetime
     panel_groups: list[SmartPvSystemPanelGroup]
 
@@ -4661,9 +4553,9 @@ class SmartPvSystem(DictLikeMixin):
             external_reference=data["externalReference"],
             inverter_serial_numbers=data.get("inverterSerialNumbers") or [],
             model=data.get("model"),
-            onboarding_status=data["onboardingStatus"],
+            onboarding_status=SmartPvOnboardingStatus(data["onboardingStatus"]),
             provider=data["provider"],
-            steering_status=data["steeringStatus"],
+            steering_status=SmartPvSteeringStatus(data["steeringStatus"]),
             updated_at=_parse_datetime(data["updatedAt"]),
             panel_groups=[SmartPvSystemPanelGroup.from_dict(v) for v in data.get("SmartPvSystemPanelGroups", [])]
             if isinstance(data.get("SmartPvSystemPanelGroups"), list)
@@ -4706,11 +4598,11 @@ class SmartPvSystems:
 
 @dataclass
 class SmartPvSystemSummary(DictLikeMixin):
-    """Real-time summary data for a specific PV system."""
+    """Represents a summary of a smart PV system."""
 
-    operational_status: str
-    operational_status_timestamp: datetime
-    steering_status: str
+    operational_status: SmartPvOperationalStatus
+    operational_status_timestamp: datetime | None
+    steering_status: SmartPvSteeringStatus
     total_bonus: float | None
     total_result: float | None
 
@@ -4718,9 +4610,9 @@ class SmartPvSystemSummary(DictLikeMixin):
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemSummary:
         payload = data.get("data", {}).get("smartPvSystemSummary") or data
         return cls(
-            operational_status=payload["operationalStatus"],
-            operational_status_timestamp=_parse_datetime(payload["operationalStatusTimestamp"]),
-            steering_status=payload["steeringStatus"],
+            operational_status=SmartPvOperationalStatus(payload["operationalStatus"]),
+            operational_status_timestamp=_parse_datetime(payload.get("operationalStatusTimestamp")),
+            steering_status=SmartPvSteeringStatus(payload["steeringStatus"]),
             total_bonus=_safe_float(payload.get("totalBonus")),
             total_result=_safe_float(payload.get("totalResult")),
         )
@@ -4786,7 +4678,7 @@ class FeedInSession(DictLikeMixin):
     bonus: float
     cumulative_bonus: float
     date: str
-    status: str
+    status: SessionStatus
     volume: float
 
     @classmethod
@@ -4795,7 +4687,7 @@ class FeedInSession(DictLikeMixin):
             bonus=_safe_float(data.get("bonus"), default=0.0),
             cumulative_bonus=_safe_float(data.get("cumulativeBonus"), default=0.0),
             date=data["date"],
-            status=data["status"],
+            status=SessionStatus(data["status"]) if data.get("status") else SessionStatus.UNKNOWN,
             volume=_safe_float(data.get("volume"), default=0.0),
         )
 
