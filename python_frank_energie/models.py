@@ -3855,13 +3855,8 @@ class MarketPrices:
 
         error = cls._extract_error(data, None)
         if error:
-            if "No marketprices found" in error:
-                _LOGGER.debug("No user prices available yet: %s", error)
-                return cls(
-                    electricity=PriceData([], "electricity"),
-                    gas=PriceData([], "gas"),
-                    energy_country=energy_country,
-                )
+            if isinstance(error, str) and error.startswith("No marketprices found"):
+                raise NoMarketPricesAvailableException(error)
             raise RequestException(error)
 
         if data.get("errors"):
