@@ -33,7 +33,7 @@
           'is_fully_charged': False,
           'is_plugged_in': False,
           'last_updated': datetime.datetime(2026, 5, 28, 10, 53, 42, tzinfo=datetime.timezone.utc),
-          'power_delivery_state': 'UNPLUGGED',
+          'power_delivery_state': <PowerDeliveryState.UNPLUGGED: 'UNPLUGGED'>,
           'range': 173,
         }),
         'id': 'vehicle-123',

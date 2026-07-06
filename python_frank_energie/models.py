@@ -27,6 +27,7 @@ from .domain import (
     SessionStatus,
     SmartBatteryImbalanceStrategy,
     SmartBatteryMode,
+    SmartBatteryStatus,
     SmartPvOnboardingStatus,
     SmartPvOperationalStatus,
     SmartPvSteeringStatus,
@@ -913,7 +914,7 @@ class UserSites:
     propositionType: str | None
     reference: str
     segments: list[str]
-    status: str
+    status: ServiceStatus
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> UserSites:
@@ -946,8 +947,8 @@ class UserSites:
             lastMeterReadingDate=last_meter_reading_date,
             propositionType=first_site.get("propositionType"),
             reference=first_site.get("reference"),
-            segments=first_site.get("segments"),
-            status=first_site.get("status"),
+            segments=first_site.get("segments", []),
+            status=ServiceStatus(first_site.get("status")) if first_site.get("status") else ServiceStatus.UNKNOWN,
             deliverySites=[DeliverySite.from_dict(site) for site in user_sites] if "DeliverySite" in globals() else [],
         )
 
@@ -1487,8 +1488,8 @@ class Connection(DictLikeMixin):
     connectionId: str | None = None
     EAN: str | None = None
     segment: str | None = None
-    status: str | None = None
-    contractStatus: str | None = None
+    status: ServiceStatus | None = None
+    contractStatus: ServiceStatus | None = None
     estimatedFeedIn: float | None = None
     firstMeterReadingDate: str | None = None
     lastMeterReadingDate: str | None = None
@@ -1503,8 +1504,10 @@ class Connection(DictLikeMixin):
             connectionId=data.get("connectionId"),
             EAN=data.get("EAN"),
             segment=data.get("segment"),
-            status=data.get("status"),
-            contractStatus=data.get("contractStatus"),
+            status=ServiceStatus(data.get("status")) if data.get("status") else ServiceStatus.UNKNOWN,
+            contractStatus=ServiceStatus(data.get("contractStatus"))
+            if data.get("contractStatus")
+            else ServiceStatus.UNKNOWN,
             estimatedFeedIn=data.get("estimatedFeedIn"),
             firstMeterReadingDate=data.get("firstMeterReadingDate"),
             lastMeterReadingDate=data.get("lastMeterReadingDate"),
@@ -4077,7 +4080,7 @@ class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
 
     last_known_state_of_charge: int
-    last_known_status: ServiceStatus
+    last_known_status: SmartBatteryStatus
     last_update: datetime
     total_result: float
 
@@ -4102,9 +4105,9 @@ class SmartBatterySummary:
 
         return cls(
             last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
-            last_known_status=ServiceStatus(data["lastKnownStatus"])
+            last_known_status=SmartBatteryStatus(data["lastKnownStatus"])
             if data.get("lastKnownStatus")
-            else ServiceStatus.UNKNOWN,
+            else SmartBatteryStatus.UNKNOWN,
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
         )
