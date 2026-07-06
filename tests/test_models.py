@@ -6,7 +6,7 @@ import pytest
 from freezegun import freeze_time
 from syrupy.assertion import SnapshotAssertion
 
-from python_frank_energie.exceptions import AuthException, RequestException
+from python_frank_energie.exceptions import AuthException, NoMarketPricesAvailableException, RequestException
 from python_frank_energie.models import (
     Authentication,
     ChargeState,
@@ -382,6 +382,26 @@ def test_market_prices_error_message():
         MarketPrices.from_dict({"errors": [{"message": "help me"}]})
 
     assert "help me" in str(excinfo.value)
+
+
+def test_market_prices_no_market_prices_available_nl():
+    """Test MarketPrices.from_dict raises NoMarketPricesAvailableException for NL 'No marketprices found' errors."""
+    with pytest.raises(NoMarketPricesAvailableException) as excinfo:
+        MarketPrices.from_dict(
+            {"errors": [{"message": "No marketprices found for segment ELECTRICITY for 2026-07-02"}]}
+        )
+
+    assert "No marketprices found" in str(excinfo.value)
+
+
+def test_market_prices_no_market_prices_available_be():
+    """Test MarketPrices.from_be_dict raises NoMarketPricesAvailableException for BE 'No marketprices found' errors."""
+    with pytest.raises(NoMarketPricesAvailableException) as excinfo:
+        MarketPrices.from_be_dict(
+            {"errors": [{"message": "No marketprices found for segment ELECTRICITY for 2026-07-02"}]}
+        )
+
+    assert "No marketprices found" in str(excinfo.value)
 
 
 @freeze_time("2022-11-21 14:15:00")

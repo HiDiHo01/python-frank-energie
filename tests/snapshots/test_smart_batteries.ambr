@@ -1,0 +1,51 @@
+# serializer version: 1
+# name: test_smart_batteries
+  dict({
+    'batteries': list([
+      dict({
+        'brand': 'SESSY',
+        'capacity': 5.2,
+        'created_at': datetime.datetime(2024, 4, 30, 13, 33, 42, 776000, tzinfo=datetime.timezone.utc),
+        'external_reference': 'SESSYREF',
+        'id': 'unique_identifier',
+        'max_charge_power': 2.2,
+        'max_discharge_power': 1.7,
+        'provider': 'SESSY',
+        'settings': None,
+        'summary': None,
+        'updated_at': datetime.datetime(2024, 5, 29, 8, 55, 58, 270000, tzinfo=datetime.timezone.utc),
+      }),
+    ]),
+  })
+# ---
+# name: test_smart_battery_sessions
+  dict({
+    'device_id': 'unique_identifier',
+    'fairuse_policy_verified': False,
+    'period_end_date': datetime.datetime(2024, 5, 29, 0, 0, tzinfo=datetime.timezone.utc),
+    'period_epex_result': -0.21519632966271895,
+    'period_frank_slim': 4.2922058666628,
+    'period_imbalance_result': 13.421063394322234,
+    'period_start_date': datetime.datetime(2024, 5, 1, 0, 0, tzinfo=datetime.timezone.utc),
+    'period_total_result': 17.498072931322316,
+    'period_trade_index': 5,
+    'period_trading_result': 26.17683031883334,
+    'sessions': list([
+      dict({
+        'cumulative_result': 1.608739184750002,
+        'date': datetime.datetime(2024, 4, 30, 22, 0, tzinfo=datetime.timezone.utc),
+        'result': 1.608739184750002,
+        'status': 'COMPLETED',
+        'trade_index': None,
+      }),
+      dict({
+        'cumulative_result': 1.9284529955000018,
+        'date': datetime.datetime(2024, 5, 1, 22, 0, tzinfo=datetime.timezone.utc),
+        'result': 0.3197138107499999,
+        'status': 'COMPLETED',
+        'trade_index': None,
+      }),
+    ]),
+    'trading_result': None,
+  })
+# ---
