@@ -46,6 +46,7 @@ DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
+_ERROR_NO_MARKET_PRICES = "No marketprices found"
 
 
 def _safe_float(val: Any, precision: int | None = None, default: float | None = None) -> float | None:
@@ -3728,7 +3729,7 @@ class MarketPrices:
             first = errors[0]
             message = first.get("message") if isinstance(first, dict) else None
 
-            if isinstance(message, str) and message.startswith("No marketprices found"):
+            if isinstance(message, str) and message.startswith(_ERROR_NO_MARKET_PRICES):
                 raise NoMarketPricesAvailableException(message)
 
             raise RequestException(str(message) if message else "Unknown error")
@@ -3805,7 +3806,7 @@ class MarketPrices:
         if data.get("errors"):
             error = cls._extract_error(data, "Unknown API error")
 
-            if error.startswith("No marketprices found"):
+            if error.startswith(_ERROR_NO_MARKET_PRICES):
                 raise NoMarketPricesAvailableException(error)
 
             raise RequestException(error)
@@ -3867,7 +3868,7 @@ class MarketPrices:
 
         error = cls._extract_error(data, None)
         if error:
-            if isinstance(error, str) and error.startswith("No marketprices found"):
+            if isinstance(error, str) and error.startswith(_ERROR_NO_MARKET_PRICES):
                 raise NoMarketPricesAvailableException(error)
             raise RequestException(error)
 
