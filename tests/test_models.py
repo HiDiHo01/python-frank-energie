@@ -695,4 +695,4 @@ def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values(
 
     assert settings.battery_mode is SmartBatteryMode.UNKNOWN
     assert settings.imbalance_trading_strategy is SmartBatteryImbalanceStrategy.UNKNOWN
-    assert settings.self_consumption_trading_threshold_price == 0.25
+    assert settings.self_consumption_trading_threshold_price == pytest.approx(0.25)
