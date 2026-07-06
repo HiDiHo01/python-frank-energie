@@ -1,4 +1,5 @@
 import pytest
+
 from python_frank_energie.domain import (
     PowerDeliveryState,
     ServiceStatus,
