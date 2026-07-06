@@ -21,8 +21,17 @@ from dateutil.parser import parse
 from jwt.exceptions import InvalidTokenError
 from pydantic import BaseModel, EmailStr
 
+from .domain import (
+    PowerDeliveryState,
+    ServiceStatus,
+    SessionStatus,
+    SmartBatteryImbalanceStrategy,
+    SmartBatteryMode,
+    SmartPvOnboardingStatus,
+    SmartPvOperationalStatus,
+    SmartPvSteeringStatus,
+)
 from .exceptions import AuthException, NoMarketPricesAvailableException, RequestException
-from .domain import SmartPvOperationalStatus, SmartPvSteeringStatus, SmartPvOnboardingStatus
 
 try:
     from .time_periods import TimePeriod
@@ -1599,7 +1608,7 @@ class activePaymentAuthorization:
     mandateId: str
     signedAt: str
     bankAccountNumber: str
-    status: str
+    status: ServiceStatus
 
     @staticmethod
     def from_dict(data: dict) -> activePaymentAuthorization:
@@ -1824,7 +1833,7 @@ class User:
     advancedPaymentAmount: float
     hasCO2Compensation: bool
     hasInviteLink: bool
-    status: str
+    status: ServiceStatus
     UserSettings: dict[str, object]
     PushNotificationPriceAlerts: list[object]
     # propositionType: str
@@ -1887,16 +1896,13 @@ class User:
             hasCO2Compensation=payload.get("hasCO2Compensation", False),
             treesCount=payload.get("treesCount", 0),
             friendsCount=payload.get("friendsCount", 0),
-            status=payload.get("status"),
+            status=ServiceStatus(payload["status"]) if payload.get("status") else ServiceStatus.UNKNOWN,
             websiteUrl=payload.get("websiteUrl"),
             customerSupportEmail=payload.get("customerSupportEmail"),
             UserSettings=payload.get("UserSettings", {}),
             PushNotificationPriceAlerts=payload.get("PushNotificationPriceAlerts", []),
             # propositionType=payload.get("deliverySites")[
             #     0].get("propositionType"),
-            # smartCharging=payload.get("deliverySites")[
-            #     0].get("smartCharging"),
-            # propositionType=first_site.get("propositionType"),
             smartCharging=payload.get("smartCharging", {}),
             smartTrading=payload.get("smartTrading", {}),
             smartHvac=SmartHvac.from_dict(payload.get("smartHvac")),
@@ -2333,7 +2339,7 @@ class ChargeState(DictLikeMixin):
     is_fully_charged: bool | None
     is_plugged_in: bool
     last_updated: datetime | None
-    power_delivery_state: str
+    power_delivery_state: PowerDeliveryState
     range: int | None
 
     @classmethod
@@ -2375,7 +2381,9 @@ class ChargeState(DictLikeMixin):
             is_fully_charged=bool(raw_is_fully_charged) if raw_is_fully_charged is not None else None,
             is_plugged_in=bool(data["isPluggedIn"]),
             last_updated=last_updated,
-            power_delivery_state=str(data["powerDeliveryState"]),
+            power_delivery_state=PowerDeliveryState(data["powerDeliveryState"])
+            if data.get("powerDeliveryState")
+            else PowerDeliveryState.UNKNOWN,
             range=int(raw_range) if raw_range is not None else None,
         )
 
@@ -3922,7 +3930,7 @@ class Session:
     """A trading session for a battery."""
 
     date: datetime
-    status: str
+    status: SessionStatus
     # trading_result: float
     trade_index: int | None
     result: float
@@ -3937,7 +3945,9 @@ class Session:
         try:
             return SmartBatterySessions.Session(
                 date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
-                status=str(payload["status"]),
+                source=payload["source"],
+                status=SessionStatus(payload["status"]) if payload.get("status") else SessionStatus.UNKNOWN,
+                type=payload["type"],
                 trade_index=payload.get("tradeIndex"),
                 result=_safe_float(payload["result"]),
                 cumulative_result=_safe_float(payload["cumulativeResult"]),
@@ -4011,11 +4021,11 @@ class SmartBatteries:
 class SmartBatterySettings:
     """Configuration settings for a smart battery."""
 
-    battery_mode: str | None = None
-    created_at: datetime | None = None
-    imbalance_trading_strategy: str | None = None
+    battery_mode: SmartBatteryMode | None = None
+    imbalance_trading_strategy: SmartBatteryImbalanceStrategy | None = None
     self_consumption_trading_allowed: bool | None = None
     self_consumption_trading_threshold_price: float | None = None
+    created_at: datetime | None = None
     updated_at: datetime | None = None
 
     @classmethod
@@ -4037,9 +4047,11 @@ class SmartBatterySettings:
             return None
 
         return cls(
-            battery_mode=(str(data["batteryMode"]) if data.get("batteryMode") is not None else None),
+            battery_mode=SmartBatteryMode(data["batteryMode"]) if data.get("batteryMode") else None,
             imbalance_trading_strategy=(
-                str(data["imbalanceTradingStrategy"]) if data.get("imbalanceTradingStrategy") is not None else None
+                SmartBatteryImbalanceStrategy(data["imbalanceTradingStrategy"])
+                if data.get("imbalanceTradingStrategy")
+                else None
             ),
             self_consumption_trading_allowed=(
                 bool(data["selfConsumptionTradingAllowed"])
@@ -4065,7 +4077,7 @@ class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
 
     last_known_state_of_charge: int
-    last_known_status: str
+    last_known_status: ServiceStatus
     last_update: datetime
     total_result: float
 
@@ -4090,7 +4102,9 @@ class SmartBatterySummary:
 
         return cls(
             last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
-            last_known_status=data.get("lastKnownStatus", ""),
+            last_known_status=ServiceStatus(data["lastKnownStatus"])
+            if data.get("lastKnownStatus")
+            else ServiceStatus.UNKNOWN,
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
         )
@@ -4188,7 +4202,7 @@ class SmartBatterySession:
     date: date
     cumulative_result: float | None
     result: float | None
-    status: str
+    status: SessionStatus
     trade_index: int | None = None
 
     @staticmethod
@@ -4200,7 +4214,7 @@ class SmartBatterySession:
                 date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
                 cumulative_result=_safe_float(payload.get("cumulativeResult")),
                 result=_safe_float(payload.get("result")),
-                status=payload["status"],
+                status=SessionStatus(payload["status"]) if payload.get("status") else SessionStatus.UNKNOWN,
                 trade_index=payload.get("tradeIndex"),
             )
         except KeyError as exc:
@@ -4303,8 +4317,12 @@ class SmartBatteryDetails:
             settings_data = {}
 
         smart_battery_settings = SmartBatterySettings(
-            battery_mode=settings_data.get("batteryMode", ""),
-            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
+            battery_mode=SmartBatteryMode(settings_data["batteryMode"])
+            if settings_data.get("batteryMode")
+            else SmartBatteryMode.UNKNOWN,
+            imbalance_trading_strategy=SmartBatteryImbalanceStrategy(settings_data["imbalanceTradingStrategy"])
+            if settings_data.get("imbalanceTradingStrategy")
+            else SmartBatteryImbalanceStrategy.UNKNOWN,
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
             self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
         )
@@ -4350,8 +4368,12 @@ class old_SmartBatteryDetails:
             settings_data = {}
 
         smart_battery_settings = SmartBatterySettings(
-            battery_mode=settings_data.get("batteryMode", ""),
-            imbalance_trading_strategy=settings_data.get("imbalanceTradingStrategy", ""),
+            battery_mode=SmartBatteryMode(settings_data["batteryMode"])
+            if settings_data.get("batteryMode")
+            else SmartBatteryMode.UNKNOWN,
+            imbalance_trading_strategy=SmartBatteryImbalanceStrategy(settings_data["imbalanceTradingStrategy"])
+            if settings_data.get("imbalanceTradingStrategy")
+            else SmartBatteryImbalanceStrategy.UNKNOWN,
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
             self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
         )
@@ -4791,7 +4813,7 @@ class FeedInSession(DictLikeMixin):
     bonus: float
     cumulative_bonus: float
     date: str
-    status: str
+    status: SessionStatus
     volume: float
 
     @classmethod
@@ -4800,7 +4822,7 @@ class FeedInSession(DictLikeMixin):
             bonus=_safe_float(data.get("bonus"), default=0.0),
             cumulative_bonus=_safe_float(data.get("cumulativeBonus"), default=0.0),
             date=data["date"],
-            status=data["status"],
+            status=SessionStatus(data["status"]) if data.get("status") else SessionStatus.UNKNOWN,
             volume=_safe_float(data.get("volume"), default=0.0),
         )
 
