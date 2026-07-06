@@ -9,6 +9,7 @@ from syrupy.assertion import SnapshotAssertion
 from python_frank_energie.exceptions import AuthException, NoMarketPricesAvailableException, RequestException
 from python_frank_energie.models import (
     Authentication,
+    SmartBatterySettings,
     ChargeState,
     Connection,
     EnergyCategory,
@@ -679,3 +680,19 @@ class TestEnergyCategory:
         assert category.usage_total is None
         assert category.costs_total is None
         assert category.unit == "KWH"
+
+from python_frank_energie.domain import SmartBatteryMode, SmartBatteryImbalanceStrategy
+
+def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values() -> None:
+    """SmartBatterySettings.from_dict should defensively map unexpected upstream enum values to UNKNOWN."""
+    raw = {
+        "batteryMode": "WRONG_MODE",
+        "imbalanceTradingStrategy": "WRONG_STRATEGY",
+        "selfConsumptionTradingThresholdPrice": 0.25,
+    }
+
+    settings = SmartBatterySettings.from_dict(raw)
+
+    assert settings.battery_mode is SmartBatteryMode.UNKNOWN
+    assert settings.imbalance_trading_strategy is SmartBatteryImbalanceStrategy.UNKNOWN
+    assert settings.self_consumption_trading_threshold_price == 0.25
