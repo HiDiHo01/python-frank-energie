@@ -3718,6 +3718,36 @@ class MarketPrices:
     #         self.energy_type = energy_type
 
     @classmethod
+    def _parse_prices(cls, prices_dict: dict[str, object], energy_country: str) -> MarketPrices:
+        electricity_raw = prices_dict.get("electricityPrices", [])
+        if not isinstance(electricity_raw, list):
+            _LOGGER.warning("electricityPrices is not a list: %s", type(electricity_raw))
+            electricity_raw = []
+
+        gas_raw = prices_dict.get("gasPrices", [])
+        if not isinstance(gas_raw, list):
+            _LOGGER.warning("gasPrices is not a list: %s", type(gas_raw))
+            gas_raw = []
+
+        if len(electricity_raw) == 0 and len(gas_raw) == 0:
+            _LOGGER.debug(
+                "Empty market prices response (electricity=%s, gas=%s)",
+                len(electricity_raw),
+                len(gas_raw),
+            )
+            return cls(
+                electricity=PriceData([], energy_type="electricity"),
+                gas=PriceData([], energy_type="gas"),
+                energy_country=energy_country,
+            )
+
+        return cls(
+            electricity=PriceData(electricity_raw, energy_type="electricity"),
+            gas=PriceData(gas_raw, energy_type="gas"),
+            energy_country=energy_country,
+        )
+
+    @classmethod
     def from_dict(cls, data: dict[str, object]) -> MarketPrices:
         """Parse the response from the marketPrices query."""
         energy_country = "NL"
@@ -3746,34 +3776,7 @@ class MarketPrices:
 
         _LOGGER.debug("Market Prices payload: %s", market_prices)
 
-        # --- Electricity ---
-        electricity_raw = market_prices.get("electricityPrices", [])
-        if not isinstance(electricity_raw, list):
-            _LOGGER.warning("electricityPrices is not a list: %s", type(electricity_raw))
-            electricity_raw = []
-
-        # --- Gas ---
-        gas_raw = market_prices.get("gasPrices", [])
-        if not isinstance(gas_raw, list):
-            _LOGGER.warning("gasPrices is not a list: %s", type(gas_raw))
-            gas_raw = []
-
-        if len(electricity_raw) == 0 and len(gas_raw) == 0:
-            _LOGGER.debug(
-                "Empty BE market prices response (electricity=%s, gas=%s)",
-                len(electricity_raw),
-                len(gas_raw),
-            )
-            return cls(
-                electricity=PriceData([], energy_type="electricity"),
-                gas=PriceData([], energy_type="gas"),
-                energy_country=energy_country,
-            )
-
-        electricity_price_data = PriceData(electricity_raw, energy_type="electricity")
-        gas_price_data = PriceData(gas_raw, energy_type="gas")
-
-        return cls(electricity=electricity_price_data, gas=gas_price_data, energy_country=energy_country)
+        return cls._parse_prices(market_prices, energy_country)
 
     @classmethod
     def from_be_dict(cls, data: dict[str, object]) -> MarketPrices:
@@ -3824,35 +3827,7 @@ class MarketPrices:
 
         _LOGGER.debug("BE Market Prices payload: %s", market_prices)
 
-        electricity_raw = market_prices.get("electricityPrices", [])
-
-        if not isinstance(electricity_raw, list):
-            _LOGGER.warning("electricityPrices is not a list: %s", type(electricity_raw))
-            electricity_raw = []
-
-        gas_raw = market_prices.get("gasPrices", [])
-
-        if not isinstance(gas_raw, list):
-            _LOGGER.warning("gasPrices is not a list: %s", type(gas_raw))
-            gas_raw = []
-
-        if len(electricity_raw) == 0 and len(gas_raw) == 0:
-            _LOGGER.debug(
-                "Empty BE market prices response (electricity=%s, gas=%s)",
-                len(electricity_raw),
-                len(gas_raw),
-            )
-            return cls(
-                electricity=PriceData([], energy_type="electricity"),
-                gas=PriceData([], energy_type="gas"),
-                energy_country=energy_country,
-            )
-
-        # Construct PriceData for electricity and gas similarly to other methods
-        electricity_price_data = PriceData(electricity_raw, energy_type="electricity")
-        gas_price_data = PriceData(gas_raw, energy_type="gas")
-
-        return cls(electricity=electricity_price_data, gas=gas_price_data, energy_country=energy_country)
+        return cls._parse_prices(market_prices, energy_country)
 
     @classmethod
     def from_userprices_dict(cls, data: dict[str, object], energy_country: str) -> MarketPrices:
@@ -4301,81 +4276,6 @@ class SmartBatteryDetails:
 
         summary_data = data.get("smartBatterySummary", {})
         # last_update = datetime.fromisoformat(summary_data["lastUpdate"].replace("Z", "+00:00"))
-
-        smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
-
-        return SmartBatteryDetails(smart_battery=smart_battery, smart_battery_summary=smart_battery_summary)
-
-
-@dataclass
-class old_SmartBatteryDetails:
-    """Complete smart battery data including configuration and summary."""
-
-    smart_battery: SmartBattery
-    smart_battery_summary: SmartBatterySummary
-    # smart_battery_settings: SmartBatterySettings | None = None
-
-    @staticmethod
-    def from_dict(data: dict[str, Any]) -> SmartBatteryDetails:
-        """Parse SmartBatteryDetails from a raw dictionary."""
-
-        sb_data = data.get("smartBattery", {})
-
-        if not sb_data:
-            raise ValueError("No smart battery data found")
-
-        _LOGGER.debug("SmartBatteryDetails %s", sb_data)
-
-        settings_data = sb_data.get("settings", {})
-        _LOGGER.debug("SmartBatterySettings %s", settings_data)
-        if not settings_data:
-            _LOGGER.warning("No settings data found in smart battery data")
-            settings_data = {}
-
-        smart_battery_settings = SmartBatterySettings(
-            battery_mode=SmartBatteryMode(settings_data["batteryMode"])
-            if settings_data.get("batteryMode")
-            else SmartBatteryMode.UNKNOWN,
-            imbalance_trading_strategy=SmartBatteryImbalanceStrategy(settings_data["imbalanceTradingStrategy"])
-            if settings_data.get("imbalanceTradingStrategy")
-            else SmartBatteryImbalanceStrategy.UNKNOWN,
-            self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
-            self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
-        )
-
-        created_at_str = sb_data.get("createdAt")
-        updated_at_str = sb_data.get("updatedAt")
-        created_at_str = sb_data.get("created_at")
-        updated_at_str = sb_data.get("updated_at")
-        _LOGGER.debug("createdAttttt: %s, updatedAt: %s", created_at_str, updated_at_str)
-
-        try:
-            created_at = datetime.fromisoformat(created_at_str).astimezone(UTC) if created_at_str else None
-        except Exception:
-            _LOGGER.warning("Invalid or missing 'createdAt' in smart battery data: %s", created_at_str)
-            created_at = None
-
-        try:
-            updated_at = datetime.fromisoformat(updated_at_str).astimezone(UTC) if updated_at_str else None
-        except Exception:
-            _LOGGER.warning("Invalid or missing 'updatedAt' in smart battery data: %s", updated_at_str)
-            updated_at = None
-
-        smart_battery = SmartBattery(
-            brand=sb_data.get("brand", ""),
-            capacity=sb_data.get("capacity", 0.0),
-            external_reference=sb_data.get("externalReference", ""),
-            id=sb_data.get("id", ""),
-            settings=smart_battery_settings,
-            max_charge_power=sb_data.get("maxChargePower", 0.0),
-            max_discharge_power=sb_data.get("maxDischargePower", 0.0),
-            provider=sb_data.get("provider", ""),
-            updated_at=updated_at,
-            created_at=created_at,
-            sessions=[SmartBatterySession.from_dict(session) for session in sb_data.get("sessions", [])],
-        )
-
-        summary_data = data.get("smartBatterySummary", {})
 
         smart_battery_summary = SmartBatterySummary.from_dict(summary_data)
 
