@@ -2952,7 +2952,13 @@ class PriceData:
             )
 
         merged = cast("PriceData", replace(self, prices=[]))
-        merged.price_data = self.price_data + other.price_data
+
+        unique_prices: dict[datetime, Price] = {}
+        for price in self.price_data + other.price_data:
+            if price.date_from not in unique_prices:
+                unique_prices[price.date_from] = price
+
+        merged.price_data = sorted(unique_prices.values(), key=lambda p: p.date_from)
         return merged
 
     def __str__(self) -> str:
