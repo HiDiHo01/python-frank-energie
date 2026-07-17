@@ -696,3 +696,57 @@ def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values(
     assert settings.battery_mode is SmartBatteryMode.UNKNOWN
     assert settings.imbalance_trading_strategy is SmartBatteryImbalanceStrategy.UNKNOWN
     assert settings.self_consumption_trading_threshold_price == pytest.approx(0.25)
+
+
+def test_price_data_add_preserves_metadata() -> None:
+    """Test that PriceData.__add__ preserves metadata from the left operand."""
+    from python_frank_energie.models import PriceData
+
+    # Create two PriceData objects with different metadata
+    left = PriceData(
+        prices=[],
+        energy_type="electricity",
+        gas_unit="m3",
+        elec_unit="kWh",
+        gas_resolution="PT60M",
+        elec_resolution="PT15M",
+        resolution_minutes=15,
+    )
+
+    right = PriceData(
+        prices=[],
+        energy_type="electricity",
+        gas_unit=None,
+        elec_unit=None,
+        gas_resolution=None,
+        elec_resolution=None,
+        resolution_minutes=15,
+    )
+
+    # Merge them
+    merged = left + right
+
+    # Assert that the left operand's metadata is preserved
+    assert merged.energy_type == "electricity"
+    assert merged.gas_unit == "m3"
+    assert merged.elec_unit == "kWh"
+    assert merged.gas_resolution == "PT60M"
+    assert merged.elec_resolution == "PT15M"
+    assert merged.resolution_minutes == 15
+
+
+def test_price_data_add_validates_metadata() -> None:
+    """Test that PriceData.__add__ validates metadata compatibility."""
+    import pytest
+
+    from python_frank_energie.models import PriceData
+
+    left = PriceData(prices=[], energy_type="electricity", resolution_minutes=15)
+    right_diff_res = PriceData(prices=[], energy_type="electricity", resolution_minutes=60)
+    right_diff_type = PriceData(prices=[], energy_type="gas", resolution_minutes=15)
+
+    with pytest.raises(ValueError, match="Cannot merge PriceData with different resolutions"):
+        _ = left + right_diff_res
+
+    with pytest.raises(ValueError, match="Cannot merge PriceData with different energy types"):
+        _ = left + right_diff_type

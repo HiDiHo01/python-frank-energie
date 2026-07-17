@@ -9,11 +9,11 @@ import logging
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from statistics import mean
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -2941,8 +2941,17 @@ class PriceData:
     # Dunder helpers                                                       #
     # ------------------------------------------------------------------ #
     def __add__(self, other: PriceData) -> PriceData:
-        """Merge two PriceData objects (preserves energy_type of self)."""
-        merged = PriceData(energy_type=self.energy_type)
+        """Merge two PriceData objects (preserves metadata of self)."""
+        if self.energy_type and other.energy_type and self.energy_type != other.energy_type:
+            raise ValueError(
+                f"Cannot merge PriceData with different energy types: {self.energy_type} vs {other.energy_type}"
+            )
+        if self.resolution_minutes and other.resolution_minutes and self.resolution_minutes != other.resolution_minutes:
+            raise ValueError(
+                f"Cannot merge PriceData with different resolutions: {self.resolution_minutes} vs {other.resolution_minutes}"
+            )
+
+        merged = cast("PriceData", replace(self, prices=[]))
         merged.price_data = self.price_data + other.price_data
         return merged
 
