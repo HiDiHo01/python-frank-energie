@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from statistics import mean
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -2951,7 +2951,7 @@ class PriceData:
                 f"Cannot merge PriceData with different resolutions: {self.resolution_minutes} vs {other.resolution_minutes}"
             )
 
-        merged = replace(self, prices=[])
+        merged = cast("PriceData", replace(self, prices=[]))
         merged.price_data = self.price_data + other.price_data
         return merged
 
