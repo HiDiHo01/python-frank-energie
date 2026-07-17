@@ -712,8 +712,6 @@ def test_price_data_add_preserves_metadata() -> None:
         elec_resolution="PT15M",
         resolution_minutes=15,
     )
-    # Add dummy price objects (must be mock or valid dict structure to satisfy post_init? no, price_data is what matters)
-    left.price_data = []
 
     right = PriceData(
         prices=[],
@@ -724,7 +722,6 @@ def test_price_data_add_preserves_metadata() -> None:
         elec_resolution=None,
         resolution_minutes=15,
     )
-    right.price_data = []
 
     # Merge them
     merged = left + right
