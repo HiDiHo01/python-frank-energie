@@ -696,3 +696,43 @@ def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values(
     assert settings.battery_mode is SmartBatteryMode.UNKNOWN
     assert settings.imbalance_trading_strategy is SmartBatteryImbalanceStrategy.UNKNOWN
     assert settings.self_consumption_trading_threshold_price == pytest.approx(0.25)
+
+
+def test_price_data_add_preserves_metadata() -> None:
+    """Test that PriceData.__add__ preserves metadata from the left operand."""
+    from python_frank_energie.models import PriceData
+
+    # Create two PriceData objects with different metadata
+    left = PriceData(
+        prices=[],
+        energy_type="electricity",
+        gas_unit="m3",
+        elec_unit="kWh",
+        gas_resolution="PT60M",
+        elec_resolution="PT15M",
+        resolution_minutes=15,
+    )
+    # Add dummy price objects (must be mock or valid dict structure to satisfy post_init? no, price_data is what matters)
+    left.price_data = []
+
+    right = PriceData(
+        prices=[],
+        energy_type="electricity",
+        gas_unit=None,
+        elec_unit=None,
+        gas_resolution=None,
+        elec_resolution=None,
+        resolution_minutes=60,
+    )
+    right.price_data = []
+
+    # Merge them
+    merged = left + right
+
+    # Assert that the left operand's metadata is preserved
+    assert merged.energy_type == "electricity"
+    assert merged.gas_unit == "m3"
+    assert merged.elec_unit == "kWh"
+    assert merged.gas_resolution == "PT60M"
+    assert merged.elec_resolution == "PT15M"
+    assert merged.resolution_minutes == 15

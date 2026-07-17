@@ -2941,8 +2941,15 @@ class PriceData:
     # Dunder helpers                                                       #
     # ------------------------------------------------------------------ #
     def __add__(self, other: PriceData) -> PriceData:
-        """Merge two PriceData objects (preserves energy_type of self)."""
-        merged = PriceData(energy_type=self.energy_type)
+        """Merge two PriceData objects (preserves metadata of self)."""
+        merged = PriceData(
+            energy_type=self.energy_type,
+            gas_unit=self.gas_unit,
+            elec_unit=self.elec_unit,
+            gas_resolution=self.gas_resolution,
+            elec_resolution=self.elec_resolution,
+            resolution_minutes=self.resolution_minutes,
+        )
         merged.price_data = self.price_data + other.price_data
         return merged
 
