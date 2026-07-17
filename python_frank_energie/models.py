@@ -9,7 +9,7 @@ import logging
 import math
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from statistics import mean
@@ -2942,14 +2942,16 @@ class PriceData:
     # ------------------------------------------------------------------ #
     def __add__(self, other: PriceData) -> PriceData:
         """Merge two PriceData objects (preserves metadata of self)."""
-        merged = PriceData(
-            energy_type=self.energy_type,
-            gas_unit=self.gas_unit,
-            elec_unit=self.elec_unit,
-            gas_resolution=self.gas_resolution,
-            elec_resolution=self.elec_resolution,
-            resolution_minutes=self.resolution_minutes,
-        )
+        if self.energy_type and other.energy_type and self.energy_type != other.energy_type:
+            raise ValueError(
+                f"Cannot merge PriceData with different energy types: {self.energy_type} vs {other.energy_type}"
+            )
+        if self.resolution_minutes and other.resolution_minutes and self.resolution_minutes != other.resolution_minutes:
+            raise ValueError(
+                f"Cannot merge PriceData with different resolutions: {self.resolution_minutes} vs {other.resolution_minutes}"
+            )
+
+        merged = replace(self, prices=[])
         merged.price_data = self.price_data + other.price_data
         return merged
 

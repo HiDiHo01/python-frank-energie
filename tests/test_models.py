@@ -722,7 +722,7 @@ def test_price_data_add_preserves_metadata() -> None:
         elec_unit=None,
         gas_resolution=None,
         elec_resolution=None,
-        resolution_minutes=60,
+        resolution_minutes=15,
     )
     right.price_data = []
 
@@ -736,3 +736,20 @@ def test_price_data_add_preserves_metadata() -> None:
     assert merged.gas_resolution == "PT60M"
     assert merged.elec_resolution == "PT15M"
     assert merged.resolution_minutes == 15
+
+
+def test_price_data_add_validates_metadata() -> None:
+    """Test that PriceData.__add__ validates metadata compatibility."""
+    import pytest
+
+    from python_frank_energie.models import PriceData
+
+    left = PriceData(prices=[], energy_type="electricity", resolution_minutes=15)
+    right_diff_res = PriceData(prices=[], energy_type="electricity", resolution_minutes=60)
+    right_diff_type = PriceData(prices=[], energy_type="gas", resolution_minutes=15)
+
+    with pytest.raises(ValueError, match="Cannot merge PriceData with different resolutions"):
+        _ = left + right_diff_res
+
+    with pytest.raises(ValueError, match="Cannot merge PriceData with different energy types"):
+        _ = left + right_diff_type
