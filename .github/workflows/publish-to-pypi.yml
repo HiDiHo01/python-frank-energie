@@ -28,6 +28,7 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            pkg-containers.githubusercontent.com:443
             ghcr.io:443
             api.github.com:443
             github.com:443
