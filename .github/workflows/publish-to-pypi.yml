@@ -29,6 +29,7 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            fulcio.sigstore.dev:443
             tuf-repo-cdn.sigstore.dev:443
             pkg-containers.githubusercontent.com:443
             ghcr.io:443
