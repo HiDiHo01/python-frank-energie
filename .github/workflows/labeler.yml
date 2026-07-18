@@ -23,6 +23,7 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            docs.github.com:443
             api.github.com:443
             github.com:443
             pypi.org:443
