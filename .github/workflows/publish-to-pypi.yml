@@ -28,6 +28,7 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            ghcr.io:443
             api.github.com:443
             github.com:443
             pypi.org:443
