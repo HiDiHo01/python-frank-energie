@@ -1,7 +1,7 @@
 ---
 version: 2
 updates:
-  # Python dependencies (Poetry)
+  # Python dependencies
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -9,6 +9,7 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Europe/Amsterdam"
+    target-branch: "main"
     open-pull-requests-limit: 10
     assignees:
       - "HiDiHo01"
@@ -38,8 +39,32 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "Europe/Amsterdam"
+    target-branch: "main"
+    open-pull-requests-limit: 5
+    groups:
+      production-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "pytest*"
+          - "ruff"
+          - "black*"
+          - "pre-commit*"
+          - "coverage*"
+    
+      dev-dependencies:
+        patterns:
+          - "pytest*"
+          - "ruff"
+          - "black*"
+          - "pre-commit*"
+          - "coverage*"
+    reviewers:
+      - "HiDiHo01"
+      - "Veldkornet"
     assignees:
       - "HiDiHo01"
+      - "Veldkornet"
     labels:
       - "dependencies"
       - "github-actions"
