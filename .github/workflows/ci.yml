@@ -60,12 +60,12 @@ jobs:
 
       - name: Type check (mypy)
         run: |
-          mypy custom_components
+          mypy python_frank_energie
 
       - name: Run tests with coverage
         run: |
           pytest \
-            --cov=custom_components \
+            --cov=python_frank_energie \
             --cov-report=xml \
             --cov-report=term-missing
 

@@ -71,7 +71,7 @@ jobs:
             --asyncio-mode=auto \
             --disable-warnings \
             --maxfail=1 \
-            --cov=frank_energie \
+            --cov=python_frank_energie \
             --cov-report=xml \
             tests/
 
