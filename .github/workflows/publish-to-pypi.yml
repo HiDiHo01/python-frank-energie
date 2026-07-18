@@ -13,6 +13,7 @@ jobs:
   build-and-publish:
     permissions:
       contents: read
+      id-token: write
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
     environment: pypi  # Optional but recommended for security
