@@ -1,10 +1,9 @@
----
 name: Release Drafter
 
 on:
   push:
     branches:
-      - main
+    - main
 
 permissions:
   contents: write
@@ -12,10 +11,19 @@ permissions:
 
 jobs:
   update_release_draft:
+    permissions:
+      contents: read
     name: Draft release
     runs-on: ubuntu-latest
     steps:
-      - name: Run Release Drafter
-        uses: release-drafter/release-drafter@v7.5.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Harden Runner
+      uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # @v2.8.1
+      with:
+        egress-policy: block
+        allowed-endpoints: "api.github.com:443\ngithub.com:443\npypi.org:443\nfiles.pythonhosted.org:443\n\
+          sonarcloud.io:443\nobjects.githubusercontent.com:443\n"
+    - name: Run Release Drafter
+      uses: 
+        release-drafter/release-drafter@4d75298e00d9e34c483e5ff8c68d0ea1c1940c1e
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

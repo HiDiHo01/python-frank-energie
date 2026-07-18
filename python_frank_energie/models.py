@@ -1244,7 +1244,7 @@ class Address:
             city = " ".join(parts[1:])
             return zip_code, city
 
-        _LOGGER.debug("Unexpected postcode/city format: %s", value)
+        _LOGGER.debug("Unexpected postcode/city format")
         return value, ""
 
 

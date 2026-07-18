@@ -285,7 +285,7 @@ class FrankEnergie:
         _LOGGER.debug(
             "Executing GraphQL operation [%s] with variables: %s",
             operation_name,
-            self._last_variables,
+            list(self._last_variables.keys()) if self._last_variables else None,
         )
 
         await self._ensure_session()

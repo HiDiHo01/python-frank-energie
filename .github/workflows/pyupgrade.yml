@@ -1,54 +1,64 @@
 name: Run Pyupgrade and Auto-Commit
 
+permissions:
+  contents: read
 on:
   push:
     branches:
-      - main
+    - main
   pull_request:
     branches:
-      - main
+    - main
 
 jobs:
   pyupgrade:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+    - name: Harden Runner
+      uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # @v2.8.1
+      with:
+        egress-policy: block
+        allowed-endpoints: "api.github.com:443\ngithub.com:443\npypi.org:443\nfiles.pythonhosted.org:443\n\
+          sonarcloud.io:443\nobjects.githubusercontent.com:443\n"
+    - name: Checkout repository
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # @v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # @v6
+      with:
+        python-version: "3.12"
 
-      - name: Cache Poetry dependencies
-        uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/pypoetry
-          key: ${{ runner.os }}-poetry-cache-${{ hashFiles('**/poetry.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-cache-
+    - name: Cache Poetry dependencies
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # @v6.1.0
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-cache-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-poetry-cache-
 
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
+    - name: Install Poetry
+      run: |
+        curl -sSL https://install.python-poetry.org | python3 -
 
-      - name: Regenerate poetry.lock and install dependencies
-        run: |
-          poetry lock
-          poetry install
+    - name: Regenerate poetry.lock and install dependencies
+      run: |
+        poetry lock
+        poetry install
 
-      - name: Install dependencies
-        run: poetry install
+    - name: Install dependencies
+      run: poetry install
 
-      - name: Run Pyupgrade with pre-commit
-        run: |
-          poetry run pre-commit run pyupgrade --all-files || true
+    - name: Run Pyupgrade with pre-commit
+      run: |
+        poetry run pre-commit run pyupgrade --all-files || true
 
-      - name: Commit and Push Changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git diff --quiet && git diff --staged --quiet || git commit -m "Apply pyupgrade changes"
-          git push
+    - name: Commit and Push Changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add .
+        git diff --quiet && git diff --staged --quiet || git commit -m "Apply pyupgrade changes"
+        git push

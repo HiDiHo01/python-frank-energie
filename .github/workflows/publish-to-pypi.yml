@@ -3,7 +3,7 @@ name: Publish to PyPI on Version Tag
 on:
   push:
     tags:
-      - 'v*.*.*'  # Only run when a version tag is pushed
+    - 'v*.*.*'    # Only run when a version tag is pushed
 
 permissions:
   id-token: write  # Required for OIDC
@@ -11,6 +11,8 @@ permissions:
 
 jobs:
   build-and-publish:
+    permissions:
+      contents: read
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
     environment: pypi  # Optional but recommended for security
@@ -21,37 +23,43 @@ jobs:
       fail-fast: false
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+    - name: Harden Runner
+      uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # @v2.8.1
+      with:
+        egress-policy: block
+        allowed-endpoints: "api.github.com:443\ngithub.com:443\npypi.org:443\nfiles.pythonhosted.org:443\n\
+          sonarcloud.io:443\nobjects.githubusercontent.com:443\n"
+    - name: Checkout code
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # @v7
 
       # - name: List available Python versions
       #   run: pyenv install --list
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # @v6
+      with:
+        python-version: ${{ matrix.python-version }}
 
-      - name: Cache pip
-        uses: actions/cache@v6.1.0
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+    - name: Cache pip
+      uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # @v6.1.0
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
 
-      - name: Install build tools
-        run: |
-          python -m pip install --upgrade pip build
+    - name: Install build tools
+      run: |
+        python -m pip install --upgrade pip build
 
-      - name: Build the package
-        run: python -m build
+    - name: Build the package
+      run: python -m build
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://upload.pypi.org/legacy/  # Change to test.pypi.org for testing
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # @release/v1
+      with:
+        repository-url: https://upload.pypi.org/legacy/    # Change to test.pypi.org for testing
           # repository-url: https://test.pypi.org/legacy/
 
-      - name: Verify package metadata
-        run: python -m pip install --upgrade twine && twine check dist/*
+    - name: Verify package metadata
+      run: python -m pip install --upgrade twine && twine check dist/*
