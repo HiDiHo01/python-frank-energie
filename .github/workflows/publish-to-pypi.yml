@@ -29,6 +29,8 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            rekor.sigstore.dev:443
+            timestamp.sigstore.dev:443
             fulcio.sigstore.dev:443
             tuf-repo-cdn.sigstore.dev:443
             pkg-containers.githubusercontent.com:443
