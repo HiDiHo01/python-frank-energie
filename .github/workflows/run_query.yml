@@ -13,7 +13,7 @@ permissions:
 on:
   workflow_dispatch:  # Allows manual triggering
   schedule:
-  - cron: '0 6 * * *'    # Every day at 06:00 UTC
+    - cron: '0 6 * * *'  # Every day at 06:00 UTC
 
 jobs:
   run-query:
@@ -25,48 +25,47 @@ jobs:
         python-version: ['3.12', '3.13', '3.14']
 
     steps:
-    - name: Harden Runner
-      uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # @v2.8.1
-      with:
-        egress-policy: block
-        allowed-endpoints: "api.github.com:443\ngithub.com:443\npypi.org:443\nfiles.pythonhosted.org:443\n\
-          sonarcloud.io:443\nobjects.githubusercontent.com:443\n"
-    - name: Checkout Repository
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # @v7
+      - name: Harden Runner
+        uses: step-security/harden-runner@17d0e2bd7d51742c71671bd19fa12bdc9d40a3d6 # @v2.8.1
+        with:
+          egress-policy: block
+          allowed-endpoints: "api.github.com:443\ngithub.com:443\npypi.org:443\nfiles.pythonhosted.org:443\nsonarcloud.io:443\nobjects.githubusercontent.com:443\n\nuploads.github.com:443\nupload.pypi.org:443\ntest.pypi.org:443\ncodecov.io:443\nuploader.codecov.io:443"
+      - name: Checkout Repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # @v7
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # @v6
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # @v6
+        with:
+          python-version: ${{ matrix.python-version }}
           # cache: poetry  # Caching voor snellere builds
 
-    - name: Install Poetry
-      run: |
-        curl -sSL https://install.python-poetry.org | python3 -
-        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-        export PATH="$HOME/.local/bin:$PATH"
-        poetry --version
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          poetry --version
 
-    - name: Configure Poetry
-      run: |
-        poetry config virtualenvs.in-project true
-        poetry --version
-        poetry lock
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry --version
+          poetry lock
 
-    - name: Install Dependencies with Poetry
-      run: |
-        # poetry add ./python-frank-energie --dev --editable
-        poetry install --no-interaction
-        pip install -e ./  # Install the current repository as an editable package
+      - name: Install Dependencies with Poetry
+        run: |
+          # poetry add ./python-frank-energie --dev --editable
+          poetry install --no-interaction
+          pip install -e ./  # Install the current repository as an editable package
 
-    - name: Execute Frank Energie Query
-      run: |
-        mkdir -p logs
-        poetry run python scripts/test_query.py 2>&1 | tee logs/output_${{ matrix.python-version }}.log
+      - name: Execute Frank Energie Query
+        run: |
+          mkdir -p logs
+          poetry run python scripts/test_query.py 2>&1 | tee logs/output_${{ matrix.python-version }}.log
 
-    - name: Upload Log Artifact
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # @v7
-      if: always()
-      with:
-        name: frank-energie-logs-${{ matrix.python-version }}
-        path: logs/
+      - name: Upload Log Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # @v7
+        if: always()
+        with:
+          name: frank-energie-logs-${{ matrix.python-version }}
+          path: logs/
