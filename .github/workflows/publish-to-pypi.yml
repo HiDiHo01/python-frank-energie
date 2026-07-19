@@ -13,6 +13,7 @@ jobs:
   build-and-publish:
     permissions:
       contents: read
+      id-token: write
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
     environment: pypi  # Optional but recommended for security
@@ -28,6 +29,10 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            rekor.sigstore.dev:443
+            timestamp.sigstore.dev:443
+            fulcio.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
             pkg-containers.githubusercontent.com:443
             ghcr.io:443
             api.github.com:443
