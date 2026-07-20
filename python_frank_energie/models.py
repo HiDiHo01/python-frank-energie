@@ -2937,6 +2937,43 @@ class PriceData:
         """Convert raw API dicts to typed Price objects."""
         self.price_data: list[Price] = [Price({**p, "energy_type": self.energy_type}) for p in self.prices]
 
+        # Derive the real interval length from the data itself rather than
+        # trusting the `resolution_minutes` default/caller-supplied value.
+        # Every PriceData construction site (live API fetch, BE parsing,
+        # cache restore) goes through here, so this is the single place
+        # that guarantees resolution_minutes actually matches the data.
+        # Checked across every entry (not just the first) so one malformed
+        # or outlier entry can't silently determine the whole series'
+        # resolution; the smallest positive interval wins.
+        intervals = [
+            int((price.date_till - price.date_from).total_seconds() // 60)
+            for price in self.price_data
+            if price.date_from and price.date_till
+        ]
+        positive_intervals = [minutes for minutes in intervals if minutes > 0]
+        if positive_intervals:
+            derived_minutes = min(positive_intervals)
+            self.resolution_minutes = derived_minutes
+            _LOGGER.debug(
+                "PriceData(%s): derived resolution_minutes=%s from entry spacing",
+                self.energy_type,
+                derived_minutes,
+            )
+        elif intervals:
+            _LOGGER.debug(
+                "PriceData(%s): no positive interval among %s entries with "
+                "date_from/date_till, keeping resolution_minutes=%s",
+                self.energy_type,
+                len(intervals),
+                self.resolution_minutes,
+            )
+        elif self.price_data:
+            _LOGGER.debug(
+                "PriceData(%s): no entries with both date_from/date_till, keeping resolution_minutes=%s",
+                self.energy_type,
+                self.resolution_minutes,
+            )
+
     # ------------------------------------------------------------------ #
     # Dunder helpers                                                       #
     # ------------------------------------------------------------------ #
