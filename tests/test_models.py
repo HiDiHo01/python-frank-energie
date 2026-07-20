@@ -800,6 +800,46 @@ def test_price_data_derives_resolution_minutes_from_entry_spacing() -> None:
     assert PriceData([], energy_type="gas", resolution_minutes=15).resolution_minutes == 15
 
 
+def test_price_data_resolution_derivation_ignores_outlier_first_entry() -> None:
+    """A malformed/outlier first entry must not solely determine resolution_minutes.
+
+    Regression test: derivation previously only inspected price_data[0], so a
+    single irregular first entry (e.g. a 60-minute span in an otherwise PT15M
+    series) would silently set the wrong resolution for the whole series.
+    Derivation now takes the smallest positive interval across all entries.
+    """
+    from python_frank_energie.models import PriceData
+
+    irregular = [
+        {
+            "from": "2026-07-19T22:00:00.000Z",
+            "till": "2026-07-19T23:00:00.000Z",  # outlier: 60 minutes
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        },
+        {
+            "from": "2026-07-19T23:00:00.000Z",
+            "till": "2026-07-19T23:15:00.000Z",  # 15 minutes
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        },
+        {
+            "from": "2026-07-19T23:15:00.000Z",
+            "till": "2026-07-19T23:30:00.000Z",  # 15 minutes
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        },
+    ]
+
+    assert PriceData(irregular, energy_type="electricity").resolution_minutes == 15
+
+
 def test_market_prices_from_dict_derives_resolution_minutes() -> None:
     """MarketPrices.from_dict must produce PriceData with the correct resolution.
 
