@@ -750,3 +750,90 @@ def test_price_data_add_validates_metadata() -> None:
 
     with pytest.raises(ValueError, match="Cannot merge PriceData with different energy types"):
         _ = left + right_diff_type
+
+
+def test_price_data_derives_resolution_minutes_from_entry_spacing() -> None:
+    """PriceData must derive resolution_minutes from the actual entry spacing.
+
+    Regression test: PriceData previously always defaulted resolution_minutes
+    to 60, regardless of the real interval length of the price entries it was
+    constructed from. This made every live-fetched PT15M price series silently
+    report itself as PT60M, which broke downstream resolution-validity checks
+    (e.g. in the Home Assistant integration's disk-cache freshness check).
+    """
+    from python_frank_energie.models import PriceData
+
+    quarter_hourly = [
+        {
+            "from": "2026-07-19T22:00:00.000Z",
+            "till": "2026-07-19T22:15:00.000Z",
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        },
+        {
+            "from": "2026-07-19T22:15:00.000Z",
+            "till": "2026-07-19T22:30:00.000Z",
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        },
+    ]
+    hourly = [
+        {
+            "from": "2026-07-19T22:00:00.000Z",
+            "till": "2026-07-19T23:00:00.000Z",
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        },
+    ]
+
+    assert PriceData(quarter_hourly, energy_type="electricity").resolution_minutes == 15
+    assert PriceData(hourly, energy_type="electricity").resolution_minutes == 60
+
+    # No entries to derive from: keeps the default / explicitly passed value.
+    assert PriceData([], energy_type="gas").resolution_minutes == 60
+    assert PriceData([], energy_type="gas", resolution_minutes=15).resolution_minutes == 15
+
+
+def test_market_prices_from_dict_derives_resolution_minutes() -> None:
+    """MarketPrices.from_dict must produce PriceData with the correct resolution.
+
+    Regression test for the real-world bug: a live PT15M marketPrices response
+    previously resulted in PriceData.resolution_minutes == 60 because
+    MarketPrices._parse_prices never passed resolution_minutes when
+    constructing PriceData.
+    """
+    response = {
+        "data": {
+            "marketPrices": {
+                "electricityPrices": [
+                    {
+                        "from": "2026-07-19T22:00:00.000Z",
+                        "till": "2026-07-19T22:15:00.000Z",
+                        "marketPrice": 0.1,
+                        "marketPriceTax": 0.02,
+                        "sourcingMarkupPrice": 0.01,
+                        "energyTaxPrice": 0.1,
+                    },
+                    {
+                        "from": "2026-07-19T22:15:00.000Z",
+                        "till": "2026-07-19T22:30:00.000Z",
+                        "marketPrice": 0.1,
+                        "marketPriceTax": 0.02,
+                        "sourcingMarkupPrice": 0.01,
+                        "energyTaxPrice": 0.1,
+                    },
+                ],
+                "gasPrices": [],
+            }
+        }
+    }
+
+    market_prices = MarketPrices.from_dict(response)
+
+    assert market_prices.electricity.resolution_minutes == 15

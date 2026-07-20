@@ -2937,6 +2937,36 @@ class PriceData:
         """Convert raw API dicts to typed Price objects."""
         self.price_data: list[Price] = [Price({**p, "energy_type": self.energy_type}) for p in self.prices]
 
+        # Derive the real interval length from the data itself rather than
+        # trusting the `resolution_minutes` default/caller-supplied value.
+        # Every PriceData construction site (live API fetch, BE parsing,
+        # cache restore) goes through here, so this is the single place
+        # that guarantees resolution_minutes actually matches the data.
+        first = self.price_data[0] if self.price_data else None
+        if first is not None and first.date_from and first.date_till:
+            derived_minutes = int((first.date_till - first.date_from).total_seconds() // 60)
+            if derived_minutes > 0:
+                self.resolution_minutes = derived_minutes
+                _LOGGER.debug(
+                    "PriceData(%s): derived resolution_minutes=%s from entry spacing",
+                    self.energy_type,
+                    derived_minutes,
+                )
+            else:
+                _LOGGER.debug(
+                    "PriceData(%s): non-positive interval (%s min) between "
+                    "date_from/date_till, keeping resolution_minutes=%s",
+                    self.energy_type,
+                    derived_minutes,
+                    self.resolution_minutes,
+                )
+        elif self.price_data:
+            _LOGGER.debug(
+                "PriceData(%s): first entry missing date_from/date_till, keeping resolution_minutes=%s",
+                self.energy_type,
+                self.resolution_minutes,
+            )
+
     # ------------------------------------------------------------------ #
     # Dunder helpers                                                       #
     # ------------------------------------------------------------------ #
