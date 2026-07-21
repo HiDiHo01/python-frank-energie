@@ -823,7 +823,7 @@ class FrankEnergie:
                 _LOGGER.debug("No chargers found in data: %s", response)
                 return {}
             chargers_data = response.get("data", {}).get("enodeChargers", [])
-            _LOGGER.info("%s Enode Chargers Found", len(chargers_data))
+            _LOGGER.debug("%s Enode Chargers Found", len(chargers_data))
             _LOGGER.debug("Enode Chargers data: %s", chargers_data)
             # _LOGGER.debug("Format for 'enodeChargers' response: %s", type(response))
             # _LOGGER.debug("Format for 'enodeChargers' chargers: %s", type(chargers))
