@@ -46,6 +46,7 @@ jobs:
             storage.googleapis.com:443
             github-releases.githubusercontent.com:443
             install.python-poetry.org:443
+            frank-graphql-prod.graphcdn.app:443
       - name: Checkout Repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # @v7
 
