@@ -6,6 +6,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 from .exceptions import AuthException
 
@@ -29,7 +30,7 @@ class Authentication:
     TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
     @staticmethod
-    def from_dict(data: dict[str, str]) -> "Authentication":
+    def from_dict(data: dict[str, Any]) -> "Authentication":
         """Parse the response from the login or renewToken mutation.
 
         Args:
@@ -55,8 +56,8 @@ class Authentication:
 
     @staticmethod
     def _extract_payload(
-        data: dict[str, object],
-    ) -> dict[str, object] | None:
+        data: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """Extract the login or renewToken payload from the response.
 
         Args:

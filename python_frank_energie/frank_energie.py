@@ -112,7 +112,7 @@ class FrankEnergie:
         self._close_session: bool = clientsession is None
         self._auth: Authentication | None = None
         self._last_query: FrankEnergieQuery | None = None
-        self._last_variables: dict[str, object] | None = None
+        self._last_variables: dict[str, Any] | None = None
         self._renew_lock = asyncio.Lock()
         self._site_reference: str | None = None
         self._user_country: str | None = None
@@ -121,7 +121,7 @@ class FrankEnergie:
         self.refresh_token: str | None = None
 
         if auth_token or refresh_token:
-            self._auth = Authentication(auth_token, refresh_token, version)
+            self._auth = Authentication(auth_token, refresh_token, version)  # type: ignore
 
     is_smart_charging = False
     is_smart_trading = False
@@ -231,7 +231,7 @@ class FrankEnergie:
             self._session = ClientSession()
             self._close_session = True
 
-    async def _query(self, query: FrankEnergieQuery, extra_headers: dict[str, str] | None = None) -> dict[str, object]:
+    async def _query(self, query: FrankEnergieQuery, extra_headers: dict[str, Any] | None = None) -> dict[str, Any]:
         """Send a query to the FrankEnergie API.
 
         Args:
@@ -255,7 +255,7 @@ class FrankEnergie:
         start = time.monotonic()
 
         # "User-Agent": self.generate_system_user_agent(), # not working properly
-        headers: dict[str, str] = {
+        headers: dict[str, Any] = {
             "Content-Type": "application/json",
             "Accept": "application/json",
             "x-graphql-client-version": "4.13.3",
@@ -280,7 +280,7 @@ class FrankEnergie:
         self._last_variables = query.variables
         operation_name = query.operation_name
 
-        payload: dict[str, object] = query.to_dict()
+        payload: dict[str, Any] = query.to_dict()
 
         _LOGGER.debug(
             "Executing GraphQL operation [%s] with variables: %s",
@@ -292,10 +292,10 @@ class FrankEnergie:
 
         timeout = ClientTimeout(total=30)
         try:
-            async with self._session.post(self.DATA_URL, json=payload, headers=headers, timeout=timeout) as resp:
+            async with self._session.post(self.DATA_URL, json=payload, headers=headers, timeout=timeout) as resp:  # type: ignore
                 resp.raise_for_status()
 
-                response: dict[str, object] = await resp.json()
+                response: dict[str, Any] = await resp.json()
 
             if not response:
                 _LOGGER.debug(
@@ -359,7 +359,7 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
-    def _handle_errors(self, response: dict[str, object], operation_name: str | None = None) -> None:
+    def _handle_errors(self, response: dict[str, Any], operation_name: str | None = None) -> None:
         """
         Handle common GraphQL error messages and raise specific exceptions when needed.
 
@@ -394,7 +394,7 @@ class FrankEnergie:
             message: str = message_obj if isinstance(message_obj, str) else ""
             path: object | None = error_obj.get("path")
             ext_obj: object | None = error_obj.get("extensions")  # GraphQL extension metadata
-            extensions: dict[str, object] | None = ext_obj if isinstance(ext_obj, dict) else None
+            extensions: dict[str, Any] | None = ext_obj if isinstance(ext_obj, dict) else None
 
             # --- Authentication errors ---
             if message == "user-error:password-invalid":
@@ -585,7 +585,7 @@ class FrankEnergie:
         )
 
         response = await self._query(query)
-        return EnergyConsumption.from_dict(response)
+        return EnergyConsumption.from_dict(response)  # type: ignore
 
     async def month_summary(self, site_reference: str) -> MonthSummary:
         """Retrieve the month summary for the specified month.
@@ -630,7 +630,7 @@ class FrankEnergie:
         try:
             response = await self._query(query)
             _LOGGER.debug("MonthSummary raw response: %s", response)
-            return MonthSummary.from_dict(response)
+            return MonthSummary.from_dict(response)  # type: ignore
         except (AuthException, AuthRequiredException):
             raise
         except Exception as e:
@@ -726,7 +726,7 @@ class FrankEnergie:
             raise FrankEnergieException(f"Failed to fetch MonthInsights: {exc}") from exc
 
         try:
-            return MonthInsights.from_dict(response_dict)
+            return MonthInsights.from_dict(response_dict)  # type: ignore
         except Exception as exc:
             raise FrankEnergieException(f"Failed to parse MonthInsights response: {exc}") from exc
 
@@ -832,7 +832,7 @@ class FrankEnergie:
             # if not isinstance(chargers, list):
             #     _LOGGER.debug("Unexpected format for 'enodeChargers': %s", chargers)
             #     return []
-            return EnodeChargers.from_dict(chargers_data)
+            return EnodeChargers.from_dict(chargers_data)  # type: ignore
         except SmartChargingNotEnabledException as error:
             _LOGGER.debug("Smart charging not enabled: %s", error)
             return {}
@@ -1977,7 +1977,7 @@ class FrankEnergie:
 
     def _parse_contract_price_resolution_change_response(
         self,
-        response: dict[str, object] | None,
+        response: dict[str, Any] | None,
     ) -> ContractPriceResolutionChangeResult | None:
         """Parse a contract price resolution change response."""
         if not isinstance(response, dict):
@@ -2632,7 +2632,7 @@ class FrankEnergie:
             )
             return None
 
-        data: dict[str, object] | None = response.get("data")  # type: ignore[assignment]
+        data: dict[str, Any] | None = response.get("data")  # type: ignore[assignment]
 
         if not isinstance(data, dict):
             _LOGGER.debug(
@@ -2786,7 +2786,7 @@ class FrankEnergie:
         }
     """
     SMART_PV_SYSTEMS_OPERATIONNAME = "SmartPvSystems"
-    SMART_PV_SYSTEMS_VARIABLES = {}
+    SMART_PV_SYSTEMS_VARIABLES = {}  # type: ignore
 
     async def smart_pv_systems(self) -> SmartPvSystems | None:
         """Get the users smart PV systems.
@@ -2851,7 +2851,7 @@ class FrankEnergie:
         }
     """
     USER_SMART_FEED_IN_OPERATIONNAME = "UserSmartFeedIn"
-    USER_SMART_FEED_IN_VARIABLES = {}
+    USER_SMART_FEED_IN_VARIABLES = {}  # type: ignore
 
     async def user_smart_feed_in(self) -> UserSmartFeedInStatus | None:
         """Get the users smart feed-in service status.
@@ -2921,7 +2921,7 @@ class FrankEnergie:
         }
         """
     ENODE_VEHICLES_OPERATIONNAME = "EnodeVehicles"
-    ENODE_VEHICLES_VARIABLES = {}
+    ENODE_VEHICLES_VARIABLES = {}  # type: ignore
 
     async def enode_vehicles(self) -> EnodeVehicles | None:
         """Get the users enode vehicles.
