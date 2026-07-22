@@ -578,12 +578,12 @@ def test_price_handles_null_tax_and_markup_fields():
 
     price = Price(price_dict, energy_type="electricity")
 
-    assert price.market_price == 0.15423
-    assert price.market_price_tax == 0.0
-    assert price.sourcing_markup_price == 0.0
-    assert price.energy_tax_price == 0.0
-    assert price.market_price_including_tax == 0.15423
-    assert price.market_price_including_tax_and_markup == 0.15423
+    assert price.market_price == pytest.approx(0.15423)
+    assert price.market_price_tax == pytest.approx(0.0)
+    assert price.sourcing_markup_price == pytest.approx(0.0)
+    assert price.energy_tax_price == pytest.approx(0.0)
+    assert price.market_price_including_tax == pytest.approx(0.15423)
+    assert price.market_price_including_tax_and_markup == pytest.approx(0.15423)
 
 
 #

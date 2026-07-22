@@ -2619,10 +2619,13 @@ class Price:
         """ The market price of the product or service. """
         self.market_price = data["marketPrice"]
         """ The amount of tax added to the market price. """
-        self.market_price_tax = data.get("marketPriceTax") or 0.0
+        market_price_tax = data.get("marketPriceTax")
+        self.market_price_tax = market_price_tax if market_price_tax is not None else 0.0
         """ The amount of sourcing markup added to the market price. """
-        self.sourcing_markup_price = data.get("sourcingMarkupPrice") or 0.0
-        self.energy_tax_price = data.get("energyTaxPrice") or 0.0
+        sourcing_markup_price = data.get("sourcingMarkupPrice")
+        self.sourcing_markup_price = sourcing_markup_price if sourcing_markup_price is not None else 0.0
+        energy_tax_price = data.get("energyTaxPrice")
+        self.energy_tax_price = energy_tax_price if energy_tax_price is not None else 0.0
         self.market_price_including_tax = self.market_price + self.market_price_tax
 
         # Tax added to the market price including tax and markup

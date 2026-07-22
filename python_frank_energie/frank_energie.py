@@ -52,6 +52,7 @@ from .models import (
     UserSites,
     UserSmartFeedInStatus,
 )
+from .types import PriceResolution
 
 T = TypeVar("T")
 
@@ -2220,7 +2221,7 @@ class FrankEnergie:
         country: str,
         start_date: date | None = None,
         end_date: date | None = None,
-        resolution: str | None = "PT15M",
+        resolution: PriceResolution = "PT15M",
     ) -> MarketPrices:
         """Get market prices for a country served via the 'x-country' header (e.g. BE, FR)."""
         if start_date is None:
@@ -2267,22 +2268,22 @@ class FrankEnergie:
         return MarketPrices.from_country_dict(response, country)
 
     async def be_prices(
-        self, start_date: date | None = None, end_date: date | None = None, resolution: str | None = "PT15M"
+        self, start_date: date | None = None, end_date: date | None = None, resolution: PriceResolution = "PT15M"
     ) -> MarketPrices:
         """Get belgium market prices."""
         return await self.country_prices("BE", start_date, end_date, resolution)
 
     async def fr_prices(
-        self, start_date: date | None = None, end_date: date | None = None, resolution: str | None = "PT15M"
+        self, start_date: date | None = None, end_date: date | None = None, resolution: PriceResolution = "PT15M"
     ) -> MarketPrices:
         """Get france market prices."""
         return await self.country_prices("FR", start_date, end_date, resolution)
 
     async def prices(
         self,
-        start_date: date | None | None = None,
-        end_date: date | None | None = None,
-        resolution: str | None | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        resolution: PriceResolution = "PT15M",
     ) -> MarketPrices:
         """Get market prices."""
         if not start_date:
