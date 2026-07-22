@@ -20,6 +20,7 @@ class CountryCode(StrEnum):
 
     NL = "NL"
     BE = "BE"
+    FR = "FR"
 
 
 class Resolution(StrEnum):

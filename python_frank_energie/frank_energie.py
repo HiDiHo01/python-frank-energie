@@ -2215,19 +2215,25 @@ class FrankEnergie:
         raw = response.get("data", {}).get("me", {}).get("smartHvac")
         return SmartHvac.from_dict(raw)
 
-    async def be_prices(self, start_date: date | None = None, end_date: date | None = None) -> MarketPrices:
-        """Get belgium market prices."""
+    async def country_prices(
+        self,
+        country: str,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        resolution: str | None = "PT15M",
+    ) -> MarketPrices:
+        """Get market prices for a country served via the 'x-country' header (e.g. BE, FR)."""
         if start_date is None:
             start_date = datetime.now(UTC).date()
         if end_date is None:
             end_date = start_date + timedelta(days=1)
 
-        headers = {"x-country": "BE"}
+        headers = {"x-country": country}
 
         query = FrankEnergieQuery(
             """
-            query MarketPrices ($date: String!) {
-                marketPrices(date: $date) {
+            query MarketPrices ($date: String!, $resolution: PriceResolution!) {
+                marketPrices(date: $date, resolution: $resolution) {
                     electricityPrices {
                         from
                         till
@@ -2255,10 +2261,22 @@ class FrankEnergie:
             }
             """,
             "MarketPrices",
-            {"date": str(start_date)},
+            {"date": str(start_date), "resolution": resolution},
         )
         response = await self._query(query, extra_headers=headers)
-        return MarketPrices.from_be_dict(response)
+        return MarketPrices.from_country_dict(response, country)
+
+    async def be_prices(
+        self, start_date: date | None = None, end_date: date | None = None, resolution: str | None = "PT15M"
+    ) -> MarketPrices:
+        """Get belgium market prices."""
+        return await self.country_prices("BE", start_date, end_date, resolution)
+
+    async def fr_prices(
+        self, start_date: date | None = None, end_date: date | None = None, resolution: str | None = "PT15M"
+    ) -> MarketPrices:
+        """Get france market prices."""
+        return await self.country_prices("FR", start_date, end_date, resolution)
 
     async def prices(
         self,

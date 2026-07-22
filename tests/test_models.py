@@ -406,6 +406,45 @@ def test_market_prices_no_market_prices_available_be():
     assert "No marketprices found" in str(excinfo.value)
 
 
+def test_market_prices_no_market_prices_available_fr():
+    """Test MarketPrices.from_country_dict raises NoMarketPricesAvailableException for FR 'No marketprices found' errors."""
+    with pytest.raises(NoMarketPricesAvailableException) as excinfo:
+        MarketPrices.from_country_dict(
+            {"errors": [{"message": "No marketprices found for segment ELECTRICITY for 2026-07-02"}]},
+            "FR",
+        )
+
+    assert "No marketprices found" in str(excinfo.value)
+
+
+def test_market_prices_from_country_dict_fr():
+    """Test MarketPrices.from_country_dict parses a FR market prices payload."""
+    market_prices = MarketPrices.from_country_dict(
+        {
+            "data": {
+                "marketPrices": {
+                    "electricityPrices": [
+                        {
+                            "from": "2026-07-22T00:00:00.000Z",
+                            "till": "2026-07-22T01:00:00.000Z",
+                            "marketPrice": 0.15,
+                            "marketPriceTax": 0.03,
+                            "sourcingMarkupPrice": 0.02,
+                            "energyTaxPrice": 0.01,
+                            "perUnit": "KWH",
+                        },
+                    ],
+                    "gasPrices": [],
+                }
+            }
+        },
+        "FR",
+    )
+
+    assert market_prices.energy_country == "FR"
+    assert len(market_prices.electricity.price_data) == 1
+
+
 @freeze_time("2022-11-21 14:15:00")
 def test_market_prices_pricedata_current_hour():
     """Test functionality of MarketPrices.price_data."""
@@ -515,6 +554,36 @@ def test_price_and_pricedata_per_unit():
         market_price=0.052,
     )
     assert avg_price_data.per_unit == "KWH"
+
+
+def test_price_handles_null_tax_and_markup_fields():
+    """Test Price tolerates marketPriceTax/sourcingMarkupPrice/energyTaxPrice being None.
+
+    Regression test: France's public marketPrices response only populates
+    marketPrice and perUnit, leaving the tax/markup breakdown fields as null.
+    Price.__init__ previously assumed these were always numeric and crashed
+    with `TypeError: unsupported operand type(s) for +: 'float' and 'NoneType'`.
+    """
+    from python_frank_energie.models import Price
+
+    price_dict = {
+        "from": "2026-07-21T22:00:00.000Z",
+        "till": "2026-07-21T23:00:00.000Z",
+        "marketPrice": 0.15423,
+        "marketPriceTax": None,
+        "sourcingMarkupPrice": None,
+        "energyTaxPrice": None,
+        "perUnit": "KWH",
+    }
+
+    price = Price(price_dict, energy_type="electricity")
+
+    assert price.market_price == 0.15423
+    assert price.market_price_tax == 0.0
+    assert price.sourcing_markup_price == 0.0
+    assert price.energy_tax_price == 0.0
+    assert price.market_price_including_tax == 0.15423
+    assert price.market_price_including_tax_and_markup == 0.15423
 
 
 #
