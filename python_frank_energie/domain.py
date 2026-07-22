@@ -133,6 +133,7 @@ class SmartBatteryImbalanceStrategy(StrEnum):
     CONSERVATIVE = "conservative"
     IMBALANCE_ONLY = "imbalance_only"
     AGGRESSIVE = "aggressive"
+    STANDARD = "standard"
     UNKNOWN = "unknown"
 
     @classmethod
