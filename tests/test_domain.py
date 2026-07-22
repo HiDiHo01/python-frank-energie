@@ -21,6 +21,7 @@ from python_frank_energie.domain import (
         (SessionStatus, "PENDING", "PENDING"),
         (SmartBatteryMode, "IMBALANCE_TRADING", "imbalance_trading"),
         (SmartBatteryImbalanceStrategy, "BALANCED", "balanced"),
+        (SmartBatteryImbalanceStrategy, "STANDARD", "standard"),
         (SmartBatteryStatus, "STATUS_IDLE", "status_idle"),
         (SmartPvOperationalStatus, "ON", "ON"),
         (SmartPvSteeringStatus, "ACTIVE", "ACTIVE"),
