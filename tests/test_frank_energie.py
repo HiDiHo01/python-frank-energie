@@ -351,7 +351,7 @@ async def test_prices(aresponses):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session)
-        prices = await api.prices(datetime.now(UTC), datetime.now(UTC))
+        prices = await api.prices(datetime.now(UTC))
         await api.close()
 
     assert prices.electricity is not None

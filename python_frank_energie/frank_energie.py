@@ -2282,7 +2282,6 @@ class FrankEnergie:
     async def prices(
         self,
         start_date: date | None = None,
-        end_date: date | None = None,
         resolution: PriceResolution = "PT15M",
     ) -> MarketPrices:
         """Get market prices."""
