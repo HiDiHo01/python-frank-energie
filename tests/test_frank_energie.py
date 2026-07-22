@@ -351,7 +351,7 @@ async def test_prices(aresponses):
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session)
-        prices = await api.prices(datetime.now(UTC), datetime.now(UTC))
+        prices = await api.prices(datetime.now(UTC))
         await api.close()
 
     assert prices.electricity is not None
@@ -1345,6 +1345,73 @@ async def test_be_prices_with_default_dates():
         utc_today = datetime.now(UTC).date()
 
         assert variables["date"] == str(utc_today)
+
+
+@pytest.mark.asyncio
+async def test_fr_prices_with_default_dates():
+    """Test French prices method with default date handling."""
+    from datetime import datetime
+
+    client = FrankEnergie()
+
+    mock_response = {"data": {"marketPrices": {"electricityPrices": [], "gasPrices": []}}}
+
+    with patch.object(client, "_query", return_value=mock_response) as mock_query:
+        await client.fr_prices()
+        call_args = mock_query.call_args
+        query_obj = call_args[0][0]
+        variables = query_obj.variables
+
+        utc_today = datetime.now(UTC).date()
+
+        assert variables["date"] == str(utc_today)
+
+
+@pytest.mark.asyncio
+async def test_fr_prices_sets_x_country_header():
+    """Test French prices method sends the x-country: FR header."""
+    client = FrankEnergie()
+
+    mock_response = {"data": {"marketPrices": {"electricityPrices": [], "gasPrices": []}}}
+
+    with patch.object(client, "_query", return_value=mock_response) as mock_query:
+        await client.fr_prices()
+        call_args = mock_query.call_args
+
+        assert call_args.kwargs["extra_headers"] == {"x-country": "FR"}
+
+
+@pytest.mark.asyncio
+async def test_country_prices_defaults_to_15_minute_resolution():
+    """Test country_prices requests PT15M resolution by default.
+
+    Regression test: the 'x-country' market prices query previously omitted
+    the resolution argument entirely, silently always returning the backend's
+    default (hourly/PT60M) data regardless of the configured resolution.
+    """
+    client = FrankEnergie()
+
+    mock_response = {"data": {"marketPrices": {"electricityPrices": [], "gasPrices": []}}}
+
+    with patch.object(client, "_query", return_value=mock_response) as mock_query:
+        await client.country_prices("FR")
+        query_obj = mock_query.call_args[0][0]
+
+        assert query_obj.variables["resolution"] == "PT15M"
+
+
+@pytest.mark.asyncio
+async def test_country_prices_forwards_requested_resolution():
+    """Test country_prices forwards an explicitly requested resolution."""
+    client = FrankEnergie()
+
+    mock_response = {"data": {"marketPrices": {"electricityPrices": [], "gasPrices": []}}}
+
+    with patch.object(client, "_query", return_value=mock_response) as mock_query:
+        await client.country_prices("BE", resolution="PT60M")
+        query_obj = mock_query.call_args[0][0]
+
+        assert query_obj.variables["resolution"] == "PT60M"
 
 
 @pytest.mark.asyncio

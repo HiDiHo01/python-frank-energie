@@ -2619,10 +2619,13 @@ class Price:
         """ The market price of the product or service. """
         self.market_price = data["marketPrice"]
         """ The amount of tax added to the market price. """
-        self.market_price_tax = data["marketPriceTax"]
+        market_price_tax = data.get("marketPriceTax")
+        self.market_price_tax = market_price_tax if market_price_tax is not None else 0.0
         """ The amount of sourcing markup added to the market price. """
-        self.sourcing_markup_price = data["sourcingMarkupPrice"]
-        self.energy_tax_price = data["energyTaxPrice"]
+        sourcing_markup_price = data.get("sourcingMarkupPrice")
+        self.sourcing_markup_price = sourcing_markup_price if sourcing_markup_price is not None else 0.0
+        energy_tax_price = data.get("energyTaxPrice")
+        self.energy_tax_price = energy_tax_price if energy_tax_price is not None else 0.0
         self.market_price_including_tax = self.market_price + self.market_price_tax
 
         # Tax added to the market price including tax and markup
@@ -3831,22 +3834,24 @@ class MarketPrices:
         return cls._parse_prices(market_prices, energy_country)
 
     @classmethod
-    def from_be_dict(cls, data: dict[str, object]) -> MarketPrices:
+    def from_country_dict(cls, data: dict[str, object], energy_country: str) -> MarketPrices:
         """
-        Create MarketPrices instance from BE market prices dict.
+        Create MarketPrices instance from a country-scoped market prices dict.
+
+        Used for countries served via the 'x-country' header (e.g. BE, FR).
 
         Args:
-            data: Dictionary with market prices data in BE format.
+            data: Dictionary with market prices data in the country-scoped format.
+            energy_country: The country code the data was fetched for (e.g. 'BE', 'FR').
 
         Returns:
             MarketPrices instance populated from the provided dict.
 
         # NOTE:
-        # This method only validates and extracts raw BE payload.
+        # This method only validates and extracts the raw country-scoped payload.
         # Normalization is handled in the coordinator layer.
         """
-        energy_country = "BE"
-        _LOGGER.debug("BE Market Prices keys: %s", list(data.keys()))
+        _LOGGER.debug("%s Market Prices keys: %s", energy_country, list(data.keys()))
 
         # Defensive: if empty data, return empty PriceData
         if not data:
@@ -3856,7 +3861,7 @@ class MarketPrices:
                 energy_country=energy_country,
             )
 
-        _LOGGER.debug("BE Market Prices data: %s", data)
+        _LOGGER.debug("%s Market Prices data: %s", energy_country, data)
 
         if data.get("errors"):
             error = cls._extract_error(data, "Unknown API error")
@@ -3868,18 +3873,23 @@ class MarketPrices:
 
         root = data.get("data")
         if not isinstance(root, dict):
-            raise RequestException("Missing 'data' in BE response")
+            raise RequestException(f"Missing 'data' in {energy_country} response")
 
-        _LOGGER.debug("BE Market Prices root: %s", root)
+        _LOGGER.debug("%s Market Prices root: %s", energy_country, root)
 
         market_prices = root.get("marketPrices")
         _LOGGER.debug("Type of payload data: %s", type(market_prices))
         if not isinstance(market_prices, dict):
-            raise RequestException("Missing 'marketPrices' in BE response")
+            raise RequestException(f"Missing 'marketPrices' in {energy_country} response")
 
-        _LOGGER.debug("BE Market Prices payload: %s", market_prices)
+        _LOGGER.debug("%s Market Prices payload: %s", energy_country, market_prices)
 
         return cls._parse_prices(market_prices, energy_country)
+
+    @classmethod
+    def from_be_dict(cls, data: dict[str, object]) -> MarketPrices:
+        """Create MarketPrices instance from BE market prices dict."""
+        return cls.from_country_dict(data, "BE")
 
     @classmethod
     def from_userprices_dict(cls, data: dict[str, object], energy_country: str) -> MarketPrices:
