@@ -271,6 +271,38 @@ class Authentication:
     refresh_token_expires_at: datetime | None = None
     TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
+    def __post_init__(self) -> None:
+        """Backfill expiry from JWT claims when not explicitly provided.
+
+        Authentication is also constructed directly from persisted
+        access/refresh tokens (FrankEnergie.__init__), not only from a
+        login/renewToken response, and that path has no expiry to pass in.
+        """
+        if self.token_expires_at is None and self.authToken:
+            self.token_expires_at = self._decode_jwt_expiry(self.authToken)
+        if self.refresh_token_expires_at is None and self.refreshToken:
+            self.refresh_token_expires_at = self._decode_jwt_expiry(self.refreshToken)
+
+    @staticmethod
+    def _decode_jwt_expiry(token: str) -> datetime | None:
+        """Decode a JWT's 'exp' claim without verifying its signature.
+
+        Returns None on any decode failure or missing claim instead of
+        raising; callers treat an unknown expiry as "assume expired".
+        """
+        try:
+            decoded: dict[str, object] = jwt.decode(
+                token,
+                options={"verify_signature": False},
+                algorithms=["HS256"],
+            )
+        except InvalidTokenError:
+            return None
+        exp = decoded.get("exp")
+        if not isinstance(exp, (int, float)):
+            return None
+        return datetime.fromtimestamp(exp, tz=UTC)
+
     @staticmethod
     def from_dict(data: dict[str, object]) -> Authentication:
         """Parse the response from the login or renewToken mutation."""
