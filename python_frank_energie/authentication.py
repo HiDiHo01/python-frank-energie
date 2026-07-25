@@ -47,21 +47,27 @@ class Authentication:
         if isinstance(errors, list) and errors and isinstance(errors[0], dict):
             raise AuthException(errors[0].get("message", "Unknown authentication error"))
 
-        payload = Authentication._extract_payload(data)
+        inner = data.get("data")
+        if not isinstance(inner, dict):
+            raise AuthException("Missing 'data' in authentication response")
 
-        if not payload or "authToken" not in payload or "refreshToken" not in payload:
+        payload = Authentication._extract_payload(inner)
+
+        auth_token = payload.get("authToken") if payload else None
+        refresh_token = payload.get("refreshToken") if payload else None
+        if not isinstance(auth_token, str) or not isinstance(refresh_token, str):
             raise AuthException("Unexpected response: Missing or incomplete payload")
 
-        return Authentication(auth_token=str(payload["authToken"]), refresh_token=str(payload["refreshToken"]))
+        return Authentication(auth_token=auth_token, refresh_token=refresh_token)
 
     @staticmethod
     def _extract_payload(
         data: dict[str, object],
     ) -> dict[str, object] | None:
-        """Extract the login or renewToken payload from the response.
+        """Extract the login or renewToken payload from the unwrapped GraphQL data.
 
         Args:
-            data: The full GraphQL response.
+            data: The GraphQL response's ``data`` object.
 
         Returns:
             The payload dict if present.
