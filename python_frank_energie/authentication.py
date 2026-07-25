@@ -29,7 +29,7 @@ class Authentication:
     TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
     @staticmethod
-    def from_dict(data: dict[str, str]) -> "Authentication":
+    def from_dict(data: dict[str, object]) -> "Authentication":
         """Parse the response from the login or renewToken mutation.
 
         Args:
@@ -43,7 +43,8 @@ class Authentication:
         """
         _LOGGER.debug("Authentication response: %s", data)
 
-        if errors := data.get("errors"):
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
             raise AuthException(errors[0].get("message", "Unknown authentication error"))
 
         payload = Authentication._extract_payload(data)
@@ -51,7 +52,7 @@ class Authentication:
         if not payload or "authToken" not in payload or "refreshToken" not in payload:
             raise AuthException("Unexpected response: Missing or incomplete payload")
 
-        return Authentication(auth_token=payload["authToken"], refresh_token=payload["refreshToken"])
+        return Authentication(auth_token=str(payload["authToken"]), refresh_token=str(payload["refreshToken"]))
 
     @staticmethod
     def _extract_payload(
