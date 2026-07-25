@@ -271,6 +271,78 @@ class Authentication:
     refresh_token_expires_at: datetime | None = None
     TOKEN_RENEWAL_MARGIN = timedelta(minutes=5)
 
+    def __post_init__(self) -> None:
+        """Backfill expiry from JWT claims when not explicitly provided.
+
+        Authentication is also constructed directly from persisted
+        access/refresh tokens (FrankEnergie.__init__), not only from a
+        login/renewToken response, and that path has no expiry to pass in.
+        """
+        if self.token_expires_at is None and self.authToken:
+            self.token_expires_at = self._decode_jwt_expiry(self.authToken)
+        if self.refresh_token_expires_at is None and self.refreshToken:
+            self.refresh_token_expires_at = self._decode_jwt_expiry(self.refreshToken)
+
+    @staticmethod
+    def _decode_jwt_claims(token: str) -> dict[str, object] | None:
+        """Decode a JWT's claims without verifying its signature.
+
+        Returns None if the token cannot be decoded at all.
+        """
+        try:
+            return jwt.decode(
+                token,
+                options={"verify_signature": False},
+                algorithms=["HS256"],
+            )
+        except InvalidTokenError:
+            return None
+
+    @staticmethod
+    def _exp_to_datetime(exp: object) -> datetime | None:
+        """Convert a decoded 'exp' claim to a UTC datetime, or None if invalid."""
+        if isinstance(exp, bool) or not isinstance(exp, (int, float)) or not math.isfinite(exp):
+            return None
+        try:
+            return datetime.fromtimestamp(exp, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _decode_jwt_expiry(token: str) -> datetime | None:
+        """Decode a JWT's 'exp' claim without verifying its signature.
+
+        Returns None on any decode failure or missing claim instead of
+        raising; callers treat an unknown expiry as "assume expired".
+        """
+        claims = Authentication._decode_jwt_claims(token)
+        if claims is None:
+            return None
+        return Authentication._exp_to_datetime(claims.get("exp"))
+
+    @staticmethod
+    def _decode_expiry_or_raise(token: str, label: str) -> datetime | None:
+        """Decode a fresh login/renewToken token's expiry, or raise if unusable.
+
+        Returns None if the token can't be decoded at all (tolerated, as
+        for a mock/test token); raises AuthException if it decodes but
+        has no usable exp claim.
+        """
+        decoded = Authentication._decode_jwt_claims(token)
+        if decoded is None:
+            _LOGGER.warning("Unable to decode %s to extract expiration", label)
+            return None
+
+        _LOGGER.debug("%s decoded claims keys: %s", label, list(decoded.keys()))
+
+        expires_at = Authentication._exp_to_datetime(decoded.get("exp"))
+        if expires_at is None:
+            _LOGGER.warning("%s missing 'exp' claim; treating as expired", label)
+            raise AuthException("Missing or invalid 'exp' in JWT")
+
+        _LOGGER.debug("%s expires at: %s", label, expires_at)
+        return expires_at
+
     @staticmethod
     def from_dict(data: dict[str, object]) -> Authentication:
         """Parse the response from the login or renewToken mutation."""
@@ -306,48 +378,8 @@ class Authentication:
             raise AuthException("Invalid refreshToken")
 
         # --- Expiry extraction ---
-        token_expires_at: datetime | None = None
-        try:
-            decoded: dict[str, object] = jwt.decode(
-                auth_token,
-                options={"verify_signature": False},
-                algorithms=["HS256"],
-            )
-
-            _LOGGER.debug("authToken decoded claims keys: %s", list(decoded.keys()))
-
-            exp = decoded.get("exp")
-            if not isinstance(exp, (int, float)):
-                _LOGGER.warning("authToken missing 'exp' claim; treating as expired")
-                raise AuthException("Missing or invalid 'exp' in JWT")
-
-            token_expires_at = datetime.fromtimestamp(exp, tz=UTC)
-            _LOGGER.debug("authToken expires at: %s", token_expires_at)
-
-        except InvalidTokenError as err:
-            _LOGGER.warning("Unable to decode authToken to extract expiration: %s", err)
-
-        # --- Expiry extraction ---
-        refresh_token_expires_at: datetime | None = None
-        try:
-            decoded: dict[str, object] = jwt.decode(
-                refresh_token,
-                options={"verify_signature": False},
-                algorithms=["HS256"],
-            )
-
-            _LOGGER.debug("refreshToken decoded claims keys: %s", list(decoded.keys()))
-
-            exp = decoded.get("exp")
-            if not isinstance(exp, (int, float)):
-                _LOGGER.warning("refreshToken missing 'exp' claim; treating as expired")
-                raise AuthException("Missing or invalid 'exp' in JWT")
-
-            refresh_token_expires_at = datetime.fromtimestamp(exp, tz=UTC)
-            _LOGGER.debug("authToken expires at: %s", refresh_token_expires_at)
-
-        except InvalidTokenError as err:
-            _LOGGER.warning("Unable to decode refreshToken to extract expiration: %s", err)
+        token_expires_at = Authentication._decode_expiry_or_raise(auth_token, "authToken")
+        refresh_token_expires_at = Authentication._decode_expiry_or_raise(refresh_token, "refreshToken")
 
         return Authentication(
             authToken=auth_token,

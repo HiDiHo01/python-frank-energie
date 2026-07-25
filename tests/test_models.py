@@ -1,7 +1,9 @@
 """Tests for Frank Energie Models."""
 
 import json
+from datetime import UTC, datetime, timedelta
 
+import jwt
 import pytest
 from freezegun import freeze_time
 from syrupy.assertion import SnapshotAssertion
@@ -59,6 +61,67 @@ def test_authentication_error_message():
         Authentication.from_dict({"errors": [{"message": "help me"}]})
 
     assert "help me" in str(excinfo.value)
+
+
+def _make_jwt(exp: object) -> str:
+    if exp is None:
+        return jwt.encode({}, "test-secret-that-is-long-enough-for-hs256", algorithm="HS256")
+    return jwt.encode({"exp": exp}, "test-secret-that-is-long-enough-for-hs256", algorithm="HS256")
+
+
+def test_authentication_post_init_backfills_expiry_from_persisted_tokens():
+    """Authentication built from persisted tokens (no expiry given) decodes exp itself."""
+    future = datetime.now(UTC) + timedelta(hours=1)
+    token = _make_jwt(int(future.timestamp()))
+
+    auth = Authentication(authToken=token, refreshToken=token, version=None)
+
+    assert auth.token_expires_at is not None
+    assert auth.refresh_token_expires_at is not None
+    assert auth.is_expired is False
+
+
+def test_authentication_post_init_expired_token_reports_expired():
+    """A persisted token whose exp has already passed is reported as expired."""
+    past = datetime.now(UTC) - timedelta(minutes=10)
+    token = _make_jwt(int(past.timestamp()))
+
+    auth = Authentication(authToken=token, refreshToken=token, version=None)
+
+    assert auth.is_expired is True
+
+
+@pytest.mark.parametrize(
+    "exp",
+    [None, float("inf"), float("-inf"), float("nan"), 10**20, -(10**20), True],
+)
+def test_decode_jwt_expiry_returns_none_for_invalid_exp(exp):
+    """Missing, non-finite, out-of-range, or boolean exp claims yield None, not a raised exception."""
+    token = _make_jwt(exp)
+
+    assert Authentication._decode_jwt_expiry(token) is None
+
+
+def test_decode_jwt_expiry_returns_none_for_undecodable_token():
+    """A token that isn't a JWT at all yields None rather than raising."""
+    assert Authentication._decode_jwt_expiry("not-a-jwt") is None
+
+
+def test_from_dict_raises_on_missing_exp_claim():
+    """A decodable JWT with no exp claim fails the login/renew parse, not a silent fallback."""
+    token = _make_jwt(None)
+    response = {"data": {"login": {"authToken": token, "refreshToken": "world"}}}
+
+    with pytest.raises(AuthException, match="Missing or invalid 'exp'"):
+        Authentication.from_dict(response)
+
+
+def test_from_dict_tolerates_undecodable_token():
+    """A non-JWT token (e.g. a test/mock token) is tolerated, not raised on."""
+    auth = Authentication.from_dict(json.loads(load_fixtures("authentication.json")))
+
+    assert auth.token_expires_at is None
+    assert auth.refresh_token_expires_at is None
 
 
 #
