@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from statistics import mean
-from typing import Any, TypeVar, cast
+from typing import Any, TypedDict, cast
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -147,19 +147,6 @@ class DictLikeMixin:
     def __contains__(self, key: str) -> bool:
         snake_key = self._normalize_key(key)
         return hasattr(self, snake_key) or hasattr(self, key)
-
-
-T = TypeVar("T")
-
-
-def _require(data: dict[str, object], key: str) -> T:
-    """Require a key to exist in a dict and not be None."""
-    value = data.get(key)
-
-    if value is None:
-        raise KeyError(f"Missing required field: {key}")
-
-    return value  # type: ignore[return-value]
 
 
 def _as_dict(value: object, field_name: str) -> dict[str, object]:
@@ -414,6 +401,16 @@ class Authentication:
         return datetime.now(UTC) >= (self.token_expires_at - self.TOKEN_RENEWAL_MARGIN)
 
 
+InvoicePeriodSummary = TypedDict(
+    "InvoicePeriodSummary",
+    {
+        "Start date": datetime | None,
+        "Period description": str | None,
+        "Total amount": float,
+    },
+)
+
+
 @dataclass
 class Invoice:
     """Represents invoice information, including the start date, period
@@ -519,19 +516,19 @@ class Invoices:
     current_period_invoice: Invoice | None = None
     upcoming_period_invoice: Invoice | None = None
 
-    all_invoices_dict_previous_year: dict[str, object] = field(default_factory=dict)
-    all_invoices_dict_this_year: dict[str, object] = field(default_factory=dict)
-    all_invoices_dict: dict[str, object] = field(default_factory=dict)
+    all_invoices_dict_previous_year: dict[str, InvoicePeriodSummary] = field(default_factory=dict)
+    all_invoices_dict_this_year: dict[str, InvoicePeriodSummary] = field(default_factory=dict)
+    all_invoices_dict: dict[str, InvoicePeriodSummary] = field(default_factory=dict)
 
     total_costs_previous_year: float = 0.0
     total_costs_this_year: float = 0.0
 
-    def get_all_invoices_dict_for_previous_year(self) -> dict:
+    def get_all_invoices_dict_for_previous_year(self) -> dict[str, InvoicePeriodSummary]:
         """Retrieve all invoices for the previous calendar year as a dictionary."""
         now_utc = datetime.now(UTC)
         now_local = now_utc.astimezone(LOCAL_TZ)
         previous_year = now_local.year - 1
-        invoices_dict: dict[str, dict[str, object]] = {}
+        invoices_dict: dict[str, InvoicePeriodSummary] = {}
 
         for invoice in self.get_invoices_for_year(previous_year):
             period = invoice.PeriodDescription
@@ -547,12 +544,12 @@ class Invoices:
 
         return invoices_dict
 
-    def get_all_invoices_dict_for_this_year(self) -> dict:
+    def get_all_invoices_dict_for_this_year(self) -> dict[str, InvoicePeriodSummary]:
         """Retrieve all invoices for the specified year as a dictionary."""
         now_utc = datetime.now(UTC)
         now_local = now_utc.astimezone(LOCAL_TZ)
         current_year = now_local.year
-        invoices_dict: dict[str, dict[str, object]] = {}
+        invoices_dict: dict[str, InvoicePeriodSummary] = {}
 
         for invoice in self.get_invoices_for_year(current_year):
             period = invoice.PeriodDescription
@@ -567,14 +564,16 @@ class Invoices:
 
         return invoices_dict
 
-    def get_all_invoices_dict_per_year(self) -> dict[int, dict[str, object]]:
+    def get_all_invoices_dict_per_year(self) -> dict[int, InvoicePeriodSummary]:
         """Calculate total invoice amounts per year."""
-        all_invoices_dict: dict[int, dict[str, object]] = defaultdict(
-            lambda: {
-                "Start date": None,
-                "Period description": None,
-                "Total amount": 0.0,
-            }
+        all_invoices_dict: defaultdict[int, InvoicePeriodSummary] = defaultdict(
+            lambda: InvoicePeriodSummary(
+                **{
+                    "Start date": None,
+                    "Period description": None,
+                    "Total amount": 0.0,
+                }
+            )
         )
 
         for invoice in self.all_periods_invoices:
@@ -587,9 +586,9 @@ class Invoices:
 
         return dict(all_invoices_dict)
 
-    def get_all_invoices_dict(self) -> dict[str, dict[str, object]]:
+    def get_all_invoices_dict(self) -> dict[str, InvoicePeriodSummary]:
         """Retrieve all invoices as a dictionary and sum duplicates."""
-        invoices_dict: dict[str, dict[str, object]] = {}
+        invoices_dict: dict[str, InvoicePeriodSummary] = {}
 
         sorted_invoices = sorted(self.all_periods_invoices, key=lambda invoice: invoice.StartDate)
 
@@ -618,7 +617,7 @@ class Invoices:
         """Calculate the total costs for the specified year using all_periods_invoices."""
         return sum(invoice.TotalAmount for invoice in self.get_invoices_for_year(year))
 
-    def calculate_average_costs_per_month(self, year: int = None) -> float | None:
+    def calculate_average_costs_per_month(self, year: int | None = None) -> float | None:
         """Calculate the average costs per month."""
         invoices = self.all_periods_invoices if year is None else self.get_invoices_for_year(year)
 
@@ -721,10 +720,12 @@ class Invoices:
         """Parse the response from the invoices query."""
         _LOGGER.debug("Invoices response keys: %s", list(data.keys()))
 
-        if errors := data.get("errors"):
-            raise RequestException(errors[0]["message"])
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            raise RequestException(errors[0].get("message", "Unknown error"))
 
-        payload = data.get("data", {}).get("invoices")
+        inner = data.get("data")
+        payload = inner.get("invoices") if isinstance(inner, dict) else None
         if not isinstance(payload, dict):
             raise RequestException("Invalid invoices payload")
 
@@ -954,13 +955,12 @@ class UserSites:
         """Parse the response from the UserSites query."""
         _LOGGER.debug("UserSites %s", data)
 
-        if errors := data.get("errors"):
-            raise RequestException(errors[0]["message"])
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            raise RequestException(errors[0].get("message", "Unknown error"))
 
-        if "errors" in data:
-            raise RequestException(data["errors"][0]["message"])
-
-        user_sites = data.get("data", {}).get("userSites")
+        inner = data.get("data")
+        user_sites = inner.get("userSites") if isinstance(inner, dict) else None
         if not user_sites or not isinstance(user_sites, list):
             raise RequestException("Unexpected response format for userSites")
 
@@ -1014,7 +1014,7 @@ class InviteLink:
     discount_per_connection: int
 
     @staticmethod
-    def from_dict(data: dict[str, object]) -> InviteLink:
+    def from_dict(data: dict[str, object]) -> InviteLink | None:
         """Parse the response from the InviteLink query."""
         _LOGGER.debug("InviteLink %s", data)
 
@@ -1084,11 +1084,14 @@ class PushNotificationPriceAlert:
         if not isinstance(data, dict):
             return None
 
+        weekdays_raw = data.get("weekdays", [])
+        weekdays = [int(day) for day in weekdays_raw] if isinstance(weekdays_raw, list) else []
+
         return cls(
             id=str(data.get("id")),
             is_enabled=bool(data.get("isEnabled")),
             type=str(data.get("type")),
-            weekdays=list(data.get("weekdays", [])),
+            weekdays=weekdays,
         )
 
     @staticmethod
@@ -1096,16 +1099,23 @@ class PushNotificationPriceAlert:
         """Parse the GraphQL response from the PushNotificationPriceAlerts query."""
         _LOGGER.debug("Parsing PushNotificationPriceAlerts response: %s", data)
 
-        if "errors" in data:
-            error_msg = data["errors"][0].get("message", "Unknown error")
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors:
+            error_msg = errors[0].get("message", "Unknown error") if isinstance(errors[0], dict) else "Unknown error"
             raise RequestException(error_msg)
 
-        payload = data.get("data", {}).get("me", {}).get("PushNotificationPriceAlerts")
+        root = data.get("data")
+        me = root.get("me") if isinstance(root, dict) else None
+        payload = me.get("PushNotificationPriceAlerts") if isinstance(me, dict) else None
 
         if not payload or not isinstance(payload, list):
             raise RequestException("Unexpected or missing PushNotificationPriceAlerts data")
 
-        alerts = [PushNotificationPriceAlert.from_dict(alert) for alert in payload]
+        alerts = [
+            alert_obj
+            for alert in payload
+            if isinstance(alert, dict) and (alert_obj := PushNotificationPriceAlert.from_dict(alert)) is not None
+        ]
         _LOGGER.debug("Parsed %d PushNotificationPriceAlerts", len(alerts))
 
         return alerts
@@ -1136,8 +1146,8 @@ class Me:
         _LOGGER.debug("User payload received: %s", data)
 
         errors = data.get("errors")
-        if errors:
-            message = getattr(errors[0], "get", lambda k, d=None: "Unknown error")("message")
+        if isinstance(errors, list) and errors:
+            message = errors[0].get("message", "Unknown error") if isinstance(errors[0], dict) else "Unknown error"
             raise RequestException(message)
 
         raw_data = data.get("data")
@@ -1311,7 +1321,7 @@ class DeliverySite(BaseModel):
     propositionType: str | None
     reference: str
     segments: list[str]
-    address: Address
+    address: Address | None
     status: str
     deliveryStartDate: date | None
     deliveryEndDate: date | None = None
@@ -1319,7 +1329,12 @@ class DeliverySite(BaseModel):
     lastMeterReadingDate: date | None
 
     @staticmethod
-    def from_dict(payload: dict[str, str]) -> DeliverySite:
+    def _parse_date_field(payload: dict[str, object], key: str) -> date | None:
+        value = payload.get(key)
+        return datetime.strptime(value, "%Y-%m-%d").date() if isinstance(value, str) and value else None
+
+    @staticmethod
+    def from_dict(payload: dict[str, object]) -> DeliverySite | None:
         """Parse the response from the me query."""
 
         if not payload:
@@ -1328,39 +1343,22 @@ class DeliverySite(BaseModel):
         _LOGGER.debug("DeliverySites %s", payload)
 
         address_data = payload.get("address")
-        address = Address.from_dict(address_data) if address_data else None
+        address = Address.from_dict(address_data) if isinstance(address_data, dict) else None
 
-        return (
-            DeliverySite(
-                reference=payload.get("reference"),
-                segments=payload.get("segments", []),
-                addressHasMultipleSites=payload.get("addressHasMultipleSites", False),
-                address=address,
-                propositionType=payload.get("propositionType"),
-                status=payload.get("status"),
-                deliveryStartDate=(
-                    datetime.strptime(payload.get("deliveryStartDate"), "%Y-%m-%d").date()
-                    if payload.get("deliveryStartDate")
-                    else None
-                ),
-                deliveryEndDate=(
-                    datetime.strptime(payload.get("deliveryEndDate"), "%Y-%m-%d").date()
-                    if payload.get("deliveryEndDate")
-                    else None
-                ),
-                firstMeterReadingDate=(
-                    datetime.strptime(payload.get("firstMeterReadingDate"), "%Y-%m-%d").date()
-                    if payload.get("firstMeterReadingDate")
-                    else None
-                ),
-                lastMeterReadingDate=(
-                    datetime.strptime(payload.get("lastMeterReadingDate"), "%Y-%m-%d").date()
-                    if payload.get("lastMeterReadingDate")
-                    else None
-                ),
-            )
-            if payload
-            else None
+        segments_raw = payload.get("segments", [])
+        segments = [str(s) for s in segments_raw] if isinstance(segments_raw, list) else []
+
+        return DeliverySite(
+            reference=str(payload.get("reference", "")),
+            segments=segments,
+            addressHasMultipleSites=bool(payload.get("addressHasMultipleSites", False)),
+            address=address,
+            propositionType=cast("str | None", payload.get("propositionType")),
+            status=str(payload.get("status", "")),
+            deliveryStartDate=DeliverySite._parse_date_field(payload, "deliveryStartDate"),
+            deliveryEndDate=DeliverySite._parse_date_field(payload, "deliveryEndDate"),
+            firstMeterReadingDate=DeliverySite._parse_date_field(payload, "firstMeterReadingDate"),
+            lastMeterReadingDate=DeliverySite._parse_date_field(payload, "lastMeterReadingDate"),
         )
 
     @property
@@ -1786,7 +1784,7 @@ class DeliverySiteList:
         site_dict = {}
         for index, site in enumerate(self.delivery_sites, start=1):
             site_name = f"Delivery site {index}"
-            site_dict[site_name] = site.address.__dict__
+            site_dict[site_name] = site.address.__dict__ if site.address else {}
         return site_dict
 
 
@@ -1989,18 +1987,6 @@ class User:
             site_dict[site_name] = site_info
         return site_dict
 
-    @property
-    def delivery_sites(self) -> dict[str, dict]:
-        site_dict = {}
-        for index, site in enumerate(self.deliverySites, start=1):
-            address = site.get("address", {})
-            site_name = f"Delivery site {index}"
-            site_info = {
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}"
-            }
-            site_dict[site_name] = site_info
-        return site_dict
-
 
 @dataclass
 class Difference:
@@ -2053,19 +2039,23 @@ class MonthInsights:
             self.lastMeterReadingDate = self.lastMeterReadingDate.replace(tzinfo=UTC)
 
     @staticmethod
-    def from_dict(data: dict[str, str]) -> MonthInsights | None:
+    def from_dict(data: dict[str, object]) -> MonthInsights | None:
         """Parse the response from the monthSummary query."""
         _LOGGER.debug("MonthInsights %s", data)
 
         if data is None:
             return None
 
-        if errors := data.get("errors"):
-            raise RequestException(errors[0]["message"])
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            raise RequestException(errors[0].get("message", "Unknown error"))
 
-        payload = data.get("data", {}).get("monthInsights")
+        inner = data.get("data")
+        payload = inner.get("monthInsights") if isinstance(inner, dict) else None
         if payload is None:
             raise RequestException("Unexpected response")
+        if not isinstance(payload, dict):
+            raise RequestException("Unexpected response shape")
         _LOGGER.debug("MonthInsights %s", payload)
 
         # Parse ISO8601 with timezone handling
@@ -2128,8 +2118,9 @@ class MonthSummary:
         if data is None:
             return None
 
-        if errors := data.get("errors"):
-            raise RequestException(errors[0]["message"])
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            raise RequestException(errors[0].get("message", "Unknown error"))
 
         root = data.get("data", {})
 
@@ -2198,8 +2189,9 @@ class MonthSummary:
         if data is None:
             return None
 
-        if errors := data.get("errors"):
-            raise RequestException(errors[0]["message"])
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            raise RequestException(errors[0].get("message", "Unknown error"))
 
         root = data.get("data")
 
@@ -2633,20 +2625,19 @@ class Price:
 
         date_from_str = data.get("from", "")
         date_till_str = data.get("till", "")
-        self.date_from = None
-        self.date_till = None
 
-        if date_from_str:
-            try:
-                self.date_from = datetime.fromisoformat(date_from_str.replace("Z", _UTC_SUFFIX))
-            except ValueError:
-                logging.warning("Invalid ISO date format: '%s'", date_from_str)
+        if not date_from_str or not date_till_str:
+            raise ValueError(f"Price interval missing 'from'/'till': from={date_from_str!r}, till={date_till_str!r}")
 
-        if date_till_str:
-            try:
-                self.date_till = datetime.fromisoformat(date_till_str.replace("Z", _UTC_SUFFIX))
-            except ValueError:
-                logging.warning("Invalid ISO date format: '%s'", date_till_str)
+        try:
+            self.date_from = datetime.fromisoformat(date_from_str.replace("Z", _UTC_SUFFIX))
+        except ValueError as err:
+            raise ValueError(f"Invalid ISO date format: '{date_from_str}'") from err
+
+        try:
+            self.date_till = datetime.fromisoformat(date_till_str.replace("Z", _UTC_SUFFIX))
+        except ValueError as err:
+            raise ValueError(f"Invalid ISO date format: '{date_till_str}'") from err
 
         """ The market price of the product or service. """
         self.market_price = data["marketPrice"]
@@ -2672,23 +2663,6 @@ class Price:
         date_from_str = self.date_from.isoformat() if self.date_from else "N/A"
         date_till_str = self.date_till.isoformat() if self.date_till else "N/A"
         return f"{date_from_str} -> {date_till_str}: {self.total:.4f} {self.per_unit or ''}"
-
-    @property
-    def ET(self, data) -> str:  # not in use anymore
-        """Returns energy type 'electricity' or 'gas'."""
-        if "energy_type" in data:
-            self.energy_type = data["energy_type"]
-            if self.energy_type == "electricity":
-                # self.energy_tax_price = 0.15239 # electricity tax 2023
-                # self.energy_tax_price = 0.13165  # electricity tax 2024
-                self.energy_tax_price = 0.1228634  # electricity tax 2025
-            if self.energy_type == "gas":
-                # self.energy_tax_price = 0.5927 # gas tax 2023
-                # self.energy_tax_price = 0.70544  # gas tax 2024
-                self.energy_tax_price = 0.6995736  # gas tax 2025
-            return data["energy_type"]
-        else:
-            return None
 
     @property
     def for_current_quarter_hour(self) -> bool:
@@ -3114,13 +3088,12 @@ class PriceData:
         return [price for price in self.price_data if price.for_current_hour]
 
     @property
-    def average_current_hour(self) -> Price:
+    def average_current_hour(self) -> float | None:
         """Average price for the current hour."""
         current_hour_prices = self.prices_for_current_hour
         if not current_hour_prices:
             return None
-        average_price = mean(price.total for price in current_hour_prices)
-        return average_price
+        return mean(price.total for price in current_hour_prices)
 
     @property
     def current_hour(self) -> Price | None:
@@ -3282,7 +3255,7 @@ class PriceData:
     @staticmethod
     def safe_avg(values: Iterable[float | int]) -> float | None:
         """Return average of numeric values or None if empty."""
-        values_list = [_safe_float(v) for v in values if v is not None]
+        values_list = [f for v in values if (f := _safe_float(v)) is not None]
 
         if not values_list:
             return None
@@ -3574,7 +3547,7 @@ class PriceData:
         )
 
     @property
-    def tomorrow_prices_market(self) -> list:
+    def tomorrow_prices_market(self) -> float | None:
         """Get the market prices for tomorrow"""
         current_hour_utc = datetime.now(UTC).hour
         if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
@@ -3594,7 +3567,7 @@ class PriceData:
         return None
 
     @property
-    def tomorrow_prices_market_tax(self) -> list:
+    def tomorrow_prices_market_tax(self) -> float | None:
         """Get the market prices incl tax for tomorrow"""
         current_hour_utc = datetime.now(UTC).hour
         if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
@@ -3617,7 +3590,7 @@ class PriceData:
         return None
 
     @property
-    def tomorrow_prices_market_tax_markup(self) -> list:
+    def tomorrow_prices_market_tax_markup(self) -> float | None:
         """Get the market prices incl tax and markup for tomorrow"""
         current_hour_utc = datetime.now(UTC).hour
         if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
@@ -3640,7 +3613,7 @@ class PriceData:
         return None
 
     @property
-    def today_prices_total(self) -> list:
+    def today_prices_total(self) -> float | None:
         """Get the market prices for today"""
         if not self.price_data:
             return None
@@ -3654,7 +3627,7 @@ class PriceData:
         return None
 
     @property
-    def tomorrow_prices_total(self) -> list:
+    def tomorrow_prices_total(self) -> float | None:
         """Get the market prices for tomorrow"""
         current_hour_utc = datetime.now(UTC).hour
         if not self.price_data or current_hour_utc > 21 or current_hour_utc < FETCH_TOMORROW_HOUR_UTC:
@@ -3706,11 +3679,12 @@ class PriceData:
             if value is None:
                 continue
 
-            try:
-                total += _safe_float(value)
-                count += 1
-            except (TypeError, ValueError):
+            safe_value = _safe_float(value)
+            if safe_value is None:
                 continue
+
+            total += safe_value
+            count += 1
 
         if count == 0:
             return None
@@ -3747,22 +3721,22 @@ class PriceData:
         return average_price_with_tax
 
     @property
-    def today_gas_before6am(self) -> list[Price]:
+    def today_gas_before6am(self) -> list[float]:
         """Get a list of gas prices for today before 6AM."""
         return [price.total for price in self.price_data if price.for_today and price.date_from.hour < 6]
 
     @property
-    def today_gas_after6am(self) -> list[Price]:
+    def today_gas_after6am(self) -> list[float]:
         """Get a list of gas prices for today after 6AM."""
         return [price.total for price in self.price_data if price.for_today and price.date_from.hour >= 6]
 
     @property
-    def tomorrow_gas_before6am(self) -> list[Price]:
+    def tomorrow_gas_before6am(self) -> list[float]:
         """Get a list of gas prices for tomorrow before 6AM."""
         return [price.total for price in self.price_data if price.for_tomorrow and price.date_from.hour < 6]
 
     @property
-    def tomorrow_gas_after6am(self) -> list[Price]:
+    def tomorrow_gas_after6am(self) -> list[float]:
         """Get a list of gas prices for tomorrow after 6AM."""
         return [price.total for price in self.price_data if price.for_tomorrow and price.date_from.hour >= 6]
 
@@ -4226,7 +4200,13 @@ class SmartBattery:
     @classmethod
     def from_dict_list(cls, items: list[object]) -> list[SmartBattery]:
         """Convert a list of dicts or existing SmartBattery instances into SmartBattery objects."""
-        return [cls.from_dict(item) if isinstance(item, dict) else item for item in items]
+        result: list[SmartBattery] = []
+        for item in items:
+            if isinstance(item, dict):
+                result.append(cls.from_dict(item))
+            elif isinstance(item, SmartBattery):
+                result.append(item)
+        return result
 
 
 @dataclass
@@ -4531,35 +4511,6 @@ def _parse_datetime(value: str | None) -> datetime | None:
         raise ValueError(f"Invalid datetime string: {value}") from err
 
 
-def test_parse_datetime(value: object) -> datetime | None:
-    """Parse a datetime string into a timezone-aware datetime object (UTC).
-
-    Handles:
-    - ISO 8601 strings
-    - Strings ending with 'Z' as UTC
-    - Timezone-naive input defaulting to UTC
-
-    Returns None if value is None.
-    Raises ValueError on invalid input.
-    """
-    if value is None:
-        return None
-
-    if not isinstance(value, str):
-        raise ValueError(f"Expected string for datetime parsing, got: {type(value).__name__}")
-
-    try:
-        dt = parse_datetime(value)
-    except (ValueError, TypeError) as err:
-        _LOGGER.debug("Failed to parse datetime string '%s': %s", value, err)
-        raise ValueError(f"Invalid datetime string: {value}") from err
-
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
-
-    return dt
-
-
 def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[str, Any]:
     """
     Convert a BatteryEntityGroup instance into a dictionary suitable for use
@@ -4610,8 +4561,8 @@ class SmartPvSystemPanelGroup(DictLikeMixin):
             azimuth=data.get("azimuth"),
             tilt=data.get("tilt"),
             capacity_kwp=_safe_float(data.get("capacityKwp")),
-            annual_kwh=int(data["annualKwh"]) if data.get("annualKwh") is not None else None,
-            panel_count=int(data["panelCount"]) if data.get("panelCount") is not None else None,
+            annual_kwh=int(sf) if (sf := _safe_float(data.get("annualKwh"))) is not None else None,
+            panel_count=int(sf) if (sf := _safe_float(data.get("panelCount"))) is not None else None,
             installation_date=_parse_datetime(data.get("installationDate")) if data.get("installationDate") else None,
         )
 
@@ -4655,21 +4606,6 @@ class SmartPvSystem(DictLikeMixin):
             if isinstance(data.get("SmartPvSystemPanelGroups"), list)
             else [],
         )
-
-
-@dataclass
-class old_SmartPvSystems(DictLikeMixin):
-    """Represents a collection of smart PV systems."""
-
-    systems: list[SmartPvSystem]
-
-    @classmethod
-    def from_dict(cls, response: dict[str, object]) -> SmartPvSystems:
-        if not response:
-            return cls(systems=[])
-        pv_dicts = response.get("data", {}).get("smartPvSystems", [])
-        systems = [SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)]
-        return cls(systems=systems)
 
 
 @dataclass
@@ -4798,8 +4734,16 @@ class SmartFeedInSessionData(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartFeedInSessionData:
-        payload = data.get("data", {}).get("smartFeedInSessions") or data
-        sessions = [FeedInSession.from_dict(s) for s in (payload.get("sessions") or [])]
+        inner = data.get("data")
+        raw_payload = inner.get("smartFeedInSessions") if isinstance(inner, dict) else None
+        payload = raw_payload if isinstance(raw_payload, dict) else data
+
+        sessions_raw = payload.get("sessions")
+        sessions = (
+            [FeedInSession.from_dict(s) for s in sessions_raw if isinstance(s, dict)]
+            if isinstance(sessions_raw, list)
+            else []
+        )
         return cls(
             period_bonus=_safe_float(payload.get("periodBonus"), default=0.0),
             period_end_date=payload["periodEndDate"],
