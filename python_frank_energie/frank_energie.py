@@ -11,6 +11,8 @@ import sys
 import time
 from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import Any, TypeVar
 
 import aiohttp
@@ -61,7 +63,10 @@ _LOGGER = logging.getLogger(__name__)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-VERSION = "2026.6.21"
+try:
+    VERSION = _pkg_version("python-frank-energie")
+except PackageNotFoundError:
+    VERSION = "0.0.0"
 
 
 class FrankEnergieQuery:
