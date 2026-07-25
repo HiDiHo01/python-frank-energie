@@ -299,9 +299,12 @@ class Authentication:
         except InvalidTokenError:
             return None
         exp = decoded.get("exp")
-        if not isinstance(exp, (int, float)):
+        if not isinstance(exp, (int, float)) or not math.isfinite(exp):
             return None
-        return datetime.fromtimestamp(exp, tz=UTC)
+        try:
+            return datetime.fromtimestamp(exp, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> Authentication:
