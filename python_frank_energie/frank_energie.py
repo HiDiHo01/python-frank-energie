@@ -290,6 +290,7 @@ class FrankEnergie:
         )
 
         await self._ensure_session()
+        assert self._session is not None
 
         timeout = ClientTimeout(total=30)
         try:
@@ -551,7 +552,7 @@ class FrankEnergie:
             )
         return self._auth
 
-    async def meter_readings(self, site_reference: str) -> EnergyConsumption:
+    async def meter_readings(self, site_reference: str) -> EnergyConsumption | None:
         """Retrieve the meter_readings.
 
         Args:
@@ -588,7 +589,7 @@ class FrankEnergie:
         response = await self._query(query)
         return EnergyConsumption.from_dict(response)
 
-    async def month_summary(self, site_reference: str) -> MonthSummary:
+    async def month_summary(self, site_reference: str) -> MonthSummary | None:
         """Retrieve the month summary for the specified month.
 
         Args:
@@ -641,7 +642,7 @@ class FrankEnergie:
             )
             raise FrankEnergieException(f"Failed to fetch month summary: {e}") from e
 
-    async def month_insights(self, site_reference: str, date: str) -> MonthInsights:
+    async def month_insights(self, site_reference: str, date: str) -> MonthInsights | None:
         """Retrieve the month insights for the specified month.
 
         Args:
@@ -731,7 +732,7 @@ class FrankEnergie:
         except Exception as exc:
             raise FrankEnergieException(f"Failed to parse MonthInsights response: {exc}") from exc
 
-    async def enode_chargers(self, site_reference: str, start_date: date) -> dict[str, EnodeChargers]:
+    async def enode_chargers(self, site_reference: str, start_date: date) -> EnodeChargers:
         """Retrieve the enode charger information for the specified site reference.
 
         Args:
@@ -739,13 +740,14 @@ class FrankEnergie:
             start_date: The start date for filtering the enode charger information.
 
         Returns:
-            The enode charger information, or an empty dict if not authenticated.
+            The enode charger information, or an EnodeChargers with an empty
+            charger list if not authenticated.
 
         Raises:
             FrankEnergieException: If the request fails.
         """
         if not self.is_authenticated:
-            return {}
+            return EnodeChargers(chargers=[])
 
         if not isinstance(site_reference, str) or not site_reference.strip():
             raise FrankEnergieException("A valid non-empty site_reference must be provided.")
@@ -813,16 +815,16 @@ class FrankEnergie:
             # mock_response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 1', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 100, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 2', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
             if response is None:
                 _LOGGER.debug("No response data for 'enodeChargers'")
-                return {}
+                return EnodeChargers(chargers=[])
             if "data" not in response:
                 _LOGGER.debug("No data found in response for chargers: %s", response)
-                return {}
+                return EnodeChargers(chargers=[])
             if response["data"] is None:
                 _LOGGER.debug("No data for chargers found: %s", response)
-                return {}
+                return EnodeChargers(chargers=[])
             if "enodeChargers" not in response["data"]:
                 _LOGGER.debug("No chargers found in data: %s", response)
-                return {}
+                return EnodeChargers(chargers=[])
             chargers_data = response.get("data", {}).get("enodeChargers", [])
             _LOGGER.debug("%s Enode Chargers Found", len(chargers_data))
             _LOGGER.debug("Enode Chargers data: %s", chargers_data)
@@ -836,11 +838,11 @@ class FrankEnergie:
             return EnodeChargers.from_dict(chargers_data)
         except SmartChargingNotEnabledException as error:
             _LOGGER.debug("Smart charging not enabled: %s", error)
-            return {}
+            return EnodeChargers(chargers=[])
         except Exception as error:
             _LOGGER.debug("Error in enode_chargers: %s", error)
             _LOGGER.exception("Unexpected error during query: %s", error)
-            return {}
+            return EnodeChargers(chargers=[])
             # raise FrankEnergieException("Unexpected error occurred.") from error
 
     #        except Exception as e:
@@ -2804,7 +2806,7 @@ class FrankEnergie:
         }
     """
     SMART_PV_SYSTEMS_OPERATIONNAME = "SmartPvSystems"
-    SMART_PV_SYSTEMS_VARIABLES = {}
+    SMART_PV_SYSTEMS_VARIABLES: dict[str, object] = {}
 
     async def smart_pv_systems(self) -> SmartPvSystems | None:
         """Get the users smart PV systems.
@@ -2869,7 +2871,7 @@ class FrankEnergie:
         }
     """
     USER_SMART_FEED_IN_OPERATIONNAME = "UserSmartFeedIn"
-    USER_SMART_FEED_IN_VARIABLES = {}
+    USER_SMART_FEED_IN_VARIABLES: dict[str, object] = {}
 
     async def user_smart_feed_in(self) -> UserSmartFeedInStatus | None:
         """Get the users smart feed-in service status.
@@ -2939,7 +2941,7 @@ class FrankEnergie:
         }
         """
     ENODE_VEHICLES_OPERATIONNAME = "EnodeVehicles"
-    ENODE_VEHICLES_VARIABLES = {}
+    ENODE_VEHICLES_VARIABLES: dict[str, object] = {}
 
     async def enode_vehicles(self) -> EnodeVehicles | None:
         """Get the users enode vehicles.
@@ -2983,8 +2985,8 @@ class FrankEnergie:
             return None
 
         _LOGGER.debug("Response data for 'enodeVehicles': %s", response)
-        # vehicles_data = response.get("data", {}).get("enodeVehicles", {})
-        vehicles_data = response["data"]["enodeVehicles"]
+        response_data = response["data"]
+        vehicles_data = response_data.get("enodeVehicles") if isinstance(response_data, dict) else None
 
         if not vehicles_data:
             _LOGGER.debug("No enode vehicles found")

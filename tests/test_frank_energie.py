@@ -17,6 +17,7 @@ from python_frank_energie.exceptions import (
     SmartTradingNotEnabledException,
 )
 from python_frank_energie.frank_energie import VERSION, FrankEnergieQuery, sanitize_query
+from python_frank_energie.models import EnodeChargers
 
 from . import load_fixtures
 
@@ -997,14 +998,14 @@ class TestFrankEnergieAPIEndpointsAuth:
 
     @pytest.mark.asyncio
     async def test_frank_energie_enode_chargers_not_authenticated_returns_empty(self):
-        """Test enode chargers when not authenticated returns empty dict."""
+        """Test enode chargers when not authenticated returns an empty EnodeChargers."""
         from datetime import date
 
         client = FrankEnergie()
 
         result = await client.enode_chargers("site_ref_123", date.today())
 
-        assert result == {}
+        assert result == EnodeChargers(chargers=[])
 
 
 #
@@ -1224,17 +1225,17 @@ async def test_enode_chargers_empty_response_handling():
     # Test with None response
     with patch.object(client, "_query", return_value=None):
         result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == {}
+        assert result == EnodeChargers(chargers=[])
 
     # Test with empty data
     with patch.object(client, "_query", return_value={"data": None}):
         result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == {}
+        assert result == EnodeChargers(chargers=[])
 
     # Test with missing enodeChargers key
     with patch.object(client, "_query", return_value={"data": {}}):
         result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == {}
+        assert result == EnodeChargers(chargers=[])
 
 
 @pytest.mark.asyncio
