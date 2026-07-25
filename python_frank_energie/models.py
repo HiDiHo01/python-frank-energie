@@ -1121,7 +1121,11 @@ class PushNotificationPriceAlert:
             return None
 
         weekdays_raw = data.get("weekdays", [])
-        weekdays = [int(day) for day in weekdays_raw] if isinstance(weekdays_raw, list) else []
+        weekdays = (
+            [parsed for day in weekdays_raw if (parsed := _as_int(day)) is not None]
+            if isinstance(weekdays_raw, list)
+            else []
+        )
 
         return cls(
             id=str(data.get("id")),
@@ -1367,7 +1371,13 @@ class DeliverySite(BaseModel):
     @staticmethod
     def _parse_date_field(payload: dict[str, object], key: str) -> date | None:
         value = payload.get(key)
-        return datetime.strptime(value, "%Y-%m-%d").date() if isinstance(value, str) and value else None
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError:
+            _LOGGER.warning("Invalid date value for %s: %s", key, value)
+            return None
 
     @staticmethod
     def from_dict(payload: dict[str, object]) -> DeliverySite | None:
@@ -2095,21 +2105,25 @@ class MonthInsights:
         except Exception as exc:
             raise ValueError("Invalid lastMeterReadingDate format.") from exc
 
-        gas_difference_raw = data.get("gasDifference")
-        electricity_difference_raw = data.get("electricityDifference")
-        feed_in_difference_raw = data.get("feedInDifference")
+        gas_difference_raw = payload.get("gasDifference")
+        electricity_difference_raw = payload.get("electricityDifference")
+        feed_in_difference_raw = payload.get("feedInDifference")
 
         return MonthInsights(
-            _id=str(data.get("_id", "")),
-            expectedCosts=_safe_float(data.get("expectedCosts"), default=0.0),
-            expectedCostsGas=_safe_float(data.get("expectedCostsGas"), default=0.0),
-            expectedCostsFixed=_safe_float(data.get("expectedCostsFixed"), default=0.0),
-            expectedCostsElectricity=_safe_float(data.get("expectedCostsElectricity"), default=0.0),
-            expectedCostsFeedIn=_safe_float(data.get("expectedCostsFeedIn"), default=0.0),
-            expectedCostsUntilLastMeterReading=_safe_float(data.get("expectedCostsUntilLastMeterReading"), default=0.0),
-            actualCostsUntilLastMeterReading=_safe_float(data.get("actualCostsUntilLastMeterReading"), default=0.0),
+            _id=str(payload.get("_id", "")),
+            expectedCosts=_safe_float(payload.get("expectedCosts"), default=0.0),
+            expectedCostsGas=_safe_float(payload.get("expectedCostsGas"), default=0.0),
+            expectedCostsFixed=_safe_float(payload.get("expectedCostsFixed"), default=0.0),
+            expectedCostsElectricity=_safe_float(payload.get("expectedCostsElectricity"), default=0.0),
+            expectedCostsFeedIn=_safe_float(payload.get("expectedCostsFeedIn"), default=0.0),
+            expectedCostsUntilLastMeterReading=_safe_float(
+                payload.get("expectedCostsUntilLastMeterReading"), default=0.0
+            ),
+            actualCostsUntilLastMeterReading=_safe_float(
+                payload.get("actualCostsUntilLastMeterReading"), default=0.0
+            ),
             lastMeterReadingDate=dt,
-            invoiceId=_as_str(data.get("invoiceId")),
+            invoiceId=_as_str(payload.get("invoiceId")),
             gasDifference=Difference.from_dict(gas_difference_raw if isinstance(gas_difference_raw, dict) else {}),
             electricityDifference=Difference.from_dict(
                 electricity_difference_raw if isinstance(electricity_difference_raw, dict) else {}
@@ -2117,8 +2131,8 @@ class MonthInsights:
             feedInDifference=Difference.from_dict(
                 feed_in_difference_raw if isinstance(feed_in_difference_raw, dict) else {}
             ),
-            meterReadingDayCompleteness=_safe_float(data.get("meterReadingDayCompleteness"), default=0.0),
-            gasExcluded=bool(data.get("gasExcluded", False)),
+            meterReadingDayCompleteness=_safe_float(payload.get("meterReadingDayCompleteness"), default=0.0),
+            gasExcluded=bool(payload.get("gasExcluded", False)),
         )
 
 
@@ -4110,16 +4124,8 @@ class SmartBatterySettings:
                 else None
             ),
             self_consumption_trading_threshold_price=(_safe_float(data.get("selfConsumptionTradingThresholdPrice"))),
-            created_at=(
-                datetime.fromisoformat(created_at_raw.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
-                if isinstance(created_at_raw, str)
-                else None
-            ),
-            updated_at=(
-                datetime.fromisoformat(updated_at_raw.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
-                if isinstance(updated_at_raw, str)
-                else None
-            ),
+            created_at=_try_parse_datetime(created_at_raw),
+            updated_at=_try_parse_datetime(updated_at_raw),
         )
 
 
@@ -4217,16 +4223,6 @@ class SmartBattery:
 
         settings = SmartBatterySettings.from_dict(settings_data) if isinstance(settings_data, dict) else None
 
-        def _parse_datetime(value: object) -> datetime | None:
-            if isinstance(value, datetime):
-                return value.astimezone(UTC)
-            if isinstance(value, str):
-                try:
-                    return datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
-                except ValueError:
-                    _LOGGER.debug("Invalid datetime value for battery %s: %s", device_id, value)
-            return None
-
         return cls(
             id=device_id,
             brand=_as_str(data.get("brand")),
@@ -4235,8 +4231,8 @@ class SmartBattery:
             provider=_as_str(data.get("provider")),
             max_charge_power=_safe_float(data.get("maxChargePower")),
             max_discharge_power=_safe_float(data.get("maxDischargePower")),
-            created_at=_parse_datetime(data.get("createdAt")),
-            updated_at=_parse_datetime(data.get("updatedAt")),
+            created_at=_try_parse_datetime(data.get("createdAt")),
+            updated_at=_try_parse_datetime(data.get("updatedAt")),
             settings=settings,
         )
 
@@ -4552,6 +4548,18 @@ def _parse_datetime(value: str | None) -> datetime | None:
         return dt.replace(tzinfo=ZoneInfo("UTC"))
     except ValueError as err:
         raise ValueError(f"Invalid datetime string: {value}") from err
+
+
+def _try_parse_datetime(value: object) -> datetime | None:
+    """Best-effort datetime parse. Unlike _parse_datetime, never raises on invalid input."""
+    if isinstance(value, datetime):
+        return value.astimezone(UTC)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
+        except ValueError:
+            _LOGGER.debug("Invalid datetime value: %s", value)
+    return None
 
 
 def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[str, Any]:
