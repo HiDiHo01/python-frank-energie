@@ -13,7 +13,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from statistics import mean
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict, cast, overload
 from zoneinfo import ZoneInfo
 
 import jwt
@@ -49,6 +49,10 @@ _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from 
 _ERROR_NO_MARKET_PRICES = "No marketprices found"
 
 
+@overload
+def _safe_float(val: Any, precision: int | None = None, *, default: float) -> float: ...
+@overload
+def _safe_float(val: Any, precision: int | None = None, *, default: None = None) -> float | None: ...
 def _safe_float(val: Any, precision: int | None = None, default: float | None = None) -> float | None:
     """Safely convert a value to float, handling NaNs, Infs and optional rounding."""
     if val is None or val == "":
@@ -147,6 +151,25 @@ class DictLikeMixin:
     def __contains__(self, key: str) -> bool:
         snake_key = self._normalize_key(key)
         return hasattr(self, snake_key) or hasattr(self, key)
+
+
+def _as_str(value: object) -> str | None:
+    """Return value if it's a string, else None."""
+    return value if isinstance(value, str) else None
+
+
+def _as_int(value: object) -> int | None:
+    """Return value as an int if it's an int (excluding bool) or a numeric string, else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
 
 
 def _as_dict(value: object, field_name: str) -> dict[str, object]:
@@ -456,7 +479,7 @@ class Invoice:
         return invoice_start_year == current_year
 
     @staticmethod
-    def from_dict(data: dict[str, object]) -> Invoice | None:
+    def from_dict(data: dict[str, object] | None) -> Invoice | None:
         """Parse the invoice from the API invoice query response."""
         if not data:
             return None
@@ -465,6 +488,9 @@ class Invoice:
         total_amount_raw = data.get("totalAmount")
         if total_amount_raw is None:
             raise RequestException("Missing totalAmount")
+        total_amount = _safe_float(total_amount_raw)
+        if total_amount is None:
+            raise RequestException(f"Invalid totalAmount: {total_amount_raw!r}")
         start_date = parse(str(data.get("startDate")))
 
         # Interpreteer factuurdatums als lokale kalenderdatums
@@ -474,7 +500,7 @@ class Invoice:
             id=str(data.get("id")),
             StartDate=start_date,
             PeriodDescription=str(data.get("periodDescription")),
-            TotalAmount=_safe_float(total_amount_raw),
+            TotalAmount=total_amount,
         )
 
     @classmethod
@@ -786,12 +812,16 @@ class UsageItem:
     def from_dict(data: dict[str, Any]) -> UsageItem:
         """Maakt een UsageItem-object aan vanuit een dictionary."""
         try:
+            usage = _safe_float(data["usage"])
+            costs = _safe_float(data["costs"])
+            if usage is None or costs is None:
+                raise ValueError(f"Invalid usage/costs value in UsageItem data: {data}")
             return UsageItem(
                 date=str(data["date"]),
                 from_time=str(data["from"]),
                 till_time=str(data["till"]),
-                usage=_safe_float(data["usage"]),
-                costs=_safe_float(data["costs"]),
+                usage=usage,
+                costs=costs,
                 unit=str(data["unit"]),
             )
         except KeyError as e:
@@ -893,12 +923,19 @@ class ContractPriceResolutionState:
         """Create an instance from raw API dictionary.
         Parse a dictionary into a ContractPriceResolutionState, converting dates."""
 
+        available_options_raw = data.get("availableOptions", [])
+        upcoming_change_raw = data.get("upcomingChange")
+
         return cls(
-            active_option=data.get("activeOption"),
-            available_options=data.get("availableOptions", []),
+            active_option=_as_str(data.get("activeOption")),
+            available_options=(
+                [o for o in available_options_raw if isinstance(o, str)]
+                if isinstance(available_options_raw, list)
+                else []
+            ),
             change_request_effective_date=parse_date(data.get("changeRequestEffectiveDate")),
-            is_change_request_possible=data.get("isChangeRequestPossible"),
-            upcoming_change=data.get("upcomingChange"),
+            is_change_request_possible=bool(data.get("isChangeRequestPossible", False)),
+            upcoming_change=upcoming_change_raw if isinstance(upcoming_change_raw, (date, str)) else None,
             upcoming_change_effective_date=parse_date(data.get("upcomingChangeEffectiveDate")),
         )
 
@@ -1026,30 +1063,29 @@ class InviteLink:
             message = errors[0].get("message") if isinstance(errors[0], dict) else "Unknown error"
             raise RequestException(message)
 
-        if isinstance(data, dict) and "id" in data and "slug" in data:
+        if "id" in data and "slug" in data:
             return InviteLink(
-                id=data.get("id", ""),
-                from_name=data.get("fromName", ""),
-                slug=data.get("slug", ""),
-                trees_amount_per_connection=data.get("treesAmountPerConnection", 0),
-                discount_per_connection=data.get("discountPerConnection", 0),
+                id=str(data.get("id", "")),
+                from_name=str(data.get("fromName", "")),
+                slug=str(data.get("slug", "")),
+                trees_amount_per_connection=_as_int(data.get("treesAmountPerConnection")) or 0,
+                discount_per_connection=_as_int(data.get("discountPerConnection")) or 0,
             )
 
         # Try nested GraphQL style (Format B)
-        root = None
+        inner = data.get("data")
+        me = inner.get("me") if isinstance(inner, dict) else None
+        root = me.get("InviteLinkUser") if isinstance(me, dict) else None
 
-        if isinstance(data, dict):
-            root = data.get("data", {}).get("me", {}).get("InviteLinkUser")
-
-        if not root:
+        if not isinstance(root, dict):
             return None
 
         return InviteLink(
             id=str(root.get("id", "")),
-            from_name=root.get("fromName", ""),
+            from_name=str(root.get("fromName", "")),
             slug=str(root.get("slug", "")),
-            trees_amount_per_connection=root.get("treesAmountPerConnection", 0),
-            discount_per_connection=root.get("discountPerConnection", 0),
+            trees_amount_per_connection=_as_int(root.get("treesAmountPerConnection")) or 0,
+            discount_per_connection=_as_int(root.get("discountPerConnection")) or 0,
         )
 
     @property
@@ -1163,9 +1199,9 @@ class Me:
             invite_link_user = InviteLink.from_dict(payload["InviteLinkUser"])
 
         push_notification_price_alerts = [
-            PushNotificationPriceAlert.from_dict(alert)
+            alert_obj
             for alert in payload.get("PushNotificationPriceAlerts", [])
-            if isinstance(alert, dict)
+            if isinstance(alert, dict) and (alert_obj := PushNotificationPriceAlert.from_dict(alert)) is not None
         ]
 
         meter_periods = [
@@ -1429,9 +1465,12 @@ class Debtor:
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> Debtor:
+        preferred_day = data.get("preferredAutomaticCollectionDay")
         return Debtor(
-            bankAccountNumber=data.get("bankAccountNumber"),
-            preferredAutomaticCollectionDay=data.get("preferredAutomaticCollectionDay"),
+            bankAccountNumber=_as_str(data.get("bankAccountNumber")),
+            preferredAutomaticCollectionDay=(
+                preferred_day if isinstance(preferred_day, int) and not isinstance(preferred_day, bool) else None
+            ),
         )
 
 
@@ -1448,11 +1487,11 @@ class GridOperatorAddress(DictLikeMixin):
     @staticmethod
     def from_dict(data: dict[str, object]) -> GridOperatorAddress:
         return GridOperatorAddress(
-            street=data.get("street"),
-            houseNumber=data.get("houseNumber"),
-            houseNumberAddition=data.get("houseNumberAddition"),
-            zipCode=data.get("zipCode"),
-            city=data.get("city"),
+            street=_as_str(data.get("street")),
+            houseNumber=_as_str(data.get("houseNumber")),
+            houseNumberAddition=_as_str(data.get("houseNumberAddition")),
+            zipCode=_as_str(data.get("zipCode")),
+            city=_as_str(data.get("city")),
         )
 
 
@@ -1469,15 +1508,17 @@ class Contract(DictLikeMixin):
         if not data:
             return None
 
-        start_date = _parse_iso_datetime(data.get("startDate"), "startDate")
-        end_date = _parse_iso_datetime(data.get("endDate"), "endDate")
+        raw_start = data.get("startDate")
+        raw_end = data.get("endDate")
+        start_date = _parse_iso_datetime(raw_start, "startDate") if isinstance(raw_start, (str, datetime)) else None
+        end_date = _parse_iso_datetime(raw_end, "endDate") if isinstance(raw_end, (str, datetime)) else None
 
         return Contract(
             startDate=start_date,
             endDate=end_date,
-            contractType=data.get("contractType"),
-            productName=data.get("productName"),
-            tariffChartId=data.get("tariffChartId"),
+            contractType=_as_str(data.get("contractType")),
+            productName=_as_str(data.get("productName")),
+            tariffChartId=_as_str(data.get("tariffChartId")),
         )
 
 
@@ -1530,21 +1571,31 @@ class Connection(DictLikeMixin):
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> Connection:
+        status_raw = data.get("status")
+        contract_status_raw = data.get("contractStatus")
+        estimated_feed_in = data.get("estimatedFeedIn")
+        external_details = data.get("externalDetails")
+        contract_data = data.get("contract")
+
         return Connection(
-            id=data.get("id"),
-            connectionId=data.get("connectionId"),
-            EAN=data.get("EAN"),
-            segment=data.get("segment"),
-            status=ServiceStatus(data.get("status")) if data.get("status") else ServiceStatus.UNKNOWN,
-            contractStatus=ServiceStatus(data.get("contractStatus"))
-            if data.get("contractStatus")
-            else ServiceStatus.UNKNOWN,
-            estimatedFeedIn=data.get("estimatedFeedIn"),
-            firstMeterReadingDate=data.get("firstMeterReadingDate"),
-            lastMeterReadingDate=data.get("lastMeterReadingDate"),
-            meterType=data.get("meterType"),
-            externalDetails=ConnectionExternalDetails.from_dict(data.get("externalDetails", {})),
-            contract=Contract.from_dict(data.get("contract", {})),
+            id=_as_str(data.get("id")),
+            connectionId=_as_str(data.get("connectionId")),
+            EAN=_as_str(data.get("EAN")),
+            segment=_as_str(data.get("segment")),
+            status=ServiceStatus(status_raw) if isinstance(status_raw, str) and status_raw else ServiceStatus.UNKNOWN,
+            contractStatus=(
+                ServiceStatus(contract_status_raw)
+                if isinstance(contract_status_raw, str) and contract_status_raw
+                else ServiceStatus.UNKNOWN
+            ),
+            estimatedFeedIn=_safe_float(estimated_feed_in),
+            firstMeterReadingDate=_as_str(data.get("firstMeterReadingDate")),
+            lastMeterReadingDate=_as_str(data.get("lastMeterReadingDate")),
+            meterType=_as_str(data.get("meterType")),
+            externalDetails=ConnectionExternalDetails.from_dict(
+                external_details if isinstance(external_details, dict) else {}
+            ),
+            contract=Contract.from_dict(contract_data if isinstance(contract_data, dict) else {}),
         )
 
 
@@ -1600,15 +1651,15 @@ class MeterReadingExportPeriod:
     @staticmethod
     def from_dict(data: dict[str, object]) -> MeterReadingExportPeriod:
         return MeterReadingExportPeriod(
-            EAN=data.get("EAN"),
+            EAN=_as_str(data.get("EAN")) or "",
             # user=data.get("user"),
-            cluster=data.get("cluster"),
+            cluster=_as_str(data.get("cluster")) or "",
             # createdAt=data.get("createdAt"),
-            from_date=data.get("from"),
-            till_date=data.get("till"),
-            period=data.get("period"),
-            segment=data.get("segment"),
-            type=data.get("type"),
+            from_date=_as_str(data.get("from")) or "",
+            till_date=_as_str(data.get("till")) or "",
+            period=_as_str(data.get("period")) or "",
+            segment=_as_str(data.get("segment")) or "",
+            type=_as_str(data.get("type")) or "",
             # updatedAt=data.get("updatedAt"),
         )
 
@@ -1646,12 +1697,13 @@ class activePaymentAuthorization:
 
     @staticmethod
     def from_dict(data: dict) -> activePaymentAuthorization:
+        status_raw = data.get("status")
         return activePaymentAuthorization(
-            id=data.get("id"),
-            mandateId=data.get("mandateId"),
-            signedAt=data.get("signedAt"),
-            bankAccountNumber=data.get("bankAccountNumber"),
-            status=data.get("status"),
+            id=str(data.get("id", "")),
+            mandateId=str(data.get("mandateId", "")),
+            signedAt=str(data.get("signedAt", "")),
+            bankAccountNumber=str(data.get("bankAccountNumber", "")),
+            status=ServiceStatus(status_raw) if isinstance(status_raw, str) and status_raw else ServiceStatus.UNKNOWN,
         )
 
 
@@ -1737,17 +1789,6 @@ class ExternalDetails:
 
 
 @dataclass
-class DeliverySiteFormat:
-    """Formatted address of the delivery site."""
-
-    address: Address
-
-    def formatted_info(self) -> str:
-        """Return formatted address of the delivery site."""
-        return f"{self.address.street} {self.address.houseNumber} {self.address.zipCode} {self.address.city}"
-
-
-@dataclass
 class DeliverySiteList:
     """List with delivery sites."""
 
@@ -1756,21 +1797,6 @@ class DeliverySiteList:
     def __iter__(self):
         """Return an iterator over the delivery sites."""
         return iter(self.delivery_sites)
-
-    def as_list(self) -> list[dict[str, str]]:
-        """Convert the delivery sites to a list of dictionaries.
-
-        Each dictionary represents the formatted information of a delivery site.
-
-        Returns:
-            A list of dictionaries representing the delivery sites.
-        """
-        sites = []
-        for index, site in enumerate(self.delivery_sites, start=1):
-            site_name = f"Delivery site {index}"
-            site_info = {site_name: site.formatted_info()}
-            sites.append(site_info)
-        return sites
 
     def as_dict(self) -> dict[str, dict]:
         """Convert the delivery sites to a dictionary of address information.
@@ -1857,7 +1883,7 @@ class User:
     # lastName: Optional[str]
     countryCode: str
     # segments: list[str]
-    lastLogin: datetime
+    lastLogin: datetime | None
     reference: int
     connectionsStatus: str
     # deliveryStartDate: date
@@ -2060,12 +2086,18 @@ class MonthInsights:
 
         # Parse ISO8601 with timezone handling
         last_date_raw = payload.get("lastMeterReadingDate")
+        if not isinstance(last_date_raw, str):
+            raise ValueError("Invalid lastMeterReadingDate format.")
         try:
             dt = datetime.fromisoformat(last_date_raw)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=UTC)
         except Exception as exc:
             raise ValueError("Invalid lastMeterReadingDate format.") from exc
+
+        gas_difference_raw = data.get("gasDifference")
+        electricity_difference_raw = data.get("electricityDifference")
+        feed_in_difference_raw = data.get("feedInDifference")
 
         return MonthInsights(
             _id=str(data.get("_id", "")),
@@ -2077,10 +2109,14 @@ class MonthInsights:
             expectedCostsUntilLastMeterReading=_safe_float(data.get("expectedCostsUntilLastMeterReading"), default=0.0),
             actualCostsUntilLastMeterReading=_safe_float(data.get("actualCostsUntilLastMeterReading"), default=0.0),
             lastMeterReadingDate=dt,
-            invoiceId=data.get("invoiceId"),
-            gasDifference=Difference.from_dict(data.get("gasDifference", {})),
-            electricityDifference=Difference.from_dict(data.get("electricityDifference", {})),
-            feedInDifference=Difference.from_dict(data.get("feedInDifference", {})),
+            invoiceId=_as_str(data.get("invoiceId")),
+            gasDifference=Difference.from_dict(gas_difference_raw if isinstance(gas_difference_raw, dict) else {}),
+            electricityDifference=Difference.from_dict(
+                electricity_difference_raw if isinstance(electricity_difference_raw, dict) else {}
+            ),
+            feedInDifference=Difference.from_dict(
+                feed_in_difference_raw if isinstance(feed_in_difference_raw, dict) else {}
+            ),
             meterReadingDayCompleteness=_safe_float(data.get("meterReadingDayCompleteness"), default=0.0),
             gasExcluded=bool(data.get("gasExcluded", False)),
         )
@@ -2159,16 +2195,18 @@ class MonthSummary:
         costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(actual_costs, last_reading)
 
         return MonthSummary(
-            _id=payload.get("_id"),
-            actualCostsUntilLastMeterReadingDate=actual_costs,
-            expectedCostsUntilLastMeterReadingDate=payload.get("expectedCostsUntilLastMeterReadingDate"),
-            expectedCosts=expected_costs,
+            _id=str(payload.get("_id", "")),
+            actualCostsUntilLastMeterReadingDate=float(actual_costs),
+            expectedCostsUntilLastMeterReadingDate=_safe_float(
+                payload.get("expectedCostsUntilLastMeterReadingDate"), default=0.0
+            ),
+            expectedCosts=_safe_float(expected_costs),
             expectedCostsPerDay=expected_costs_per_day,
             costs_per_day_till_now=costs_per_day_till_now,
             lastMeterReadingDate=last_reading,
-            meterReadingDayCompleteness=payload.get("meterReadingDayCompleteness"),
-            gasExcluded=payload.get("gasExcluded"),
-            typename=payload.get("__typename"),
+            meterReadingDayCompleteness=_safe_float(payload.get("meterReadingDayCompleteness"), default=0.0),
+            gasExcluded=bool(payload.get("gasExcluded", False)),
+            typename=str(payload.get("__typename", "")),
         )
 
     @staticmethod
@@ -2247,7 +2285,7 @@ class MonthSummary:
 
         expected_costs_per_day = (
             MonthSummary.calculate_expected_costs_per_day(
-                _safe_float(expected_costs),
+                float(expected_costs),
                 last_reading,
             )
             if expected_costs is not None
@@ -2255,13 +2293,13 @@ class MonthSummary:
         )
 
         costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(
-            _safe_float(actual_costs),
+            float(actual_costs),
             last_reading,
         )
 
         return MonthSummary(
             _id=summary_id,
-            actualCostsUntilLastMeterReadingDate=_safe_float(actual_costs),
+            actualCostsUntilLastMeterReadingDate=float(actual_costs),
             expectedCostsUntilLastMeterReadingDate=float(
                 expected_costs_until,
             ),
@@ -2328,8 +2366,12 @@ class ChargeSettings(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict) -> ChargeSettings:
+        calculated_deadline = _parse_datetime(data["calculatedDeadline"])
+        if calculated_deadline is None:
+            raise ValueError(f"Invalid or missing calculatedDeadline: {data.get('calculatedDeadline')!r}")
+
         return cls(
-            calculated_deadline=_parse_datetime(data["calculatedDeadline"]),
+            calculated_deadline=calculated_deadline,
             capacity=data.get("capacity", 0.0),
             deadline=_parse_datetime(data.get("deadline")),
             hour_friday=data["hourFriday"],
@@ -2476,15 +2518,27 @@ class EnodeVehicle(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> EnodeVehicle:
+        charge_settings_raw = data["chargeSettings"]
+        charge_state_raw = data["chargeState"]
+        information_raw = data["information"]
+        interventions_raw = data.get("interventions", [])
+        last_seen_raw = data.get("lastSeen")
+
         return cls(
-            id=data["id"],
-            can_smart_charge=data["canSmartCharge"],
-            charge_settings=ChargeSettings.from_dict(data["chargeSettings"]),
-            charge_state=ChargeState.from_dict(data["chargeState"]),
-            information=VehicleInformation.from_dict(data["information"]),
-            interventions=[VehicleIntervention.from_dict(i) for i in data.get("interventions", [])],
-            is_reachable=data["isReachable"],
-            last_seen=_parse_datetime(data.get("lastSeen")),
+            id=str(data["id"]),
+            can_smart_charge=bool(data["canSmartCharge"]),
+            charge_settings=ChargeSettings.from_dict(
+                charge_settings_raw if isinstance(charge_settings_raw, dict) else {}
+            ),
+            charge_state=ChargeState.from_dict(charge_state_raw if isinstance(charge_state_raw, dict) else {}),
+            information=VehicleInformation.from_dict(information_raw if isinstance(information_raw, dict) else {}),
+            interventions=(
+                [VehicleIntervention.from_dict(i) for i in interventions_raw if isinstance(i, dict)]
+                if isinstance(interventions_raw, list)
+                else []
+            ),
+            is_reachable=bool(data["isReachable"]),
+            last_seen=_parse_datetime(last_seen_raw) if isinstance(last_seen_raw, (str, type(None))) else None,
         )
 
 
@@ -2497,8 +2551,9 @@ class EnodeVehicles:
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> EnodeVehicles:
-        vehicle_dicts = data.get("data", {}).get("enodeVehicles", [])
-        vehicles = [EnodeVehicle.from_dict(v) for v in vehicle_dicts]
+        inner = data.get("data")
+        vehicle_dicts = inner.get("enodeVehicles", []) if isinstance(inner, dict) else []
+        vehicles = [EnodeVehicle.from_dict(v) for v in vehicle_dicts if isinstance(v, dict)]
         return cls(vehicles=vehicles)
 
 
@@ -2808,9 +2863,9 @@ class Price:
         return self._total
 
     @staticmethod
-    def average_price_for_current_hour(prices: list[object]) -> float | None:
+    def average_price_for_current_hour(prices: list[Price]) -> float | None:
         """Return the average price for the current hour across a list of prices."""
-        current = [p for p in prices if getattr(p, "for_now", False)]
+        current = [p for p in prices if p.for_now]
 
         if not current:
             return None
@@ -3403,25 +3458,6 @@ class PriceData:
             result.append(data)
         return result
 
-    def calculate_stats(self) -> dict:
-        """Calculate summary statistics for electricity and gas prices."""
-        electricity_prices = [price.total for price in self if price.electricity]
-        gas_prices = [price.total for price in self if price.gas]
-
-        electricity_mean = mean(electricity_prices)
-        gas_mean = mean(gas_prices)
-
-        electricity_min = min(electricity_prices)
-        gas_min = min(gas_prices)
-
-        electricity_max = max(electricity_prices)
-        gas_max = max(gas_prices)
-
-        return {
-            "electricity": {"mean": electricity_mean, "min": electricity_min, "max": electricity_max},
-            "gas": {"mean": gas_mean, "min": gas_min, "max": gas_max},
-        }
-
     @property
     def today_market_avg(self) -> float:
         """Average market price for today."""
@@ -3870,7 +3906,7 @@ class MarketPrices:
         _LOGGER.debug("%s Market Prices data: %s", energy_country, data)
 
         if data.get("errors"):
-            error = cls._extract_error(data, "Unknown API error")
+            error = cls._extract_error(data, "Unknown API error") or "Unknown API error"
 
             if error.startswith(_ERROR_NO_MARKET_PRICES):
                 raise NoMarketPricesAvailableException(error)
@@ -3958,7 +3994,7 @@ class MarketPrices:
         )
 
     @staticmethod
-    def _extract_error(data: dict[str, object], default: str) -> str:
+    def _extract_error(data: dict[str, object], default: str | None) -> str | None:
         errors = data.get("errors")
         if isinstance(errors, list) and errors:
             first = errors[0]
@@ -4054,11 +4090,18 @@ class SmartBatterySettings:
         if not data:
             return None
 
+        battery_mode_raw = data.get("batteryMode")
+        imbalance_strategy_raw = data.get("imbalanceTradingStrategy")
+        created_at_raw = data.get("createdAt")
+        updated_at_raw = data.get("updatedAt")
+
         return cls(
-            battery_mode=SmartBatteryMode(data["batteryMode"]) if data.get("batteryMode") else None,
+            battery_mode=(
+                SmartBatteryMode(battery_mode_raw) if isinstance(battery_mode_raw, str) and battery_mode_raw else None
+            ),
             imbalance_trading_strategy=(
-                SmartBatteryImbalanceStrategy(data["imbalanceTradingStrategy"])
-                if data.get("imbalanceTradingStrategy")
+                SmartBatteryImbalanceStrategy(imbalance_strategy_raw)
+                if isinstance(imbalance_strategy_raw, str) and imbalance_strategy_raw
                 else None
             ),
             self_consumption_trading_allowed=(
@@ -4068,13 +4111,13 @@ class SmartBatterySettings:
             ),
             self_consumption_trading_threshold_price=(_safe_float(data.get("selfConsumptionTradingThresholdPrice"))),
             created_at=(
-                datetime.fromisoformat(data["createdAt"].replace("Z", _UTC_SUFFIX)).astimezone(UTC)
-                if data.get("createdAt") is not None
+                datetime.fromisoformat(created_at_raw.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
+                if isinstance(created_at_raw, str)
                 else None
             ),
             updated_at=(
-                datetime.fromisoformat(data["updatedAt"].replace("Z", _UTC_SUFFIX)).astimezone(UTC)
-                if data.get("updatedAt") is not None
+                datetime.fromisoformat(updated_at_raw.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
+                if isinstance(updated_at_raw, str)
                 else None
             ),
         )
@@ -4186,10 +4229,10 @@ class SmartBattery:
 
         return cls(
             id=device_id,
-            brand=data.get("brand"),
+            brand=_as_str(data.get("brand")),
             capacity=_safe_float(data.get("capacity")),
-            external_reference=data.get("externalReference"),
-            provider=data.get("provider"),
+            external_reference=_as_str(data.get("externalReference")),
+            provider=_as_str(data.get("provider")),
             max_charge_power=_safe_float(data.get("maxChargePower")),
             max_discharge_power=_safe_float(data.get("maxDischargePower")),
             created_at=_parse_datetime(data.get("createdAt")),
@@ -4277,7 +4320,7 @@ class SmartBatterySessions:
         _LOGGER.debug("SmartBatterySessions data: %s", smart_battery_session_data)
 
         return SmartBatterySessions(
-            device_id=smart_battery_session_data.get("deviceId"),
+            device_id=str(smart_battery_session_data.get("deviceId", "")),
             fairuse_policy_verified=smart_battery_session_data.get("fairusePolicyVerified", False),
             period_start_date=_parse_iso_datetime(smart_battery_session_data.get("periodStartDate")),
             period_end_date=_parse_iso_datetime(smart_battery_session_data.get("periodEndDate")),
@@ -4555,15 +4598,18 @@ class SmartPvSystemPanelGroup(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemPanelGroup:
+        installation_date_raw = data.get("installationDate")
         return cls(
-            id=data.get("id"),
-            position=data.get("position"),
-            azimuth=data.get("azimuth"),
-            tilt=data.get("tilt"),
+            id=str(data.get("id", "")),
+            position=_as_int(data.get("position")),
+            azimuth=_as_int(data.get("azimuth")),
+            tilt=_as_int(data.get("tilt")),
             capacity_kwp=_safe_float(data.get("capacityKwp")),
             annual_kwh=int(sf) if (sf := _safe_float(data.get("annualKwh"))) is not None else None,
             panel_count=int(sf) if (sf := _safe_float(data.get("panelCount"))) is not None else None,
-            installation_date=_parse_datetime(data.get("installationDate")) if data.get("installationDate") else None,
+            installation_date=(
+                _parse_datetime(installation_date_raw) if isinstance(installation_date_raw, str) else None
+            ),
         )
 
 
@@ -4588,23 +4634,45 @@ class SmartPvSystem(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystem:
+        created_at_raw = data.get("createdAt")
+        updated_at_raw = data.get("updatedAt")
+        created_at = _parse_datetime(created_at_raw if isinstance(created_at_raw, str) else None)
+        if created_at is None:
+            raise ValueError(f"Invalid or missing createdAt: {created_at_raw!r}")
+        updated_at = _parse_datetime(updated_at_raw if isinstance(updated_at_raw, str) else None)
+        if updated_at is None:
+            raise ValueError(f"Invalid or missing updatedAt: {updated_at_raw!r}")
+
+        onboarding_status_raw = data["onboardingStatus"]
+        steering_status_raw = data["steeringStatus"]
+        inverter_serials_raw = data.get("inverterSerialNumbers") or []
+        panel_groups_raw = data.get("SmartPvSystemPanelGroups", [])
+
+        deleted_at_raw = data.get("deletedAt")
+
         return cls(
-            id=data["id"],
-            brand=data["brand"],
-            connection_ean=data["connectionEAN"],
-            created_at=_parse_datetime(data["createdAt"]),
-            deleted_at=_parse_datetime(data.get("deletedAt")),
-            display_name=data.get("displayName"),
-            external_reference=data["externalReference"],
-            inverter_serial_numbers=data.get("inverterSerialNumbers") or [],
-            model=data.get("model"),
-            onboarding_status=SmartPvOnboardingStatus(data["onboardingStatus"]),
-            provider=data["provider"],
-            steering_status=SmartPvSteeringStatus(data["steeringStatus"]),
-            updated_at=_parse_datetime(data["updatedAt"]),
-            panel_groups=[SmartPvSystemPanelGroup.from_dict(v) for v in data.get("SmartPvSystemPanelGroups", [])]
-            if isinstance(data.get("SmartPvSystemPanelGroups"), list)
-            else [],
+            id=str(data["id"]),
+            brand=str(data["brand"]),
+            connection_ean=str(data["connectionEAN"]),
+            created_at=created_at,
+            deleted_at=_parse_datetime(deleted_at_raw if isinstance(deleted_at_raw, str) else None),
+            display_name=_as_str(data.get("displayName")),
+            external_reference=str(data["externalReference"]),
+            inverter_serial_numbers=(
+                [s for s in inverter_serials_raw if isinstance(s, str)]
+                if isinstance(inverter_serials_raw, list)
+                else []
+            ),
+            model=_as_str(data.get("model")),
+            onboarding_status=SmartPvOnboardingStatus(str(onboarding_status_raw)),
+            provider=str(data["provider"]),
+            steering_status=SmartPvSteeringStatus(str(steering_status_raw)),
+            updated_at=updated_at,
+            panel_groups=(
+                [SmartPvSystemPanelGroup.from_dict(v) for v in panel_groups_raw if isinstance(v, dict)]
+                if isinstance(panel_groups_raw, list)
+                else []
+            ),
         )
 
 
@@ -4618,8 +4686,9 @@ class SmartPvSystems:
     def from_dict(cls, response: dict[str, object] | None) -> SmartPvSystems:
         if not response:
             return cls(systems=[])
-        data = response.get("data") or {}
-        pv_dicts = data.get("smartPvSystems") or []
+        data = response.get("data")
+        pv_dicts = data.get("smartPvSystems") if isinstance(data, dict) else None
+        pv_dicts = pv_dicts or []
         return cls(systems=[SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)])
 
     def __bool__(self) -> bool:
@@ -4638,11 +4707,17 @@ class SmartPvSystemSummary(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemSummary:
-        payload = data.get("data", {}).get("smartPvSystemSummary") or data
+        inner = data.get("data")
+        raw_payload = inner.get("smartPvSystemSummary") if isinstance(inner, dict) else None
+        payload = raw_payload if isinstance(raw_payload, dict) else data
+        timestamp_raw = payload.get("operationalStatusTimestamp")
+
         return cls(
-            operational_status=SmartPvOperationalStatus(payload["operationalStatus"]),
-            operational_status_timestamp=_parse_datetime(payload.get("operationalStatusTimestamp")),
-            steering_status=SmartPvSteeringStatus(payload["steeringStatus"]),
+            operational_status=SmartPvOperationalStatus(str(payload["operationalStatus"])),
+            operational_status_timestamp=(
+                _parse_datetime(timestamp_raw) if isinstance(timestamp_raw, str) else None
+            ),
+            steering_status=SmartPvSteeringStatus(str(payload["steeringStatus"])),
             total_bonus=_safe_float(payload.get("totalBonus")),
             total_result=_safe_float(payload.get("totalResult")),
         )
@@ -4691,12 +4766,17 @@ class UserSmartFeedInStatus(DictLikeMixin):
         if not isinstance(payload, Mapping):
             raise RequestException("Unexpected userSmartFeedIn payload type")
 
+        user_created_at_raw = payload["userCreatedAt"]
+        user_created_at = _parse_datetime(user_created_at_raw if isinstance(user_created_at_raw, str) else None)
+        if user_created_at is None:
+            raise ValueError(f"Invalid or missing userCreatedAt: {user_created_at_raw!r}")
+
         return cls(
             has_accepted_terms=payload["hasAcceptedTerms"],
             is_activated=payload["isActivated"],
             is_app_onboarding_available=payload["isAppOnboardingAvailable"],
             is_available_in_country=payload["isAvailableInCountry"],
-            user_created_at=_parse_datetime(payload["userCreatedAt"]),
+            user_created_at=user_created_at,
             user_id=payload["userId"],
         )
 
@@ -4713,11 +4793,12 @@ class FeedInSession(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> FeedInSession:
+        status_raw = data.get("status")
         return cls(
             bonus=_safe_float(data.get("bonus"), default=0.0),
             cumulative_bonus=_safe_float(data.get("cumulativeBonus"), default=0.0),
-            date=data["date"],
-            status=SessionStatus(data["status"]) if data.get("status") else SessionStatus.UNKNOWN,
+            date=str(data.get("date", "")),
+            status=SessionStatus(status_raw) if isinstance(status_raw, str) and status_raw else SessionStatus.UNKNOWN,
             volume=_safe_float(data.get("volume"), default=0.0),
         )
 
@@ -4746,8 +4827,8 @@ class SmartFeedInSessionData(DictLikeMixin):
         )
         return cls(
             period_bonus=_safe_float(payload.get("periodBonus"), default=0.0),
-            period_end_date=payload["periodEndDate"],
-            period_start_date=payload["periodStartDate"],
+            period_end_date=str(payload.get("periodEndDate", "")),
+            period_start_date=str(payload.get("periodStartDate", "")),
             period_volume=_safe_float(payload.get("periodVolume"), default=0.0),
             sessions=sessions,
         )

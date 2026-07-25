@@ -71,6 +71,16 @@ except PackageNotFoundError:
     VERSION = "0.0.0"
 
 
+def _dig(data: object, *keys: str) -> object:
+    """Walk a chain of dict.get() calls, returning None if any step isn't a dict."""
+    current = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current
+
+
 class FrankEnergieQuery:
     """Represents a GraphQL query for the FrankEnergie API."""
 
@@ -131,7 +141,7 @@ class FrankEnergie:
         self.refresh_token: str | None = None
 
         if auth_token or refresh_token:
-            self._auth = Authentication(auth_token, refresh_token, version)
+            self._auth = Authentication(auth_token or "", refresh_token or "", version)
 
     is_smart_charging = False
     is_smart_trading = False
@@ -954,7 +964,7 @@ class FrankEnergie:
             _LOGGER.warning("Error response when disabling smart trading: %s", response)
             return False
 
-        return bool(response.get("data", {}).get("disableSmartTrading", {}).get("success", False))
+        return bool(_dig(response, "data", "disableSmartTrading", "success"))
 
     async def disable_smart_feed_in(self) -> bool:
         """Disable smart feed-in for the authenticated user.
@@ -994,7 +1004,7 @@ class FrankEnergie:
             _LOGGER.warning("Error response when disabling smart feed-in: %s", response)
             return False
 
-        return bool(response.get("data", {}).get("smartFeedInDisable", {}).get("success", False))
+        return bool(_dig(response, "data", "smartFeedInDisable", "success"))
 
     def _map_charge_settings_input(self, input_data: dict[str, Any], target_key: str) -> dict[str, Any]:
         """Validate input_data has 'id' and map it to target_key in a new dictionary.
@@ -1148,7 +1158,7 @@ class FrankEnergie:
             _LOGGER.warning("Error response when enabling Enode smart charging: %s", response)
             return False
 
-        return bool(response.get("data", {}).get("enodeEnableSmartCharging", {}).get("userId"))
+        return bool(_dig(response, "data", "enodeEnableSmartCharging", "userId"))
 
     async def enode_disable_smart_charging(self) -> bool:
         """Disable Enode smart charging for the authenticated user.
@@ -1186,7 +1196,7 @@ class FrankEnergie:
             _LOGGER.warning("Error response when disabling Enode smart charging: %s", response)
             return False
 
-        return bool(response.get("data", {}).get("enodeDisableSmartCharging", False))
+        return bool(_dig(response, "data", "enodeDisableSmartCharging"))
 
     async def disable_smart_hvac(self) -> bool:
         """Disable smart HVAC for the authenticated user.
@@ -1226,7 +1236,7 @@ class FrankEnergie:
             _LOGGER.warning("Error response when disabling smart HVAC: %s", response)
             return False
 
-        return bool(response.get("data", {}).get("smartHvacDisable", {}).get("success", False))
+        return bool(_dig(response, "data", "smartHvacDisable", "success"))
 
     async def smart_hvac_update_settings(self, device_id: str, settings: dict[str, Any]) -> bool:
         """Update settings for a smart HVAC device.
@@ -1425,7 +1435,7 @@ class FrankEnergie:
             _LOGGER.warning("Error response when logging out: %s", response)
             return False
 
-        ok = bool(response.get("data", {}).get("logout", False))
+        ok = bool(_dig(response, "data", "logout"))
         if ok:
             self._auth = None
         return ok
@@ -2224,8 +2234,8 @@ class FrankEnergie:
         response = await self._query(query)
         if not isinstance(response, dict):
             raise RequestException("Invalid response type for 'smart_hvac_status' query")
-        raw = response.get("data", {}).get("me", {}).get("smartHvac")
-        return SmartHvac.from_dict(raw)
+        raw = _dig(response, "data", "me", "smartHvac")
+        return SmartHvac.from_dict(raw if isinstance(raw, dict) else None)
 
     async def country_prices(
         self,
