@@ -7,7 +7,7 @@ repos:
         language: system
         types: [python]
         entry: poetry run bandit
-        files: ^homewizard_energy/
+        files: ^python_frank_energie/
         require_serial: true
       - id: black
         name: Format using black
@@ -120,12 +120,6 @@ repos:
         types: [python]
         entry: poetry run pytest
         pass_filenames: false
-      - id: pyupgrade
-        name: Checking for upgradable syntax with pyupgrade
-        language: system
-        types: [python]
-        entry: poetry run pyupgrade
-        args: [--py39-plus, --keep-runtime-typing]
       - id: trailing-whitespace
         name: Trim Trailing Whitespace
         language: system
