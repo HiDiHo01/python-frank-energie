@@ -1148,7 +1148,7 @@ class PushNotificationPriceAlert:
         me = root.get("me") if isinstance(root, dict) else None
         payload = me.get("PushNotificationPriceAlerts") if isinstance(me, dict) else None
 
-        if not payload or not isinstance(payload, list):
+        if not isinstance(payload, list):
             raise RequestException("Unexpected or missing PushNotificationPriceAlerts data")
 
         alerts = [
@@ -1399,23 +1399,13 @@ class DeliverySite(BaseModel):
             segments=segments,
             addressHasMultipleSites=bool(payload.get("addressHasMultipleSites", False)),
             address=address,
-            propositionType=cast("str | None", payload.get("propositionType")),
+            propositionType=_as_str(payload.get("propositionType")),
             status=str(payload.get("status", "")),
             deliveryStartDate=DeliverySite._parse_date_field(payload, "deliveryStartDate"),
             deliveryEndDate=DeliverySite._parse_date_field(payload, "deliveryEndDate"),
             firstMeterReadingDate=DeliverySite._parse_date_field(payload, "firstMeterReadingDate"),
             lastMeterReadingDate=DeliverySite._parse_date_field(payload, "lastMeterReadingDate"),
         )
-
-    @property
-    def format_delivery_site_as_dict(self):
-        sites_as_dict = []
-        for site in self.deliverySites:
-            address = site.get("address", {})
-            sites_as_dict.append(
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}"
-            )
-        return sites_as_dict
 
 
 @dataclass
@@ -2119,9 +2109,7 @@ class MonthInsights:
             expectedCostsUntilLastMeterReading=_safe_float(
                 payload.get("expectedCostsUntilLastMeterReading"), default=0.0
             ),
-            actualCostsUntilLastMeterReading=_safe_float(
-                payload.get("actualCostsUntilLastMeterReading"), default=0.0
-            ),
+            actualCostsUntilLastMeterReading=_safe_float(payload.get("actualCostsUntilLastMeterReading"), default=0.0),
             lastMeterReadingDate=dt,
             invoiceId=_as_str(payload.get("invoiceId")),
             gasDifference=Difference.from_dict(gas_difference_raw if isinstance(gas_difference_raw, dict) else {}),
@@ -4553,7 +4541,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
 def _try_parse_datetime(value: object) -> datetime | None:
     """Best-effort datetime parse. Unlike _parse_datetime, never raises on invalid input."""
     if isinstance(value, datetime):
-        return value.astimezone(UTC)
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
     if isinstance(value, str):
         try:
             return datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
