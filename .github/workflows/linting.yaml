@@ -108,9 +108,10 @@ jobs:
 
       - name: Install workflow dependencies
         run: |
-          pip install poetry
+          pip install --only-binary :all: poetry
           poetry config virtualenvs.create true
           poetry config virtualenvs.in-project true
+          poetry config installer.only-binary :all:
 
       - name: Restore cached Python virtual environment
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

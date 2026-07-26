@@ -66,6 +66,7 @@ jobs:
       - name: Configure Poetry
         run: |
           poetry config virtualenvs.in-project true
+          poetry config installer.only-binary :all:
           poetry --version
           poetry lock
 
