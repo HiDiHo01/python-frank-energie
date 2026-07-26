@@ -457,9 +457,15 @@ class Invoice:
         total_amount = _safe_float(total_amount_raw)
         if total_amount is None:
             raise RequestException(f"Invalid totalAmount: {total_amount_raw!r}")
-        start_date = parse(str(data.get("startDate")))
+        start_date_raw = data.get("startDate")
+        if not isinstance(start_date_raw, str) or not start_date_raw:
+            raise RequestException("Missing startDate")
+        try:
+            start_date = parse(start_date_raw)
+        except (ValueError, TypeError) as exc:
+            raise RequestException(f"Invalid startDate: {start_date_raw!r}") from exc
 
-        # Interpreteer factuurdatums als lokale kalenderdatums
+        # Treat invoice dates as local calendar dates
         start_date = Invoice._ensure_local_month_start(start_date)
 
         return Invoice(
@@ -721,7 +727,7 @@ class Invoices:
 
 @dataclass
 class UsageItem:
-    """Representeert een individueel gebruiksitem binnen een periode."""
+    """Represents an individual usage item within a period."""
 
     date: str
     from_time: str
@@ -732,7 +738,7 @@ class UsageItem:
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> UsageItem:
-        """Maakt een UsageItem-object aan vanuit een dictionary."""
+        """Create a UsageItem object from a dictionary."""
         try:
             usage = _safe_float(data["usage"])
             costs = _safe_float(data["costs"])
@@ -747,14 +753,14 @@ class UsageItem:
                 unit=str(data["unit"]),
             )
         except KeyError as e:
-            raise ValueError(f"Ontbrekend veld {e.args[0]} in UsageItem data: {data}") from e
+            raise ValueError(f"Missing field {e.args[0]} in UsageItem data: {data}") from e
         except (ValueError, TypeError) as e:
-            raise ValueError(f"Fout bij conversie van UsageItem data: {e}, data: {data}") from e
+            raise ValueError(f"Error converting UsageItem data: {e}, data: {data}") from e
 
 
 @dataclass
 class EnergyCategory:
-    """Representeert een energiecategorie zoals gas, elektriciteit of teruglevering."""
+    """Represents an energy category such as gas, electricity, or feed-in."""
 
     usage_total: float | None
     costs_total: float | None
@@ -792,7 +798,7 @@ class EnergyCategory:
 
 @dataclass
 class PeriodUsageAndCosts:
-    """Bevat het verbruik en de kosten van gas, elektriciteit en teruglevering voor een periode."""
+    """Contains the usage and costs of gas, electricity, and feed-in for a period."""
 
     _id: str
     gas: EnergyCategory | None
@@ -824,9 +830,9 @@ class PeriodUsageAndCosts:
                 feed_in=EnergyCategory.from_dict(feed_in_data) if feed_in_data else None,
             )
         except KeyError as e:
-            raise ValueError(f"Ontbrekend veld {e.args[0]} in PeriodUsageAndCosts data: {data}") from e
+            raise ValueError(f"Missing field {e.args[0]} in PeriodUsageAndCosts data: {data}") from e
         except (ValueError, TypeError) as e:
-            raise ValueError(f"Fout bij conversie van PeriodUsageAndCosts data: {e}, data: {data}") from e
+            raise ValueError(f"Error converting PeriodUsageAndCosts data: {e}, data: {data}") from e
 
 
 @dataclass(slots=True)
@@ -2380,13 +2386,14 @@ class Price:
         This method sets the energy tax price based on the energy type.
         This tax is for The Netherlands and may change yearly.
         The values are based on the energy tax for electricity and gas in 2025.
-        €0,10154×1,21=€0,12286 per kWh (<10.000 kWh)
-        Iedere aansluiting krijgt in 2025 een vermindering van € 635,19 (inclusief btw) (tot ~4.700 kWh) via de belastingvermindering/regeling basisbehoefte
+        €0,10154×1,21=€0,12286 per kWh (<10,000 kWh)
+        Every connection receives a reduction of €635.19 (including VAT) in 2025
+        (up to ~4,700 kWh) via the tax reduction/basic needs allowance scheme.
 
-        Onderdeel	Tarief 2025
-        Energiebelasting stroom (<10.000 kWh)	€ 0,10154/kWh excl. btw → € 0,12286/kWh incl. btw
-        Energiebelasting stroom (>10.000 kWh)	€ 0,06937/kWh excl. btw → € 0,08400/kWh incl. btw
-        Vermindering energiebelasting	€ 635,19 per jaar (incl. btw)
+        Component	2025 Rate
+        Energy tax electricity (<10,000 kWh)	€ 0.10154/kWh excl. VAT → € 0.12286/kWh incl. VAT
+        Energy tax electricity (>10,000 kWh)	€ 0.06937/kWh excl. VAT → € 0.08400/kWh incl. VAT
+        Energy tax reduction	€ 635.19 per year (incl. VAT)
         """
         # if self.energy_type:
         #     if self.energy_type == "electricity":
@@ -2512,10 +2519,10 @@ class Price:
         This ensures correct detection of the last hour (23:00–00:00),
         even when the interval ends on the next day or during DST changes.
         """
-        # Huidige lokale kalenderdag
+        # Current local calendar day
         today_local = datetime.now(UTC).astimezone(LOCAL_TZ).date()
 
-        # Datum waarop deze prijs start
+        # Date on which this price starts
         date_from_local = self.date_from.astimezone(LOCAL_TZ).date()
 
         return date_from_local == today_local
@@ -2524,11 +2531,11 @@ class Price:
     def for_tomorrow(self) -> bool:
         """Return whether this price entry is for tomorrow (DST-safe)."""
 
-        # Huidige lokale datum (met juiste DST status)
+        # Current local date (with correct DST status)
         today_local = datetime.now(UTC).astimezone(LOCAL_TZ).date()
         tomorrow_local = today_local + timedelta(days=1)
 
-        # Datum van deze prijs in lokale tijd
+        # Date of this price in local time
         date_local = self.date_from.astimezone(LOCAL_TZ).date()
 
         return date_local == tomorrow_local
@@ -3308,7 +3315,7 @@ class MarketPrices:
     tomorrow (list): Prices for tomorrow.
     """
 
-    # note: zet velden zonder default altijd voor velden met default
+    # note: fields without a default must always come before fields with a default
 
     electricity: PriceData
     gas: PriceData
