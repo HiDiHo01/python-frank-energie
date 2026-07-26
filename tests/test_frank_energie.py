@@ -823,7 +823,7 @@ class TestFrankEnergieValidationHelpers:
 
         tomorrow = datetime.now(UTC).date() + timedelta(days=1)
 
-        with pytest.raises(ValueError, match="De 'start_date' mag niet in de toekomst liggen"):
+        with pytest.raises(ValueError, match="The 'start_date' must not be in the future"):
             client._validate_not_future_date(tomorrow)
 
     def test_frank_energie_validate_start_date_format_valid_formats(self):
@@ -842,7 +842,7 @@ class TestFrankEnergieValidationHelpers:
         """Test _validate_start_date_format with invalid format."""
         client = FrankEnergie()
 
-        with pytest.raises(ValueError, match="De 'start_date' moet een formaat hebben"):
+        with pytest.raises(ValueError, match="The 'start_date' must have a format"):
             client._validate_start_date_format("invalid-date-format")
 
     def test_frank_energie_validate_start_date_format_future_date(self):
@@ -851,14 +851,14 @@ class TestFrankEnergieValidationHelpers:
 
         future_date = (datetime.now(UTC).date() + timedelta(days=30)).isoformat()
 
-        with pytest.raises(ValueError, match="De 'start_date' mag niet in de toekomst liggen"):
+        with pytest.raises(ValueError, match="The 'start_date' must not be in the future"):
             client._validate_start_date_format(future_date)
 
     def test_frank_energie_validate_start_date_format_invalid_date(self):
         """Test _validate_start_date_format with invalid date string."""
         client = FrankEnergie()
 
-        with pytest.raises(ValueError, match="De 'start_date' heeft geen geldig datumformaat"):
+        with pytest.raises(ValueError, match="The 'start_date' does not have a valid date format"):
             client._validate_start_date_format("2023-13-45")  # Invalid month and day
 
 
@@ -949,7 +949,7 @@ class TestFrankEnergieAPIEndpointsAuth:
         """Test period usage and costs with empty site reference."""
         client = FrankEnergie(auth_token="test_token")
 
-        with pytest.raises(ValueError, match="De 'site_reference' mag niet leeg zijn"):
+        with pytest.raises(ValueError, match="The 'site_reference' must not be empty"):
             await client.period_usage_and_costs("", "2023-01")
 
     @pytest.mark.asyncio
@@ -1260,7 +1260,7 @@ async def test_period_usage_and_costs_exception_handling():
 
     with (
         patch.object(client, "_query", side_effect=NetworkError("Network error")),
-        pytest.raises(FrankEnergieException, match="Kon verbruik en kosten niet ophalen"),
+        pytest.raises(FrankEnergieException, match="Could not retrieve usage and costs"),
     ):
         await client.period_usage_and_costs("site_ref_123", "2023-01")
 

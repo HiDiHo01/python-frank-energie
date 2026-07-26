@@ -828,32 +828,12 @@ class FrankEnergie:
         )
 
         try:
-            # response = await self._query(query)
             response: dict[str, Any] = await self._query(query)
-            # Response data for testing purposes
-            # mock_response = {'data': {'enodeChargers': [{'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 75, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogazq06pz13p8eucfutnx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.396Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': None, 'chargeTimeRemaining': None, 'isCharging': False, 'isFullyCharged': None, 'isPluggedIn': False, 'lastUpdated': '2025-03-23T16:06:57.000Z', 'powerDeliveryState': 'UNPLUGGED', 'range': None}, 'id': 'cm3rogazq06pz13p8eucfutnx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 1', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:51.913Z'}, {'canSmartCharge': True, 'chargeSettings': {'calculatedDeadline': '2025-03-24T06:00:00.000Z', 'capacity': 100, 'deadline': None, 'hourFriday': 420, 'hourMonday': 420, 'hourSaturday': 420, 'hourSunday': 420, 'hourThursday': 420, 'hourTuesday': 420, 'hourWednesday': 420, 'id': 'cm3rogap606pu13p8w08epzjx', 'initialCharge': 0, 'initialChargeTimestamp': '2024-11-21T19:00:15.016Z', 'isSmartChargingEnabled': True, 'isSolarChargingEnabled': False, 'maxChargeLimit': 80, 'minChargeLimit': 20}, 'chargeState': {'batteryCapacity': None, 'batteryLevel': None, 'chargeLimit': None, 'chargeRate': 10.71, 'chargeTimeRemaining': None, 'isCharging': True, 'isFullyCharged': None, 'isPluggedIn': True, 'lastUpdated': '2025-03-23T16:23:53.000Z', 'powerDeliveryState': 'PLUGGED_IN:CHARGING', 'range': None}, 'id': 'cm3rogap606pu13p8w08epzjx', 'information': {'brand': 'Wallbox', 'model': 'Pulsar Plus 2', 'year': None}, 'interventions': [], 'isReachable': True, 'lastSeen': '2025-03-23T16:24:50.746Z'}]}}
-            if response is None:
-                _LOGGER.debug("No response data for 'enodeChargers'")
+            chargers_data = _dig(response, "data", "enodeChargers")
+            if not isinstance(chargers_data, list):
+                _LOGGER.debug("No chargers found in response: %s", response)
                 return EnodeChargers(chargers=[])
-            if "data" not in response:
-                _LOGGER.debug("No data found in response for chargers: %s", response)
-                return EnodeChargers(chargers=[])
-            if response["data"] is None:
-                _LOGGER.debug("No data for chargers found: %s", response)
-                return EnodeChargers(chargers=[])
-            if "enodeChargers" not in response["data"]:
-                _LOGGER.debug("No chargers found in data: %s", response)
-                return EnodeChargers(chargers=[])
-            chargers_data = response.get("data", {}).get("enodeChargers", [])
-            _LOGGER.debug("%s Enode Chargers Found", len(chargers_data))
-            _LOGGER.debug("Enode Chargers data: %s", chargers_data)
-            # _LOGGER.debug("Format for 'enodeChargers' response: %s", type(response))
-            # _LOGGER.debug("Format for 'enodeChargers' chargers: %s", type(chargers))
-            # response is a disctionary, but the data is a list of dictionaries
-            # chargers is a list of dictionaries, but the data is a dictionary
-            # if not isinstance(chargers, list):
-            #     _LOGGER.debug("Unexpected format for 'enodeChargers': %s", chargers)
-            #     return []
+            _LOGGER.debug("%s Enode Chargers found", len(chargers_data))
             return EnodeChargers.from_dict(chargers_data)
         except SmartChargingNotEnabledException as error:
             _LOGGER.debug("Smart charging not enabled: %s", error)
@@ -862,12 +842,6 @@ class FrankEnergie:
             _LOGGER.debug("Error in enode_chargers: %s", error)
             _LOGGER.exception("Unexpected error during query: %s", error)
             return EnodeChargers(chargers=[])
-            # raise FrankEnergieException("Unexpected error occurred.") from error
-
-    #        except Exception as e:
-    #            raise FrankEnergieException(
-    #              f"Failed to fetch Enode Chargers: {e}"
-    #              ) from e
 
     async def invoices(self, site_reference: str) -> Invoices:
         """Retrieve the invoices data.
@@ -2442,30 +2416,30 @@ class FrankEnergie:
         start_date: str,
     ) -> "PeriodUsageAndCosts":
         """
-        Haalt het verbruik en de kosten op voor een specifieke periode en locatie.
-        Dit is net als op de factuur de marktprijs+
+        Retrieve the usage and costs for a specific period and location.
+        This corresponds to the market price as shown on the invoice.
 
         Args:
-            site_reference (str): De referentie van de locatie.
-            start_date (str | datetime.date): De startdatum van de periode waarvoor de gegevens moeten worden opgehaald.
+            site_reference (str): The reference of the location.
+            start_date (str | datetime.date): The start date of the period for which the data should be retrieved.
 
         Returns:
-            PeriodUsageAndCosts: Het verbruik en de kosten van gas, elektriciteit en teruglevering.
+            PeriodUsageAndCosts: The usage and costs of gas, electricity, and feed-in.
 
         Raises:
-            AuthRequiredException: Als de authenticatie ontbreekt.
-            FrankEnergieAPIException: Als de API een fout retourneert.
-            ValueError: Als de site_reference leeg is of start_date in de toekomst ligt.
+            AuthRequiredException: If authentication is missing.
+            FrankEnergieAPIException: If the API returns an error.
+            ValueError: If site_reference is empty or start_date is in the future.
         """
 
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         if not site_reference:
-            raise ValueError("De 'site_reference' mag niet leeg zijn.")
+            raise ValueError("The 'site_reference' must not be empty.")
 
         if not start_date:
-            raise ValueError("De 'start_date' is vereist.")
+            raise ValueError("The 'start_date' is required.")
 
         self._validate_start_date_format(start_date)
 
@@ -2535,13 +2509,13 @@ class FrankEnergie:
             response = await self._query(query)
             period_usage = PeriodUsageAndCosts.from_dict(response)
             if period_usage is None:
-                raise FrankEnergieException("Kon verbruik en kosten niet ophalen voor opgegeven periode.")
+                raise FrankEnergieException("Could not retrieve usage and costs for the specified period.")
             return period_usage
         except Exception as err:
             _LOGGER.exception(
-                "Fout bij ophalen van periodUsageAndCosts voor site %s op %s: %s", site_reference, start_date, err
+                "Error retrieving periodUsageAndCosts for site %s on %s: %s", site_reference, start_date, err
             )
-            raise FrankEnergieException("Kon verbruik en kosten niet ophalen voor opgegeven periode.") from err
+            raise FrankEnergieException("Could not retrieve usage and costs for the specified period.") from err
 
     # async def smart_batteries(self) -> SmartBatteries: # < better for HA, but less explicit about possible None return
     async def smart_batteries(self) -> SmartBatteries | None:
@@ -2987,27 +2961,9 @@ class FrankEnergie:
             _LOGGER.error("Failed to query enode vehicles: %s", e)
             return None
 
-        # Handle empty or missing response data
-        # missing response is hanled in _query
-        # if not response:
-        #     _LOGGER.warning("Empty or missing GraphQL response for 'enodeVehicles'")
-        #     return None
+        vehicles_data = _dig(response, "data", "enodeVehicles")
 
-        # errors are hanled in _query
-        # if response.get("errors"):
-        #     _LOGGER.error("Error response for 'enodeVehicles': %s", response)
-        #     return None
-
-        if not response.get("data"):
-            _LOGGER.debug("Empty or missing GraphQL response for 'enodeVehicles'")
-            # return {}
-            return None
-
-        _LOGGER.debug("Response data for 'enodeVehicles': %s", response)
-        response_data = response["data"]
-        vehicles_data = response_data.get("enodeVehicles") if isinstance(response_data, dict) else None
-
-        if not vehicles_data:
+        if not isinstance(vehicles_data, list) or not vehicles_data:
             _LOGGER.debug("No enode vehicles found")
             return EnodeVehicles([])
 
@@ -3021,22 +2977,22 @@ class FrankEnergie:
 
     def _validate_not_future_date(self, value: date) -> None:
         if value > datetime.now(UTC).date():
-            raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
+            raise ValueError("The 'start_date' must not be in the future.")
 
     def _validate_start_date_format(self, start_date: str | date) -> None:
         if isinstance(start_date, date):
             start_date = start_date.isoformat()
 
         if not re.fullmatch(r"\d{4}(-\d{2}){0,2}", start_date):
-            raise ValueError("De 'start_date' moet een formaat hebben zoals 'YYYY', 'YYYY-MM' of 'YYYY-MM-DD'.")
+            raise ValueError("The 'start_date' must have a format like 'YYYY', 'YYYY-MM', or 'YYYY-MM-DD'.")
 
-        if len(start_date) == 10:  # volledige datum
+        if len(start_date) == 10:  # full date
             try:
                 date_obj = datetime.strptime(start_date, "%Y-%m-%d").date()
                 if date_obj > datetime.now(UTC).date():
-                    raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
+                    raise ValueError("The 'start_date' must not be in the future.")
             except ValueError as e:
-                raise ValueError(f"De 'start_date' heeft geen geldig datumformaat: {e}") from e
+                raise ValueError(f"The 'start_date' does not have a valid date format: {e}") from e
 
     def get_diagnostic_data(self) -> str:
         """Get diagnostic data."""
