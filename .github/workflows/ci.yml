@@ -49,8 +49,9 @@ jobs:
 
       - name: Install Poetry
         run: |
-          pip install poetry==2.4.1
+          pip install --only-binary :all: poetry==2.4.1
           poetry config virtualenvs.create false
+          poetry config installer.only-binary :all:
 
       - name: Install dependencies
         run: poetry install --no-interaction --with=dev
