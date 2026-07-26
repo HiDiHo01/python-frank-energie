@@ -95,11 +95,6 @@ repos:
         language: system
         types: [text]
         entry: poetry run fix-byte-order-marker
-      - id: isort
-        name: Sort all imports with isort
-        language: system
-        types: [python]
-        entry: poetry run isort
       - id: no-commit-to-branch
         name: Don't commit to main branch
         language: system
