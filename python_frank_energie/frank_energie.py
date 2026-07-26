@@ -92,7 +92,8 @@ class FrankEnergieQuery:
 def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
     sanitized_query = query.to_dict()
     if "password" in sanitized_query["variables"]:
-        sanitized_query["variables"]["password"] = "****"
+        # Redaction placeholder, not a credential.
+        sanitized_query["variables"]["password"] = "****"  # nosec B105
     return sanitized_query
 
 
@@ -101,7 +102,8 @@ class FrankEnergie:
 
     DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
     # DATA_URL = "https://graphql.frankenergie.nl/"
-    RENEW_TOKEN_OPERATIONNAME = "RenewToken"
+    # GraphQL operation name, not a credential.
+    RENEW_TOKEN_OPERATIONNAME = "RenewToken"  # nosec B105
     AUTH_HEADER_EXEMPT_OPERATIONS = {
         RENEW_TOKEN_OPERATIONNAME,
     }
