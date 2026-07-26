@@ -95,12 +95,6 @@ repos:
         language: system
         types: [text]
         entry: poetry run fix-byte-order-marker
-      - id: flake8
-        name: Enforcing style guide with flake8
-        language: system
-        types: [python]
-        entry: poetry run flake8
-        require_serial: true
       - id: isort
         name: Sort all imports with isort
         language: system
@@ -120,11 +114,6 @@ repos:
         entry: poetry check
         pass_filenames: false
         always_run: true
-      # - id: pylint
-      #   name: Starring code with pylint
-      #   language: system
-      #   types: [python]
-      #   entry: poetry run pylint
       - id: pytest
         name: Running tests and test coverage with pytest
         language: system
