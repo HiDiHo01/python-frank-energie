@@ -444,40 +444,6 @@ class Invoice:
     PeriodDescription: str
     TotalAmount: float
 
-    @property
-    def for_last_year(self) -> bool:
-        """Whether this invoice is for the previous calendar year."""
-
-        now_utc = datetime.now(UTC)
-        now_local = now_utc.astimezone(LOCAL_TZ)
-        last_year = now_local.year - 1
-
-        start_date = self.StartDate
-
-        if start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=UTC)
-
-        invoice_start_year = start_date.astimezone(LOCAL_TZ).year
-
-        return invoice_start_year == last_year
-
-    @property
-    def for_this_year(self) -> bool:
-        """Whether this invoice is for the current calendar year."""
-
-        now_utc = datetime.now(UTC)
-        now_local = now_utc.astimezone(LOCAL_TZ)
-        current_year = now_local.year
-
-        start_date = self.StartDate
-
-        if start_date.tzinfo is None:
-            start_date = start_date.replace(tzinfo=UTC)
-
-        invoice_start_year = start_date.astimezone(LOCAL_TZ).year
-
-        return invoice_start_year == current_year
-
     @staticmethod
     def from_dict(data: dict[str, object] | None) -> Invoice | None:
         """Parse the invoice from the API invoice query response."""
@@ -704,35 +670,6 @@ class Invoices:
 
         return average_costs
 
-    def calculate_average_costs_per_month_this_year(self) -> float | None:
-        """Calculate the average costs per month for this year."""
-        invoices_count = 0
-        total_costs = 0.0
-
-        current_year = datetime.now(UTC).year
-
-        for invoice in self.all_periods_invoices:
-            if invoice.StartDate.year == current_year:
-                if " tot " not in invoice.PeriodDescription:
-                    invoices_count += 1
-                    total_costs += invoice.TotalAmount
-                else:
-                    total_costs += invoice.TotalAmount
-
-        if invoices_count == 0:
-            return None
-
-        current_month = datetime.now(UTC).month
-        average_costs = total_costs / invoices_count
-
-        if current_month == 1:
-            # Handle January case, as it's the first month of the year
-            average_costs *= 12
-        else:
-            average_costs *= 12 / current_month
-
-        return average_costs
-
     def get_unique_years(self) -> set[int]:
         """Return unique years from invoices using local timezone."""
         return {
@@ -771,21 +708,6 @@ class Invoices:
         instance.all_invoices_dict_this_year = instance.get_all_invoices_dict_for_this_year()
         instance.all_invoices_dict = instance.get_all_invoices_dict()
         return instance
-
-    @classmethod
-    def empty(cls) -> Invoices:
-        """Return an empty Invoices object."""
-        return cls(
-            all_periods_invoices=[],
-            previous_period_invoice=None,
-            current_period_invoice=None,
-            upcoming_period_invoice=None,
-            all_invoices_dict_previous_year={},
-            all_invoices_dict_this_year={},
-            all_invoices_dict={},
-            total_costs_previous_year=0.0,
-            total_costs_this_year=0.0,
-        )
 
     @staticmethod
     def _to_local(date_time: datetime) -> datetime:
@@ -1134,32 +1056,6 @@ class PushNotificationPriceAlert:
             weekdays=weekdays,
         )
 
-    @staticmethod
-    def from_response(data: dict[str, object]) -> list[PushNotificationPriceAlert]:
-        """Parse the GraphQL response from the PushNotificationPriceAlerts query."""
-        _LOGGER.debug("Parsing PushNotificationPriceAlerts response: %s", data)
-
-        errors = data.get("errors")
-        if isinstance(errors, list) and errors:
-            error_msg = errors[0].get("message", "Unknown error") if isinstance(errors[0], dict) else "Unknown error"
-            raise RequestException(error_msg)
-
-        root = data.get("data")
-        me = root.get("me") if isinstance(root, dict) else None
-        payload = me.get("PushNotificationPriceAlerts") if isinstance(me, dict) else None
-
-        if not isinstance(payload, list):
-            raise RequestException("Unexpected or missing PushNotificationPriceAlerts data")
-
-        alerts = [
-            alert_obj
-            for alert in payload
-            if isinstance(alert, dict) and (alert_obj := PushNotificationPriceAlert.from_dict(alert)) is not None
-        ]
-        _LOGGER.debug("Parsed %d PushNotificationPriceAlerts", len(alerts))
-
-        return alerts
-
 
 @dataclass
 class Me:
@@ -1230,14 +1126,6 @@ class Me:
             meterReadingExportPeriods=meter_periods,
             smartCharging=payload.get("smartCharging") or {},
         )
-
-
-def get_segments(data: dict[str, Any]) -> list[str] | None:
-    delivery_site_data = data.get("user")
-    if delivery_site_data:
-        delivery_site = DeliverySite(**delivery_site_data)
-        return delivery_site.segments
-    return None
 
 
 @dataclass
@@ -1451,11 +1339,6 @@ class Contact:
             phoneNumber=data.get("phoneNumber"),
             mobileNumber=data.get("mobileNumber"),
         )
-
-
-@dataclass
-class Email:
-    email: EmailStr
 
 
 @dataclass
@@ -1676,16 +1559,6 @@ class Signup:
 
 
 @dataclass
-class UserSettings:
-    id: str
-    disabledHapticFeedback: bool
-    jedlixUserId: str | None
-    jedlixPushNotifications: bool
-    smartPushNotifications: bool
-    rewardPayoutPreference: str
-
-
-@dataclass
 class activePaymentAuthorization:
     """Represents an active payment authorization record."""
 
@@ -1786,32 +1659,6 @@ class ExternalDetails:
             address=Address.from_dict(data.get("address", {})),
             debtor=Debtor.from_dict(data.get("debtor", {})),
         )
-
-
-@dataclass
-class DeliverySiteList:
-    """List with delivery sites."""
-
-    delivery_sites: list[DeliverySite]
-
-    def __iter__(self):
-        """Return an iterator over the delivery sites."""
-        return iter(self.delivery_sites)
-
-    def as_dict(self) -> dict[str, dict]:
-        """Convert the delivery sites to a dictionary of address information.
-
-        Each key-value pair represents the site name and the corresponding address
-        information of a delivery site.
-
-        Returns:
-            A dictionary where keys are site names and values are address information dictionaries.
-        """
-        site_dict = {}
-        for index, site in enumerate(self.delivery_sites, start=1):
-            site_name = f"Delivery site {index}"
-            site_dict[site_name] = site.address.__dict__ if site.address else {}
-        return site_dict
 
 
 @dataclass
@@ -1970,49 +1817,6 @@ class User:
             externalDetails=UserExternalDetails.from_dict(payload.get("externalDetails", {})),
         )
 
-    # verwijder dit is verplaatst naar de deliverysite class
-    @property
-    def old_format_delivery_site_as_dict(self):
-        sites_as_dict = []
-        for site in self.deliverySites:
-            address = site.get("address", {})
-            sites_as_dict.append(
-                f"{address.get('street')} {address.get('houseNumber')} {address.get('houseNumberAddition', '') if address.get('houseNumberAddition') else ''} {address.get('zipCode')} {address.get('city')}"
-            )
-        return sites_as_dict
-
-    @property
-    def delivery_site_as_list(self):
-        sites = []
-        for index, site in enumerate(self.deliverySites, start=1):
-            address = site.get("address", {})
-            site_name = f"Delivery site {index}"
-            house_number_addition = (
-                f"{address.get('houseNumberAddition')}" if address.get("houseNumberAddition") else ""
-            )
-            site_info = {
-                site_name: f"{address.get('street')} {address.get('houseNumber')} {house_number_addition if house_number_addition else ''} {address.get('zipCode')} {address.get('city')}"
-            }
-            sites.append(site_info)
-        return sites
-
-    @property
-    def delivery_site_as_dict(self):
-        site_dict = {}
-        for index, site in enumerate(self.deliverySites, start=1):
-            address = site.get("address", {})
-            site_name = f"Delivery site {index}"
-            site_info = {
-                "street": address.get("street"),
-                "house_number": address.get("houseNumber"),
-                "zip_code": address.get("zipCode"),
-                "city": address.get("city"),
-            }
-            if address.get("houseNumberAddition"):
-                site_info["house_number_addition"] = address.get("houseNumberAddition", "")
-            site_dict[site_name] = site_info
-        return site_dict
-
 
 @dataclass
 class Difference:
@@ -2138,78 +1942,6 @@ class MonthSummary:
     typename: str
     expectedCosts: float | None = None
     expectedCostsPerDay: float | None = None
-
-    @staticmethod
-    def old_from_dict(data: Mapping[str, object]) -> MonthSummary | None:
-        """Parse the response from the monthSummary query.
-
-        Returns ``None`` when Frank Energie has no summary to deliver yet
-        (absent payload, empty payload, ``data.monthSummary: null``). This is
-        a normal transient state — typically the first few days of a new
-        billing month, before the previous month's invoice is generated.
-
-        Only raises when the FE response is *malformed-but-present*: schema
-        drift, mixed-type fields on a populated summary, etc.
-        """
-        _LOGGER.debug("MonthSummary model %s", data)
-
-        if data is None:
-            return None
-
-        errors = data.get("errors")
-        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
-            raise RequestException(errors[0].get("message", "Unknown error"))
-
-        root = data.get("data", {})
-
-        if not isinstance(root, dict):
-            raise RequestException("Unexpected response format")
-
-        payload = root.get("monthSummary")
-
-        if payload is None:
-            return None
-
-        if not isinstance(payload, Mapping):
-            raise RequestException("Unexpected monthSummary payload type")
-
-        expected_costs = payload.get("expectedCosts")
-        last_reading = payload.get("lastMeterReadingDate")
-        actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")
-
-        if expected_costs is None and last_reading is None and actual_costs is None:
-            return None
-
-        if not isinstance(expected_costs, (int, float, type(None))):
-            raise RequestException("Invalid expectedCosts")
-
-        if not isinstance(actual_costs, (int, float)):
-            raise RequestException("Invalid actualCostsUntilLastMeterReadingDate")
-
-        if not isinstance(last_reading, str):
-            raise RequestException("Invalid lastMeterReadingDate")
-
-        if expected_costs is not None:
-            expected_costs_per_day = MonthSummary.calculate_expected_costs_per_day(expected_costs, last_reading)
-        else:
-            expected_costs_per_day = None
-
-        costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(actual_costs, last_reading)
-
-        return MonthSummary(
-            _id=str(payload.get("_id", "")),
-            actualCostsUntilLastMeterReadingDate=float(actual_costs),
-            expectedCostsUntilLastMeterReadingDate=_safe_float(
-                payload.get("expectedCostsUntilLastMeterReadingDate"), default=0.0
-            ),
-            expectedCosts=_safe_float(expected_costs),
-            expectedCostsPerDay=expected_costs_per_day,
-            costs_per_day_till_now=costs_per_day_till_now,
-            lastMeterReadingDate=last_reading,
-            meterReadingDayCompleteness=_safe_float(payload.get("meterReadingDayCompleteness"), default=0.0),
-            gasExcluded=bool(payload.get("gasExcluded", False)),
-            typename=str(payload.get("__typename", "")),
-        )
 
     @staticmethod
     def from_dict(
@@ -2612,14 +2344,6 @@ class EnodeChargers:
         chargers = [EnodeCharger.from_dict(item) for item in data]
         return cls(chargers=chargers)
 
-    def old_as_dict(self) -> dict[str, EnodeCharger]:
-        """Convert the charger list to a dictionary keyed by charger ID."""
-        return {charger.id: charger for charger in self.chargers}
-
-    def as_dict(self) -> dict[str, EnodeCharger]:
-        """Return only chargers with smart charging enabled as a dict keyed by charger ID."""
-        return {charger.id: charger for charger in self.chargers if charger.charge_settings.is_smart_charging_enabled}
-
 
 @dataclass
 class Price:
@@ -2777,11 +2501,6 @@ class Price:
         return start_utc <= now < end_utc
 
     @property
-    def for_future_hour(self) -> bool:
-        """Whether this price entry is for and hour after the current one."""
-        return self.date_from.hour > datetime.now(UTC).hour
-
-    @property
     def for_future(self) -> bool:
         """Return True if this price interval starts after the current UTC time."""
         return self.date_from > datetime.now(UTC)
@@ -2863,91 +2582,6 @@ class Price:
         if not hasattr(self, "_total"):
             self._total = self.market_price + self.market_price_tax + self.sourcing_markup_price + self.energy_tax_price
         return self._total
-
-    @staticmethod
-    def average_price_for_current_hour(prices: list[Price]) -> float | None:
-        """Return the average price for the current hour across a list of prices."""
-        current = [p for p in prices if p.for_now]
-
-        if not current:
-            return None
-
-        return sum(p.total for p in current) / len(current)
-
-    def calculate_stats1(self, prices: list[Price]) -> dict[str, float]:
-        if not prices:
-            return {}
-
-        price_values = [price.market_price for price in prices]
-        total_prices = [price.total for price in prices]
-        return {
-            "min": min(price_values),
-            "max": max(price_values),
-            "avg": mean(total_prices),
-        }
-
-    @staticmethod
-    def calculate_stats2(prices: list[float]) -> dict[str, float]:
-        if not prices:
-            return {}
-
-        # Calculate the minimum price
-        min_price = min(prices)
-
-        # Calculate the maximum price
-        max_price = max(prices)
-
-        # Calculate the average price
-        avg_price = mean(prices)
-
-        # Calculate the total price
-        total_price = sum(prices)
-
-        # Calculate the standard deviation
-        n = len(prices)
-        std_dev = (sum((x - avg_price) ** 2 for x in prices) / n) ** 0.5
-
-        # Create a dictionary to store the calculated statistics
-        stats = {
-            "min_price": min_price,
-            "max_price": max_price,
-            "avg_price": avg_price,
-            "total_price": total_price,
-            "std_dev": std_dev,
-        }
-
-        return stats
-
-    @staticmethod
-    def calculate_stats3(data: dict) -> dict[str, dict[str, float]]:
-        if not data:
-            return {}
-        electricity_prices = [entry["marketPrice"] for entry in data["marketPricesElectricity"]]
-        gas_prices = [entry["marketPrice"] for entry in data["marketPricesGas"]]
-
-        electricity_mean = mean(electricity_prices)
-        gas_mean = mean(gas_prices)
-
-        electricity_min = min(electricity_prices)
-        gas_min = min(gas_prices)
-
-        electricity_max = max(electricity_prices)
-        gas_max = max(gas_prices)
-
-        electricity_std_dev = (
-            sum((x - electricity_mean) ** 2 for x in electricity_prices) / len(electricity_prices)
-        ) ** 0.5
-        gas_std_dev = (sum((x - gas_mean) ** 2 for x in gas_prices) / len(gas_prices)) ** 0.5
-
-        return {
-            "electricity": {
-                "mean": electricity_mean,
-                "min": electricity_min,
-                "max": electricity_max,
-                "std_dev": electricity_std_dev,
-            },
-            "gas": {"mean": gas_mean, "min": gas_min, "max": gas_max, "std_dev": gas_std_dev},
-        }
 
 
 @dataclass
@@ -3309,16 +2943,6 @@ class PriceData:
 
         return mean(prices_list)
 
-    @staticmethod
-    def safe_avg(values: Iterable[float | int]) -> float | None:
-        """Return average of numeric values or None if empty."""
-        values_list = [f for v in values if (f := _safe_float(v)) is not None]
-
-        if not values_list:
-            return None
-
-        return mean(values_list)
-
     @property
     def today_tax_avg(self) -> float:
         """Average market price including tax and markup for today."""
@@ -3356,129 +2980,11 @@ class PriceData:
 
         return [hour for hour in self.price_data if getattr(hour, "for_tomorrow", False)]
 
-    def asdict(
-        self,
-        attr: str,
-        upcoming_only: bool = False,
-        today_only: bool = False,
-        tomorrow_only: bool = False,
-        timezone: str | None = None,
-    ) -> list[dict]:
-        """
-        Return a list of dictionaries suitable for use as entity attribute data.
-
-        Args:
-            attr (str): The attribute name (e.g., 'marketPrice') to extract from each price object.
-            upcoming_only (bool): If True, include only upcoming prices.
-            today_only (bool): If True, include only today's prices.
-            tomorrow_only (bool): If True, include only tomorrow's prices.
-            timezone (str | None): The timezone to localize the 'from' and 'till' datetimes. Defaults to UTC.
-
-        Returns:
-            list[dict]: A list of dicts with keys 'from', 'till', and the selected 'price'.
-        """
-        try:
-            tz = ZoneInfo(timezone) if timezone else ZoneInfo("UTC")
-
-            # self.price_data is altijd een list
-            #           if isinstance(self.price_data, list):
-            if upcoming_only:
-                prices = self.upcoming_prices
-            elif today_only:
-                prices = self.today_prices
-            elif tomorrow_only:
-                prices = self.tomorrow_prices
-                if not prices:
-                    return [{"message": "No prices for tomorrow."}]
-            else:
-                prices = self.price_data
-            #            else:
-            #                if upcoming_only:
-            #                    prices = [self]
-            #                elif today_only:
-            #                    prices = [p for p in self.price_data if p.for_today]
-            #                elif tomorrow_only:
-            #                    prices = [p for p in self.price_data if p.for_tomorrow]
-            #                    if not prices:
-            #                        return [{'message': 'No prices for tomorrow.'}]
-            #                else:
-            #                    prices = [self.price_data]
-
-            # Map prices to dictionaries
-            return [
-                {
-                    "from": price.date_from.astimezone(tz),
-                    "till": price.date_till.astimezone(tz),
-                    "price": round(getattr(price, attr), 3),
-                }
-                for price in prices
-            ]
-
-        except AttributeError as err:
-            _LOGGER.error("Price object has no attribute '%s'", err)
-            return [{"error": f"Price object has no attribute: {err}"}]
-
-        except Exception as exc:
-            _LOGGER.exception(
-                "Failed to convert price data to dict (attr=%s, upcoming_only=%s, today_only=%s, tomorrow_only=%s, tz_name=%s): %s",
-                attr,
-                upcoming_only,
-                today_only,
-                tomorrow_only,
-                timezone,
-                exc,
-            )
-            return [{"error": f"Failed to convert price data: {exc}"}]
-
-    @staticmethod
-    def asdict_to_local(prices_dict, timezone):
-        """Convert prices dictionary to local timezone."""
-        local_prices = []
-        for price_data in prices_dict:
-            local_date_from = price_data["from"].astimezone(timezone)
-            local_date_till = price_data["till"].astimezone(timezone)
-            local_price_data = {"from": local_date_from, "till": local_date_till, "price": price_data["price"]}
-            local_prices.append(local_price_data)
-        return local_prices
-
-    def test_asdict(self, attr):  # remove me
-        """Return a dict that can be used as entity attribute data."""
-        result = []
-        for e in self.price_data:
-            data = {
-                "from": e.date_from,
-                "till": e.date_till,
-                "date_from": e.date_from,
-                "date_till": e.date_till,
-                "market_price": e.market_price,
-                "market_price_tax": e.market_price_tax,
-                "sourcing_markup_price": e.sourcing_markup_price,
-                "energy_tax_price": e.energy_tax_price,
-                "total": e.total,
-                "price": getattr(e, attr),
-            }
-            result.append(data)
-        return result
-
     @property
     def today_market_avg(self) -> float:
         """Average market price for today."""
         today_market_prices = [hour.market_price for hour in self.today_prices]
         return mean(today_market_prices)
-
-    def get_price_statistics(price_data: PriceData, start_date: datetime, end_date: datetime) -> dict | None:
-        """Calculate statistics for prices within a specific date range."""
-        filtered_prices = price_data.filter_prices(start_date, end_date)
-        if filtered_prices:
-            prices = [price.total for price in filtered_prices]
-            return {
-                "min_price": min(prices),
-                "max_price": max(prices),
-                "avg_price": mean(prices),
-                "total_price": sum(prices),
-                "std_dev": (sum((x - mean(prices)) ** 2 for x in prices) / len(prices)) ** 0.5,
-            }
-        return None
 
     @property
     def all_avg(self):
@@ -4224,17 +3730,6 @@ class SmartBattery:
             settings=settings,
         )
 
-    @classmethod
-    def from_dict_list(cls, items: list[object]) -> list[SmartBattery]:
-        """Convert a list of dicts or existing SmartBattery instances into SmartBattery objects."""
-        result: list[SmartBattery] = []
-        for item in items:
-            if isinstance(item, dict):
-                result.append(cls.from_dict(item))
-            elif isinstance(item, SmartBattery):
-                result.append(item)
-        return result
-
 
 @dataclass
 class SmartBatterySession:
@@ -4383,151 +3878,6 @@ class SmartBatteryDetails:
         return SmartBatteryDetails(smart_battery=smart_battery, smart_battery_summary=smart_battery_summary)
 
 
-def parse_utc_isoformat(value: str) -> datetime:
-    """Convert ISO8601 datetime string to UTC-aware datetime."""
-    return datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX)).astimezone(UTC)
-
-
-def parse_datetime(value: Any) -> datetime | None:
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return parse_utc_isoformat(value)
-        except (ValueError, TypeError):
-            _LOGGER.warning("Invalid datetime string: %s", value)
-    return None
-
-
-@dataclass
-class BatterySessionSummary:
-    active: bool
-    charge_energy: float
-    discharge_energy: float
-    updated_at: str | datetime | None = None
-
-    def __post_init__(self) -> None:
-        if isinstance(self.updated_at, str):
-            try:
-                self.updated_at = parse_datetime(self.updated_at)
-            except ValueError:
-                _LOGGER.warning("Invalid updated_at format: %s", self.updated_at)
-                self.updated_at = None
-
-
-@dataclass
-class BatteryEntityGroup:
-    """
-    Data representation of a battery entity group.
-
-    Attributes:
-        id: Unique identifier of the battery group.
-        name: Human-readable name of the battery group.
-        battery_ids: List of associated battery device IDs.
-        created_at: Datetime when this group was created.
-        updated_at: Datetime when this group was last updated.
-        mode_sensor: Entity representing the battery mode.
-        soc_sensor: Entity representing the state of charge.
-        result_sensors: List of result sensor data.
-    """
-
-    id: str
-    name: str
-    battery_ids: list[str]
-    created_at: datetime
-    updated_at: datetime
-    mode_sensor: Any
-    soc_sensor: Any
-    result_sensors: list[BatteryEntityGroup.ResultSensor] = field(default_factory=list)
-
-    @dataclass
-    class ResultSensor:
-        """
-        Representation of an individual result sensor within a battery entity group.
-
-        Attributes:
-            type: Type of result (e.g., 'nettoresultaat').
-            entity: Home Assistant entity representing the result.
-        """
-
-        type: str
-        entity: Any
-
-        @classmethod
-        def from_dict(cls, data: dict[str, Any]) -> BatteryEntityGroup.ResultSensor:
-            """
-            Create a ResultSensor from a dictionary.
-
-            Args:
-                data: Dictionary with result sensor data.
-
-            Returns:
-                ResultSensor instance.
-            """
-            return cls(
-                type=data["type"],
-                entity=data["entity"],
-            )
-
-        def to_dict(self) -> dict[str, Any]:
-            """
-            Serialize ResultSensor to a dictionary.
-
-            Returns:
-                Dictionary representation of the result sensor.
-            """
-            return {
-                "type": self.type,
-                "entity": self.entity,
-            }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> BatteryEntityGroup:
-        """
-        Create a BatteryEntityGroup from a dictionary.
-
-        Args:
-            data: Dictionary containing battery entity group fields.
-
-        Returns:
-            BatteryEntityGroup instance.
-        """
-        try:
-            created_at = datetime.fromisoformat(data["createdAt"]).astimezone(UTC)
-            updated_at = datetime.fromisoformat(data["updatedAt"]).astimezone(UTC)
-        except Exception as exc:
-            raise ValueError("Invalid datetime format in 'createdAt' or 'updatedAt'") from exc
-
-        return cls(
-            id=data["id"],
-            name=data["name"],
-            battery_ids=data["batteryIds"],
-            created_at=created_at,
-            updated_at=updated_at,
-            mode_sensor=data.get("modeSensor"),
-            soc_sensor=data.get("socSensor"),
-            result_sensors=[cls.ResultSensor.from_dict(sensor) for sensor in data.get("resultSensors", [])],
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        """
-        Serialize BatteryEntityGroup to a dictionary.
-
-        Returns:
-            Dictionary representation of the battery entity group.
-        """
-        return {
-            "id": self.id,
-            "name": self.name,
-            "batteryIds": self.battery_ids,
-            "createdAt": self.created_at.isoformat(),
-            "updatedAt": self.updated_at.isoformat(),
-            "modeSensor": self.mode_sensor,
-            "socSensor": self.soc_sensor,
-            "resultSensors": [sensor.to_dict() for sensor in self.result_sensors],
-        }
-
-
 def _parse_datetime(value: str | None) -> datetime | None:
     if value is None:
         return None
@@ -4548,35 +3898,6 @@ def _try_parse_datetime(value: object) -> datetime | None:
         except ValueError:
             _LOGGER.debug("Invalid datetime value: %s", value)
     return None
-
-
-def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[str, Any]:
-    """
-    Convert a BatteryEntityGroup instance into a dictionary suitable for use
-    in Home Assistant's extra_state_attributes.
-
-    Args:
-        group: The BatteryEntityGroup instance.
-
-    Returns:
-        A dictionary representing extra state attributes.
-    """
-    return {
-        "battery_group_id": group.id,
-        "battery_group_name": group.name,
-        "battery_ids": group.battery_ids,
-        "created_at": group.created_at.isoformat(),
-        "updated_at": group.updated_at.isoformat(),
-        "mode_sensor": group.mode_sensor,
-        "soc_sensor": group.soc_sensor,
-        "result_sensors": [
-            {
-                "type": sensor.type,
-                "entity": sensor.entity,
-            }
-            for sensor in group.result_sensors
-        ],
-    }
 
 
 @dataclass

@@ -95,6 +95,7 @@ addopts = "--asyncio-mode=auto --cov --cov-report=html --strict-markers"
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+extend-exclude = ["vulture_whitelist.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "I", "UP", "ASYNC"]
@@ -108,9 +109,8 @@ known-first-party = ["python_frank_energie"]
 keep-runtime-typing = false
 
 [tool.vulture]
-min_confidence = 80
-paths = ["python_frank_energie", "tests"]
-verbose = true
+min_confidence = 60
+paths = ["python_frank_energie", "tests", "vulture_whitelist.py"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

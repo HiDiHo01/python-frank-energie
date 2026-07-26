@@ -13,7 +13,7 @@ from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
-from typing import Any, TypeVar
+from typing import Any
 
 import aiohttp
 from aiohttp import ClientError, ClientSession, ClientTimeout
@@ -55,8 +55,6 @@ from .models import (
     UserSmartFeedInStatus,
 )
 from .types import PriceResolution
-
-T = TypeVar("T")
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,7 +138,6 @@ class FrankEnergie:
             self._auth = Authentication(auth_token or "", refresh_token or "", version)
 
     is_smart_charging = False
-    is_smart_trading = False
 
     async def close(self) -> None:
         """Close the client session if it was created internally."""
@@ -1489,160 +1486,6 @@ class FrankEnergie:
             return False
 
         return True
-
-    async def old_me(self, site_reference: str) -> Me:
-        """Fetch authenticated user data."""
-
-        if self._auth is None:
-            raise AuthRequiredException("Authentication is required.")
-
-        if site_reference is None or not isinstance(site_reference, str) or not site_reference.strip():
-            raise ValueError("A valid non-empty site_reference must be provided.")
-
-        query = FrankEnergieQuery(
-            """
-            query Me($siteReference: String) {
-                me {
-                    ...UserFields
-                }
-            }
-            fragment UserFields on User {
-                id
-                email
-                countryCode
-                advancedPaymentAmount(siteReference: $siteReference)
-                treesCount
-                hasInviteLink
-                hasCO2Compensation
-                createdAt
-                updatedAt
-                meterReadingExportPeriods(siteReference: $siteReference) {
-                    EAN
-                    cluster
-                    segment
-                    from
-                    till
-                    period
-                    type
-                }
-                InviteLinkUser {
-                    id
-                    fromName
-                    slug
-                    treesAmountPerConnection
-                    discountPerConnection
-                }
-                PushNotificationPriceAlerts {
-                    id
-                    isEnabled
-                    type
-                    weekdays
-                }
-                UserSettings {
-                    id
-                    disabledHapticFeedback
-                    language
-                    smartPushNotifications
-                    rewardPayoutPreference
-                }
-                activePaymentAuthorization {
-                    id
-                    mandateId
-                    signedAt
-                    bankAccountNumber
-                    status
-                }
-                connections(siteReference: $siteReference) {
-                    id
-                    connectionId
-                    EAN
-                    segment
-                    status
-                    contractStatus
-                    estimatedFeedIn
-                    firstMeterReadingDate
-                    lastMeterReadingDate
-                    meterType
-                    externalDetails {
-                        gridOperator
-                        address {
-                            street
-                            houseNumber
-                            houseNumberAddition
-                            zipCode
-                            city
-                        }
-                        contract {
-                            startDate
-                            endDate
-                            contractType
-                            productName
-                            tariffChartId
-                        }
-                    }
-                }
-                externalDetails {
-                    reference
-                    person {
-                        firstName
-                        lastName
-                    }
-                    contact {
-                        emailAddress
-                        phoneNumber
-                        mobileNumber
-                    }
-                    address {
-                        addressFormatted
-                        street
-                        houseNumber
-                        houseNumberAddition
-                        zipCode
-                        city
-                    }
-                    debtor {
-                        bankAccountNumber
-                        preferredAutomaticCollectionDay
-                    }
-                }
-                smartCharging {
-                    isActivated
-                    provider
-                    userCreatedAt
-                    userId
-                    isAvailableInCountry
-                    needsSubscription
-                    subscription {
-                        startDate
-                        endDate
-                        id
-                        proposition {
-                            product
-                            countryCode
-                        }
-                    }
-                }
-                smartTrading {
-                    isActivated
-                    isAvailableInCountry
-                    userCreatedAt
-                    userId
-                }
-                websiteUrl
-                customerSupportEmail
-                reference
-            }
-            """,
-            "Me",
-            {"siteReference": site_reference},
-        )
-
-        response = await self._query(query)
-
-        if not isinstance(response, dict):
-            raise RequestException("Invalid response type for 'me' query")
-
-        return Me.from_dict(response)
 
     async def me(self, site_reference: str | None = None) -> Me:
         """Fetch authenticated user data."""
