@@ -1015,26 +1015,6 @@ class TestFrankEnergieAPIEndpointsAuth:
 class TestFrankEnergieUtilityMethods:
     """Test utility and miscellaneous methods."""
 
-    def test_frank_energie_introspect_schema(self):
-        """Test schema introspection method."""
-        from unittest.mock import Mock
-
-        client = FrankEnergie()
-
-        mock_response = Mock()
-        mock_response.json.return_value = {
-            "data": {"__schema": {"types": [{"name": "Query", "fields": [{"name": "me"}]}]}}
-        }
-        mock_response.raise_for_status.return_value = None
-
-        with patch("requests.post") as mock_post:
-            mock_post.return_value = mock_response
-
-            result = client.introspect_schema()
-
-            assert "data" in result
-            mock_post.assert_called_once()
-
     def test_frank_energie_get_diagnostic_data(self):
         """Test get_diagnostic_data method."""
         client = FrankEnergie()

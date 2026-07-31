@@ -35,9 +35,6 @@ python = ">=3.12"
 # Core dependencies
 aiohttp = ">=3.13.5"
 
-# Used by introspect_schema()
-requests = ">=2.32.0"
-
 # JWT-related
 PyJWT = ">=2.10.1"
 

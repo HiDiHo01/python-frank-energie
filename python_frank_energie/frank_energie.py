@@ -3026,26 +3026,6 @@ class FrankEnergie:
             except ValueError as e:
                 raise ValueError(f"De 'start_date' heeft geen geldig datumformaat: {e}") from e
 
-    def introspect_schema(self) -> dict[str, Any]:
-        """Introspect the GraphQL schema."""
-        import requests
-
-        query = """
-            query IntrospectionQuery {
-                __schema {
-                    types {
-                        name
-                        fields {
-                            name
-                        }
-                    }
-                }
-            }
-        """
-        response = requests.post(self.DATA_URL, json={"query": query}, timeout=10)
-        response.raise_for_status()
-        return response.json()
-
     def get_diagnostic_data(self) -> str:
         """Get diagnostic data."""
         return "Diagnostic data"
