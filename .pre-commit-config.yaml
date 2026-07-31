@@ -6,7 +6,7 @@ repos:
         name: Checking using bandit
         language: system
         types: [python]
-        entry: poetry run bandit
+        entry: poetry run bandit -c pyproject.toml
         files: ^python_frank_energie/
         require_serial: true
       - id: black

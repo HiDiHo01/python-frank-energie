@@ -107,9 +107,6 @@ min_confidence = 80
 paths = ["python_frank_energie", "tests"]
 verbose = true
 
-[tool.bandit]
-skips = ["B101"]
-
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
