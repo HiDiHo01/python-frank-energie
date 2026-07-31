@@ -1015,26 +1015,6 @@ class TestFrankEnergieAPIEndpointsAuth:
 class TestFrankEnergieUtilityMethods:
     """Test utility and miscellaneous methods."""
 
-    def test_frank_energie_introspect_schema(self):
-        """Test schema introspection method."""
-        from unittest.mock import Mock
-
-        client = FrankEnergie()
-
-        mock_response = Mock()
-        mock_response.json.return_value = {
-            "data": {"__schema": {"types": [{"name": "Query", "fields": [{"name": "me"}]}]}}
-        }
-        mock_response.raise_for_status.return_value = None
-
-        with patch("requests.post") as mock_post:
-            mock_post.return_value = mock_response
-
-            result = client.introspect_schema()
-
-            assert "data" in result
-            mock_post.assert_called_once()
-
     def test_frank_energie_get_diagnostic_data(self):
         """Test get_diagnostic_data method."""
         client = FrankEnergie()
@@ -1295,6 +1275,34 @@ def test_frank_energie_version_constant():
 
     version_pattern = r"^\d{4}\.\d{1,2}\.\d{1,2}$"
     assert re.match(version_pattern, VERSION), f"VERSION '{VERSION}' should follow YYYY.M.D pattern"
+
+
+def test_version_matches_pyproject():
+    """VERSION and __version__ must match the version declared in pyproject.toml.
+
+    Both are derived from the installed package's metadata rather than
+    hardcoded, so this only fails if the editable/installed metadata is
+    stale relative to pyproject.toml (e.g. after bumping the version
+    without reinstalling).
+    """
+    import tomllib
+    from pathlib import Path
+
+    import python_frank_energie
+
+    pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    with open(pyproject_path, "rb") as f:
+        pyproject = tomllib.load(f)
+
+    declared_version = pyproject["tool"]["poetry"]["version"]
+
+    assert (
+        declared_version == VERSION
+    ), f"frank_energie.VERSION ({VERSION!r}) does not match pyproject.toml's version ({declared_version!r})"
+    assert python_frank_energie.__version__ == declared_version, (
+        f"python_frank_energie.__version__ ({python_frank_energie.__version__!r}) "
+        f"does not match pyproject.toml's version ({declared_version!r})"
+    )
 
 
 def test_frank_energie_data_url_constant():

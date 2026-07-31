@@ -55,9 +55,12 @@ jobs:
             pip-${{ runner.os }}-v1-${{ steps.python.outputs.python-version }}-
       - name: Install workflow dependencies
         run: |
-          pip install -r .github/workflows/requirements.txt
+          pip install --only-binary :all: -r .github/workflows/requirements.txt
+          # This workflow caches .venv below, so it needs an in-project venv
+          # at a stable path to restore into.
           poetry config virtualenvs.create true
           poetry config virtualenvs.in-project true
+          poetry config installer.only-binary :all:
       - name: Restore cached Python virtual environment
         id: cached-poetry-dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # @v6.1.0

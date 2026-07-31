@@ -11,6 +11,8 @@ import sys
 import time
 from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import Any, TypeVar
 
 import aiohttp
@@ -61,7 +63,12 @@ _LOGGER = logging.getLogger(__name__)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-VERSION = "2026.6.21"
+_DISTRIBUTION_NAME = "python-frank-energie"
+
+try:
+    VERSION = _pkg_version(_DISTRIBUTION_NAME)
+except PackageNotFoundError:
+    VERSION = "0.0.0"
 
 
 class FrankEnergieQuery:
@@ -87,7 +94,8 @@ class FrankEnergieQuery:
 def sanitize_query(query: FrankEnergieQuery) -> dict[str, Any]:
     sanitized_query = query.to_dict()
     if "password" in sanitized_query["variables"]:
-        sanitized_query["variables"]["password"] = "****"
+        # Redaction placeholder, not a credential.
+        sanitized_query["variables"]["password"] = "****"  # nosec B105
     return sanitized_query
 
 
@@ -96,7 +104,8 @@ class FrankEnergie:
 
     DATA_URL = "https://frank-graphql-prod.graphcdn.app/"
     # DATA_URL = "https://graphql.frankenergie.nl/"
-    RENEW_TOKEN_OPERATIONNAME = "RenewToken"
+    # GraphQL operation name, not a credential.
+    RENEW_TOKEN_OPERATIONNAME = "RenewToken"  # nosec B105
     AUTH_HEADER_EXEMPT_OPERATIONS = {
         RENEW_TOKEN_OPERATIONNAME,
     }
@@ -3016,26 +3025,6 @@ class FrankEnergie:
                     raise ValueError("De 'start_date' mag niet in de toekomst liggen.")
             except ValueError as e:
                 raise ValueError(f"De 'start_date' heeft geen geldig datumformaat: {e}") from e
-
-    def introspect_schema(self) -> dict[str, Any]:
-        """Introspect the GraphQL schema."""
-        import requests
-
-        query = """
-            query IntrospectionQuery {
-                __schema {
-                    types {
-                        name
-                        fields {
-                            name
-                        }
-                    }
-                }
-            }
-        """
-        response = requests.post(self.DATA_URL, json={"query": query}, timeout=10)
-        response.raise_for_status()
-        return response.json()
 
     def get_diagnostic_data(self) -> str:
         """Get diagnostic data."""

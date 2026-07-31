@@ -6,8 +6,8 @@ repos:
         name: Checking using bandit
         language: system
         types: [python]
-        entry: poetry run bandit
-        files: ^homewizard_energy/
+        entry: poetry run bandit -c pyproject.toml
+        files: ^python_frank_energie/
         require_serial: true
       - id: black
         name: Format using black
@@ -95,17 +95,6 @@ repos:
         language: system
         types: [text]
         entry: poetry run fix-byte-order-marker
-      - id: flake8
-        name: Enforcing style guide with flake8
-        language: system
-        types: [python]
-        entry: poetry run flake8
-        require_serial: true
-      - id: isort
-        name: Sort all imports with isort
-        language: system
-        types: [python]
-        entry: poetry run isort
       - id: no-commit-to-branch
         name: Don't commit to main branch
         language: system
@@ -120,23 +109,12 @@ repos:
         entry: poetry check
         pass_filenames: false
         always_run: true
-      # - id: pylint
-      #   name: Starring code with pylint
-      #   language: system
-      #   types: [python]
-      #   entry: poetry run pylint
       - id: pytest
         name: Running tests and test coverage with pytest
         language: system
         types: [python]
         entry: poetry run pytest
         pass_filenames: false
-      - id: pyupgrade
-        name: Checking for upgradable syntax with pyupgrade
-        language: system
-        types: [python]
-        entry: poetry run pyupgrade
-        args: [--py39-plus, --keep-runtime-typing]
       - id: trailing-whitespace
         name: Trim Trailing Whitespace
         language: system

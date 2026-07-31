@@ -49,12 +49,8 @@ jobs:
             name: Check End of Files
           - id: fix-byte-order-marker
             name: Check UTF-8 byte order marker
-          - id: isort
-            name: Check imports are sorted
           - id: poetry
             name: Check pyproject file
-          - id: pyupgrade
-            name: Check for upgradable syntax
           - id: pytest
             name: Test with pytest
           - id: ruff
@@ -108,9 +104,12 @@ jobs:
 
       - name: Install workflow dependencies
         run: |
-          pip install poetry
+          pip install --only-binary :all: poetry==2.4.1
+          # This workflow caches .venv below, so it needs an in-project venv
+          # at a stable path to restore into.
           poetry config virtualenvs.create true
           poetry config virtualenvs.in-project true
+          poetry config installer.only-binary :all:
 
       - name: Restore cached Python virtual environment
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
