@@ -50,6 +50,8 @@ jobs:
       - name: Install Poetry
         run: |
           pip install --only-binary :all: poetry==2.4.1
+          # No venv caching in this workflow, so install into the runner's
+          # Python directly rather than paying for an unused venv.
           poetry config virtualenvs.create false
           poetry config installer.only-binary :all:
 

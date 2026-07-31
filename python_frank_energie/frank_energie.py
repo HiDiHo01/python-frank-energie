@@ -63,8 +63,10 @@ _LOGGER = logging.getLogger(__name__)
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+_DISTRIBUTION_NAME = "python-frank-energie"
+
 try:
-    VERSION = _pkg_version("python-frank-energie")
+    VERSION = _pkg_version(_DISTRIBUTION_NAME)
 except PackageNotFoundError:
     VERSION = "0.0.0"
 

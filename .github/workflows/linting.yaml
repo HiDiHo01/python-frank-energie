@@ -105,6 +105,8 @@ jobs:
       - name: Install workflow dependencies
         run: |
           pip install --only-binary :all: poetry==2.4.1
+          # This workflow caches .venv below, so it needs an in-project venv
+          # at a stable path to restore into.
           poetry config virtualenvs.create true
           poetry config virtualenvs.in-project true
           poetry config installer.only-binary :all:

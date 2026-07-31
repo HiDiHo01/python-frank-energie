@@ -6,7 +6,7 @@ from importlib.metadata import PackageNotFoundError, version
 from .authentication import Authentication
 from .domain import CountryCode, EnergyType, Resolution
 from .exceptions import AuthException, ConnectionException, RequestException
-from .frank_energie import FrankEnergie
+from .frank_energie import _DISTRIBUTION_NAME, FrankEnergie
 from .models import (
     ContractPriceResolutionChangeResult,
     ContractPriceResolutionState,
@@ -18,7 +18,7 @@ from .models import (
 )
 
 try:
-    __version__ = version("python-frank-energie")
+    __version__ = version(_DISTRIBUTION_NAME)
 except PackageNotFoundError:
     __version__ = "0.0.0"
 
