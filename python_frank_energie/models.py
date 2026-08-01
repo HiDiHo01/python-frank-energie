@@ -2728,16 +2728,14 @@ class Price:
         date_till_str = self.date_till.isoformat() if self.date_till else "N/A"
         return f"{date_from_str} -> {date_till_str}: {self.total:.4f} {self.per_unit or ''}"
 
+    def contains_time(self, moment: datetime) -> bool:
+        """Return True when ``moment`` falls within this price interval."""
+        return self.date_from <= moment.astimezone(UTC) < self.date_till
+
     @property
     def for_previous_quarter_hour(self) -> bool:
-        """True when this interval covered the UTC time from 15 minutes ago.
-
-        Mirrors ``for_current_quarter_hour`` by checking whether a point in
-        time falls within this price interval instead of reconstructing the
-        interval boundary.
-        """
-        previous_quarter_hour = datetime.now(UTC) - timedelta(minutes=15)
-        return self.date_from <= previous_quarter_hour < self.date_till
+        """True when this interval covered the UTC time from 15 minutes ago."""
+        return self.contains_time(datetime.now(UTC) - timedelta(minutes=15))
 
     @property
     def for_current_quarter_hour(self) -> bool:
@@ -2748,19 +2746,12 @@ class Price:
         Identical logic to ``for_now``; exists as a named alias so sensor code
         can express intent clearly when working with PT15M data.
         """
-        now = datetime.now(UTC)
-        return self.date_from <= now < self.date_till
+        return self.contains_time(datetime.now(UTC))
 
     @property
     def for_next_quarter_hour(self) -> bool:
-        """True when this interval covers the UTC time 15 minutes from now.
-
-        Mirrors ``for_current_quarter_hour`` by checking whether a point in
-        time falls within this price interval instead of reconstructing the
-        interval boundary.
-        """
-        next_quarter_hour = datetime.now(UTC) + timedelta(minutes=15)
-        return self.date_from <= next_quarter_hour < self.date_till
+        """True when this interval covers the UTC time 15 minutes from now."""
+        return self.contains_time(datetime.now(UTC) + timedelta(minutes=15))
 
     @property
     def for_now(self) -> bool:
@@ -3153,7 +3144,8 @@ class PriceData:
     @property
     def previous_quarter_hour(self) -> Price | None:
         """Return the price entry for the previous 15-minute interval."""
-        return next((p for p in self.price_data if p.for_previous_quarter_hour), None)
+        previous_quarter_hour = datetime.now(UTC) - timedelta(minutes=15)
+        return next((p for p in self.price_data if p.contains_time(previous_quarter_hour)), None)
 
     @property
     def current_quarter_hour(self) -> Price | None:
@@ -3167,12 +3159,14 @@ class PriceData:
         Returns:
             The matching ``Price`` object, or ``None`` if not found.
         """
-        return next((p for p in self.price_data if p.for_current_quarter_hour), None)
+        now = datetime.now(UTC)
+        return next((p for p in self.price_data if p.contains_time(now)), None)
 
     @property
     def next_quarter_hour(self) -> Price | None:
         """Return the price entry for the next 15-minute interval."""
-        return next((p for p in self.price_data if p.for_next_quarter_hour), None)
+        next_quarter_hour = datetime.now(UTC) + timedelta(minutes=15)
+        return next((p for p in self.price_data if p.contains_time(next_quarter_hour)), None)
 
     @property
     def prices_for_current_hour(self) -> list[Price]:
