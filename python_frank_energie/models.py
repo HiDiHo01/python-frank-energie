@@ -2729,8 +2729,8 @@ class Price:
         return f"{date_from_str} -> {date_till_str}: {self.total:.4f} {self.per_unit or ''}"
 
     def contains_time(self, moment: datetime) -> bool:
-        """Return True when ``moment`` falls within this price interval."""
-        return self.date_from <= moment.astimezone(UTC) < self.date_till
+        """Return True when the UTC ``moment`` falls within this price interval."""
+        return self.date_from <= moment < self.date_till
 
     @property
     def for_previous_quarter_hour(self) -> bool:
