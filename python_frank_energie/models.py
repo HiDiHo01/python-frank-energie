@@ -2729,6 +2729,17 @@ class Price:
         return f"{date_from_str} -> {date_till_str}: {self.total:.4f} {self.per_unit or ''}"
 
     @property
+    def for_previous_quarter_hour(self) -> bool:
+        """True when this interval covered the UTC time from 15 minutes ago.
+
+        Mirrors ``for_current_quarter_hour`` by checking whether a point in
+        time falls within this price interval instead of reconstructing the
+        interval boundary.
+        """
+        previous_quarter_hour = datetime.now(UTC) - timedelta(minutes=15)
+        return self.date_from <= previous_quarter_hour < self.date_till
+
+    @property
     def for_current_quarter_hour(self) -> bool:
         """True when the current UTC time falls within this 15-minute interval.
 
@@ -2739,6 +2750,17 @@ class Price:
         """
         now = datetime.now(UTC)
         return self.date_from <= now < self.date_till
+
+    @property
+    def for_next_quarter_hour(self) -> bool:
+        """True when this interval covers the UTC time 15 minutes from now.
+
+        Mirrors ``for_current_quarter_hour`` by checking whether a point in
+        time falls within this price interval instead of reconstructing the
+        interval boundary.
+        """
+        next_quarter_hour = datetime.now(UTC) + timedelta(minutes=15)
+        return self.date_from <= next_quarter_hour < self.date_till
 
     @property
     def for_now(self) -> bool:
@@ -3129,6 +3151,11 @@ class PriceData:
         return None
 
     @property
+    def previous_quarter_hour(self) -> Price | None:
+        """Return the price entry for the previous 15-minute interval."""
+        return next((p for p in self.price_data if p.for_previous_quarter_hour), None)
+
+    @property
     def current_quarter_hour(self) -> Price | None:
         """Return the price entry that covers the current 15-minute interval.
 
@@ -3140,11 +3167,12 @@ class PriceData:
         Returns:
             The matching ``Price`` object, or ``None`` if not found.
         """
-        now = datetime.now(UTC)
-        return next(
-            (p for p in self.price_data if p.date_from <= now < p.date_till),
-            None,
-        )
+        return next((p for p in self.price_data if p.for_current_quarter_hour), None)
+
+    @property
+    def next_quarter_hour(self) -> Price | None:
+        """Return the price entry for the next 15-minute interval."""
+        return next((p for p in self.price_data if p.for_next_quarter_hour), None)
 
     @property
     def prices_for_current_hour(self) -> list[Price]:
