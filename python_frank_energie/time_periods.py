@@ -1,13 +1,16 @@
 from enum import Enum
 
 # time_periods.py
-
+# version 2026.08.1
 
 class TimePeriod(Enum):
     """
     Enum representing different time periods that can be used to filter data.
 
     Usage:
+    - `TimePeriod.PREVIOUS_QUARTER_HOUR` represents the quarter hour before the current quarter hour.
+    - `TimePeriod.CURRENT_QUARTER_HOUR` represents the current quarter hour.
+    - `TimePeriod.NEXT_QUARTER_HOUR` represents the quarter hour after the current quarter hour.
     - `TimePeriod.PREVIOUS_HOUR` represents the hour before the current hour.
     - `TimePeriod.CURRENT_HOUR` represents the current hour.
     - `TimePeriod.NEXT_HOUR` represents the hour after the current hour.
@@ -27,6 +30,9 @@ class TimePeriod(Enum):
     - `TimePeriod.ALL_TIME` represents all prices or invoices.
     """
 
+    PREVIOUS_QUARTER_HOUR = "previous_quarter_hour"  # The quarter hour before the current quarter hour.
+    CURRENT_QUARTER_HOUR = "current_quarter_hour"  # The current quarter hour.
+    NEXT_QUARTER_HOUR = "next_quarter_hour"  # The quarter hour after the current quarter hour.
     PREVIOUS_HOUR = "previous_hour"  # The hour before the current hour.
     CURRENT_HOUR = "current_hour"  # The current hour.
     NEXT_HOUR = "next_hour"  # The hour after the current hour.
@@ -40,7 +46,7 @@ class TimePeriod(Enum):
     TOMORROW_AFTER_6AM = "tomorrow_after_6am"  # All hours after 6am of the next day.
     PREVIOUS_MONTH = "previous_month"  # All invoices for previous month.
     CURRENT_MONTH = "current_month"  # All invoices for current month.
-    NEXT_MONTH = "next_month"  # All invoices for previous month.
+    NEXT_MONTH = "next_month"  # All invoices for next month.
     CURRENT_YEAR = "current_year"  # All invoices for current year.
     PREVIOUS_YEAR = "previous_year"  # All invoices for previous year.
     ALL_TIME = "all_time"  # All prices or invoices
@@ -54,5 +60,7 @@ class TimePeriod(Enum):
             return [hour for hour in price_data if hour.for_today]
         elif time_period == TimePeriod.TOMORROW:
             return [hour for hour in price_data if hour.for_tomorrow]
+        elif time_period == TimePeriod.ALL_TIME:
+            return [hour for hour in price_data]
         else:
             raise ValueError(f"Invalid time period: {time_period}")
