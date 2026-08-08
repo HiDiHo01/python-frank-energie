@@ -1009,3 +1009,95 @@ def test_market_prices_from_dict_derives_resolution_minutes() -> None:
     market_prices = MarketPrices.from_dict(response)
 
     assert market_prices.electricity.resolution_minutes == 15
+
+
+def test_quarter_hour_helpers(monkeypatch) -> None:
+    """Price and PriceData expose previous/current/next quarter-hour helpers."""
+    from datetime import UTC, datetime
+
+    import python_frank_energie.models as models
+    from python_frank_energie.models import PriceData
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            fixed = cls(2026, 7, 19, 22, 17, 42, tzinfo=UTC)
+            return fixed if tz is None else fixed.astimezone(tz)
+
+    monkeypatch.setattr(models, "datetime", FixedDatetime)
+
+    price_data = PriceData(
+        [
+            {
+                "from": "2026-07-19T22:00:00.000Z",
+                "till": "2026-07-19T22:15:00.000Z",
+                "marketPrice": 0.1,
+            },
+            {
+                "from": "2026-07-19T22:15:00.000Z",
+                "till": "2026-07-19T22:30:00.000Z",
+                "marketPrice": 0.2,
+            },
+            {
+                "from": "2026-07-19T22:30:00.000Z",
+                "till": "2026-07-19T22:45:00.000Z",
+                "marketPrice": 0.3,
+            },
+        ],
+        energy_type="electricity",
+    )
+
+    previous, current, next_ = price_data.price_data
+
+    assert previous.for_previous_quarter_hour
+    assert current.for_current_quarter_hour
+    assert next_.for_next_quarter_hour
+    assert price_data.previous_quarter_hour is previous
+    assert price_data.current_quarter_hour is current
+    assert price_data.next_quarter_hour is next_
+
+
+def test_current_quarter_hour_uses_single_now_evaluation(monkeypatch) -> None:
+    """PriceData.current_quarter_hour must not re-evaluate now per interval."""
+    from datetime import UTC, datetime
+
+    import python_frank_energie.models as models
+    from python_frank_energie.models import PriceData
+
+    class MovingDatetime(datetime):
+        calls = 0
+
+        @classmethod
+        def now(cls, tz=None):
+            cls.calls += 1
+            if cls.calls == 1:
+                fixed = cls(2026, 7, 19, 22, 17, 42, tzinfo=UTC)
+            else:
+                fixed = cls(2026, 7, 19, 22, 45, 0, tzinfo=UTC)
+            return fixed if tz is None else fixed.astimezone(tz)
+
+    monkeypatch.setattr(models, "datetime", MovingDatetime)
+
+    price_data = PriceData(
+        [
+            {
+                "from": "2026-07-19T22:00:00.000Z",
+                "till": "2026-07-19T22:15:00.000Z",
+                "marketPrice": 0.1,
+            },
+            {
+                "from": "2026-07-19T22:15:00.000Z",
+                "till": "2026-07-19T22:30:00.000Z",
+                "marketPrice": 0.2,
+            },
+            {
+                "from": "2026-07-19T22:30:00.000Z",
+                "till": "2026-07-19T22:45:00.000Z",
+                "marketPrice": 0.3,
+            },
+        ],
+        energy_type="electricity",
+    )
+
+    assert price_data.current_quarter_hour is price_data.price_data[1]
+    assert MovingDatetime.calls == 1
