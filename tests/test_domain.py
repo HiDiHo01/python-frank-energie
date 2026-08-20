@@ -19,6 +19,8 @@ from python_frank_energie.domain import (
         (ServiceStatus, "ACTIVE", "ACTIVE"),
         (PowerDeliveryState, "UNPLUGGED", "UNPLUGGED"),
         (PowerDeliveryState, "PLUGGED_IN_STOPPED", "PLUGGED_IN:STOPPED"),
+        (PowerDeliveryState, "PLUGGED_IN_INITIALIZING", "PLUGGED_IN:INITIALIZING"),
+        (PowerDeliveryState, "PLUGGED_IN_COMPLETE", "PLUGGED_IN:COMPLETE"),
         (SessionStatus, "PENDING", "PENDING"),
         (SmartBatteryMode, "IMBALANCE_TRADING", "imbalance_trading"),
         (SmartBatteryImbalanceStrategy, "BALANCED", "balanced"),
