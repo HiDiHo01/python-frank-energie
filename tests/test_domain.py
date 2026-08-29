@@ -28,6 +28,7 @@ from python_frank_energie.domain import (
         (SmartBatteryStatus, "STATUS_IDLE", "status_idle"),
         (SmartPvOperationalStatus, "ON", "ON"),
         (SmartPvSteeringStatus, "ACTIVE", "ACTIVE"),
+        (SmartPvSteeringStatus, "INACTIVE", "INACTIVE"),
         (SmartPvOnboardingStatus, "COMPLETED", "COMPLETED"),
     ],
 )
