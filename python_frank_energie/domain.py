@@ -1,7 +1,7 @@
 """Domain-specific enumerations for the Frank Energie integration."""
 
 # domain.py
-# version 2026.05.31
+# version 2026.8.29
 import logging
 from enum import StrEnum
 
