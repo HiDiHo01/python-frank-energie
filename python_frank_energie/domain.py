@@ -7,6 +7,37 @@ from enum import StrEnum
 
 _LOGGER = logging.getLogger(__name__)
 
+# ``_missing_`` runs on every API poll, so an unrecognised status value would
+# otherwise log the same warning every few minutes until the new value ships in
+# a release. Remember which ``(enum, repr(value))`` pairs have already been
+# reported and skip the warning after the first time (best effort - a race
+# between threads seeing a brand-new value may log it twice, which is harmless).
+_warned_unknown_enum_values: set[tuple[str, str]] = set()
+
+
+class _FallbackStrEnum(StrEnum):
+    """A ``StrEnum`` that resolves unrecognised values to its ``UNKNOWN`` member.
+
+    Subclasses must define an ``UNKNOWN`` member. Lookup is case-insensitive; an
+    unknown value is logged the first time it is seen (see
+    ``_warned_unknown_enum_values``) and then falls back to ``UNKNOWN`` so a
+    status added server-side degrades gracefully instead of raising ``ValueError``.
+    """
+
+    @classmethod
+    def _missing_(cls, value: object) -> "_FallbackStrEnum":
+        if isinstance(value, str):
+            lowered = value.lower()
+            for member in cls:
+                if member.value.lower() == lowered:
+                    return member
+        # ``repr`` keeps the key hashable even for a non-string, non-hashable value.
+        key = (cls.__name__, repr(value))
+        if key not in _warned_unknown_enum_values:
+            _warned_unknown_enum_values.add(key)
+            _LOGGER.warning("Unknown %s encountered: %s", cls.__name__, value)
+        return cls.__members__["UNKNOWN"]
+
 
 class EnergyType(StrEnum):
     """Supported energy types."""
@@ -30,7 +61,7 @@ class Resolution(StrEnum):
     PT60M = "PT60M"
 
 
-class SmartPvOperationalStatus(StrEnum):
+class SmartPvOperationalStatus(_FallbackStrEnum):
     """Operational status of a Smart PV system."""
 
     ON = "ON"
@@ -40,17 +71,8 @@ class SmartPvOperationalStatus(StrEnum):
     ERROR = "ERROR"
     UNKNOWN = "UNKNOWN"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "SmartPvOperationalStatus":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown SmartPvOperationalStatus encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class SmartPvSteeringStatus(StrEnum):
+class SmartPvSteeringStatus(_FallbackStrEnum):
     """Steering status of a Smart PV system."""
 
     ACTIVE = "ACTIVE"
@@ -59,17 +81,8 @@ class SmartPvSteeringStatus(StrEnum):
     NO_STEERING = "NO_STEERING"
     UNKNOWN = "UNKNOWN"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "SmartPvSteeringStatus":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown SmartPvSteeringStatus encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class SmartPvOnboardingStatus(StrEnum):
+class SmartPvOnboardingStatus(_FallbackStrEnum):
     """Onboarding status of a Smart PV system."""
 
     COMPLETED = "COMPLETED"
@@ -77,17 +90,8 @@ class SmartPvOnboardingStatus(StrEnum):
     ACTIVE = "ACTIVE"
     UNKNOWN = "UNKNOWN"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "SmartPvOnboardingStatus":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown SmartPvOnboardingStatus encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class PowerDeliveryState(StrEnum):
+class PowerDeliveryState(_FallbackStrEnum):
     """Power delivery state for EV chargers."""
 
     UNPLUGGED = "UNPLUGGED"
@@ -101,17 +105,8 @@ class PowerDeliveryState(StrEnum):
     ERROR = "ERROR"
     UNKNOWN = "UNKNOWN"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "PowerDeliveryState":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown PowerDeliveryState encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class SmartBatteryMode(StrEnum):
+class SmartBatteryMode(_FallbackStrEnum):
     """Smart Battery mode."""
 
     IMBALANCE_TRADING = "imbalance_trading"
@@ -120,17 +115,8 @@ class SmartBatteryMode(StrEnum):
     TRADING = "trading"
     UNKNOWN = "unknown"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "SmartBatteryMode":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown SmartBatteryMode encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class SmartBatteryImbalanceStrategy(StrEnum):
+class SmartBatteryImbalanceStrategy(_FallbackStrEnum):
     """Smart Battery imbalance trading strategy."""
 
     BALANCED = "balanced"
@@ -140,17 +126,8 @@ class SmartBatteryImbalanceStrategy(StrEnum):
     STANDARD = "standard"
     UNKNOWN = "unknown"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "SmartBatteryImbalanceStrategy":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown SmartBatteryImbalanceStrategy encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class SmartBatteryStatus(StrEnum):
+class SmartBatteryStatus(_FallbackStrEnum):
     """Smart Battery operational status."""
 
     STATUS_CHARGING = "status_charging"
@@ -187,17 +164,8 @@ class SmartBatteryStatus(StrEnum):
     IDLE_SMART_HOME = "idle_smart_home"
     UNKNOWN = "unknown"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "SmartBatteryStatus":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown SmartBatteryStatus encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class SessionStatus(StrEnum):
+class SessionStatus(_FallbackStrEnum):
     """Session status for trading/battery sessions."""
 
     COMPLETED = "COMPLETED"
@@ -207,17 +175,8 @@ class SessionStatus(StrEnum):
     PENDING = "PENDING"
     UNKNOWN = "UNKNOWN"
 
-    @classmethod
-    def _missing_(cls, value: object) -> "SessionStatus":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown SessionStatus encountered: %s", value)
-        return cls.UNKNOWN
 
-
-class ServiceStatus(StrEnum):
+class ServiceStatus(_FallbackStrEnum):
     """Generic service status."""
 
     ACTIVE = "active"
@@ -228,12 +187,3 @@ class ServiceStatus(StrEnum):
     SWITCHED = "switched"
     LOSS = "loss"
     UNKNOWN = "unknown"
-
-    @classmethod
-    def _missing_(cls, value: object) -> "ServiceStatus":
-        if isinstance(value, str):
-            for member in cls:
-                if member.value.lower() == value.lower():
-                    return member
-        _LOGGER.warning("Unknown ServiceStatus encountered: %s", value)
-        return cls.UNKNOWN
