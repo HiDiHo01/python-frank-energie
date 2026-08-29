@@ -39,7 +39,6 @@ class SmartPvOperationalStatus(StrEnum):
     NO_CONNECTION = "NO_CONNECTION"
     ERROR = "ERROR"
     UNKNOWN = "UNKNOWN"
-    INACTIVE = "INACTIVE"
     
     @classmethod
     def _missing_(cls, value: object) -> "SmartPvOperationalStatus":
@@ -55,10 +54,11 @@ class SmartPvSteeringStatus(StrEnum):
     """Steering status of a Smart PV system."""
 
     ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
     STEERING = "STEERING"
     NO_STEERING = "NO_STEERING"
     UNKNOWN = "UNKNOWN"
-
+    
     @classmethod
     def _missing_(cls, value: object) -> "SmartPvSteeringStatus":
         if isinstance(value, str):
