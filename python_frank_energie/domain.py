@@ -39,7 +39,8 @@ class SmartPvOperationalStatus(StrEnum):
     NO_CONNECTION = "NO_CONNECTION"
     ERROR = "ERROR"
     UNKNOWN = "UNKNOWN"
-
+    INACTIVE = "INACTIVE"
+    
     @classmethod
     def _missing_(cls, value: object) -> "SmartPvOperationalStatus":
         if isinstance(value, str):
