@@ -3,6 +3,7 @@ from enum import Enum
 # time_periods.py
 # version 2026.08.1
 
+
 class TimePeriod(Enum):
     """
     Enum representing different time periods that can be used to filter data.
@@ -61,6 +62,6 @@ class TimePeriod(Enum):
         elif time_period == TimePeriod.TOMORROW:
             return [hour for hour in price_data if hour.for_tomorrow]
         elif time_period == TimePeriod.ALL_TIME:
-            return [hour for hour in price_data]
+            return list(price_data)
         else:
             raise ValueError(f"Invalid time period: {time_period}")
