@@ -1,4 +1,5 @@
 """Tests for smart controls mutation methods in FrankEnergie."""
+
 # tests/test_smart_controls_mutations.py
 
 from __future__ import annotations
