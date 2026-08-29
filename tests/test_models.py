@@ -21,6 +21,7 @@ from python_frank_energie.models import (
     MarketPrices,
     Me,
     MonthSummary,
+    SmartBatterySession,
     SmartBatterySettings,
     SmartHvac,
     User,
@@ -828,6 +829,43 @@ def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values(
     assert settings.battery_mode is SmartBatteryMode.UNKNOWN
     assert settings.imbalance_trading_strategy is SmartBatteryImbalanceStrategy.UNKNOWN
     assert settings.self_consumption_trading_threshold_price == pytest.approx(0.25)
+
+
+@pytest.fixture
+def in_timezone(monkeypatch):
+    """Run the test body under a fixed process timezone, then restore it.
+
+    ``monkeypatch`` rolls back ``$TZ`` on teardown but not libc's cached zone,
+    so undo it here and re-sync with an extra ``tzset()``.
+    """
+    import time
+
+    if not hasattr(time, "tzset"):  # pragma: no cover - Windows
+        pytest.skip("time.tzset is required to pin the timezone")
+
+    def _set(tz: str) -> None:
+        monkeypatch.setenv("TZ", tz)
+        time.tzset()
+
+    yield _set
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_smart_battery_session_date_only_is_pinned_to_utc(in_timezone) -> None:
+    """A date-only session date resolves to UTC midnight regardless of host tz.
+
+    ``.astimezone(UTC)`` on the naive value would shift it by the machine's
+    offset (e.g. ``2024-05-01`` became ``2024-04-30T22:00Z`` on UTC+2 hosts,
+    passing on UTC-only CI while breaking everywhere else).
+    """
+    in_timezone("Europe/Amsterdam")
+
+    session = SmartBatterySession.from_dict(
+        {"date": "2024-05-01", "cumulativeResult": 1.5, "result": 0.5, "status": "COMPLETED"}
+    )
+
+    assert session.date == datetime(2024, 5, 1, tzinfo=UTC)
 
 
 def test_price_data_add_preserves_metadata() -> None:
