@@ -39,7 +39,7 @@ aiohttp = ">=3.13.5"
 PyJWT = ">=2.10.1"
 
 # Crypto
-cryptography = ">=44.0.1"
+cryptography = ">=50.0.0"
 
 typing-extensions = ">=4.10.0"
 
