@@ -4262,8 +4262,15 @@ class SmartBatterySession:
         """Parse the session payload from SmartBatterySessions."""
         _LOGGER.debug("Parsing SmartBatterySession: %s", payload)
         try:
+            # Sessions carry a date-only value ("2024-05-01"). Parsing it with a
+            # bare ``.astimezone(UTC)`` treats the naive datetime as *system local
+            # time*, so the result shifts by the host's UTC offset. Pin it to UTC
+            # instead, matching the period_* fields above.
+            session_date = _parse_iso_datetime(payload["date"], "session date")
+            if session_date is None:
+                raise ValueError(f"Invalid or missing session date: {payload['date']!r}")
             return SmartBatterySession(
-                date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
+                date=session_date,
                 cumulative_result=_safe_float(payload.get("cumulativeResult")),
                 result=_safe_float(payload.get("result")),
                 status=SessionStatus(payload["status"]) if payload.get("status") else SessionStatus.UNKNOWN,
