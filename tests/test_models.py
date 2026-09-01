@@ -922,6 +922,37 @@ def test_price_data_add_validates_metadata() -> None:
         _ = left + right_diff_type
 
 
+def test_price_for_current_quarter_hour_matches_current_interval() -> None:
+    """Price.for_current_quarter_hour is true for the active 15-minute price."""
+    from python_frank_energie.models import Price
+
+    active_price = Price(
+        {
+            "from": "2026-07-19T22:15:00.000Z",
+            "till": "2026-07-19T22:30:00.000Z",
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        }
+    )
+    upcoming_price = Price(
+        {
+            "from": "2026-07-19T22:30:00.000Z",
+            "till": "2026-07-19T22:45:00.000Z",
+            "marketPrice": 0.1,
+            "marketPriceTax": 0.02,
+            "sourcingMarkupPrice": 0.01,
+            "energyTaxPrice": 0.1,
+        }
+    )
+
+    with freeze_time("2026-07-19T22:20:00Z"):
+        assert active_price.for_current_quarter_hour is True
+        assert active_price.for_current_quarter_hour == active_price.for_now
+        assert upcoming_price.for_current_quarter_hour is False
+
+
 def test_price_data_derives_resolution_minutes_from_entry_spacing() -> None:
     """PriceData must derive resolution_minutes from the actual entry spacing.
 
