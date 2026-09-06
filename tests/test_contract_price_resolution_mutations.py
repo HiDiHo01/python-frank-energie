@@ -1,4 +1,5 @@
 """Tests for contract price resolution change mutation method in FrankEnergie."""
+
 # tests/test_contract_price_resolution_mutations.py
 
 from __future__ import annotations

@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
 
 import jwt
 import pytest
@@ -21,6 +22,7 @@ from python_frank_energie.models import (
     MarketPrices,
     Me,
     MonthSummary,
+    SmartBatterySession,
     SmartBatterySettings,
     SmartHvac,
     User,
@@ -830,6 +832,43 @@ def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values(
     assert settings.self_consumption_trading_threshold_price == pytest.approx(0.25)
 
 
+@pytest.fixture
+def in_timezone(monkeypatch):
+    """Run the test body under a fixed process timezone, then restore it.
+
+    ``monkeypatch`` rolls back ``$TZ`` on teardown but not libc's cached zone,
+    so undo it here and re-sync with an extra ``tzset()``.
+    """
+    import time
+
+    if not hasattr(time, "tzset"):  # pragma: no cover - Windows
+        pytest.skip("time.tzset is required to pin the timezone")
+
+    def _set(tz: str) -> None:
+        monkeypatch.setenv("TZ", tz)
+        time.tzset()
+
+    yield _set
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_smart_battery_session_date_only_is_pinned_to_utc(in_timezone) -> None:
+    """A date-only session date resolves to UTC midnight regardless of host tz.
+
+    ``.astimezone(UTC)`` on the naive value would shift it by the machine's
+    offset (e.g. ``2024-05-01`` became ``2024-04-30T22:00Z`` on UTC+2 hosts,
+    passing on UTC-only CI while breaking everywhere else).
+    """
+    in_timezone("Europe/Amsterdam")
+
+    session = SmartBatterySession.from_dict(
+        {"date": "2024-05-01", "cumulativeResult": 1.5, "result": 0.5, "status": "COMPLETED"}
+    )
+
+    assert session.date == datetime(2024, 5, 1, tzinfo=UTC)
+
+
 def test_price_data_add_preserves_metadata() -> None:
     """Test that PriceData.__add__ preserves metadata from the left operand."""
     from python_frank_energie.models import PriceData
@@ -1040,3 +1079,79 @@ def test_market_prices_from_dict_derives_resolution_minutes() -> None:
     market_prices = MarketPrices.from_dict(response)
 
     assert market_prices.electricity.resolution_minutes == 15
+
+
+_QUARTER_HOUR_PRICE_DATA = [
+    {"from": "2026-07-19T22:00:00.000Z", "till": "2026-07-19T22:15:00.000Z", "marketPrice": 0.1},
+    {"from": "2026-07-19T22:15:00.000Z", "till": "2026-07-19T22:30:00.000Z", "marketPrice": 0.2},
+    {"from": "2026-07-19T22:30:00.000Z", "till": "2026-07-19T22:45:00.000Z", "marketPrice": 0.3},
+]
+
+
+@freeze_time("2026-07-19 22:17:42")
+def test_quarter_hour_helpers() -> None:
+    """Price and PriceData expose previous/current/next quarter-hour helpers."""
+    from python_frank_energie.models import PriceData
+
+    price_data = PriceData(_QUARTER_HOUR_PRICE_DATA, energy_type="electricity")
+    previous, current, next_ = price_data.price_data
+
+    assert previous.for_previous_quarter_hour
+    assert current.for_current_quarter_hour
+    assert next_.for_next_quarter_hour
+    assert not current.for_previous_quarter_hour
+    assert not current.for_next_quarter_hour
+
+    assert price_data.previous_quarter_hour is previous
+    assert price_data.current_quarter_hour is current
+    assert price_data.next_quarter_hour is next_
+
+
+@freeze_time("2026-07-19 22:15:00")
+def test_quarter_hour_helpers_on_interval_boundary() -> None:
+    """On an exact 15-minute boundary each lookup lands on an interval start.
+
+    Intervals are half-open ``[date_from, date_till)``: at 22:15:00 the current
+    probe sits on the second interval's start, and the -15/+15 min probes sit on
+    the first and third starts.
+    """
+    from python_frank_energie.models import PriceData
+
+    price_data = PriceData(_QUARTER_HOUR_PRICE_DATA, energy_type="electricity")
+    first, second, third = price_data.price_data
+
+    assert price_data.previous_quarter_hour is first
+    assert price_data.current_quarter_hour is second
+    assert price_data.next_quarter_hour is third
+
+
+@freeze_time("2026-07-20 09:00:00")
+def test_quarter_hour_helpers_return_none_outside_price_data() -> None:
+    """The lookups fall back to None when no interval covers the probe."""
+    from python_frank_energie.models import PriceData
+
+    price_data = PriceData(_QUARTER_HOUR_PRICE_DATA, energy_type="electricity")
+
+    assert price_data.previous_quarter_hour is None
+    assert price_data.current_quarter_hour is None
+    assert price_data.next_quarter_hour is None
+
+
+@freeze_time("2026-07-19 22:17:42")
+def test_quarter_hour_lookups_sample_the_clock_once() -> None:
+    """Each PriceData quarter-hour lookup must read the clock once, not per interval.
+
+    Evaluating ``datetime.now()`` inside the generator (once per ``Price``) lets
+    the sampled instant cross a 15-minute boundary mid-scan on a slow host and
+    select the wrong interval. ``freeze_time`` cannot catch that because it
+    returns an identical instant on every call, so spy on the call count.
+    """
+    from python_frank_energie import models
+
+    price_data = models.PriceData(_QUARTER_HOUR_PRICE_DATA, energy_type="electricity")
+
+    for lookup in ("previous_quarter_hour", "current_quarter_hour", "next_quarter_hour"):
+        spy = Mock(wraps=models.datetime.now)
+        with patch.object(models.datetime, "now", spy):
+            assert getattr(price_data, lookup) is not None
+        assert spy.call_count == 1, lookup
