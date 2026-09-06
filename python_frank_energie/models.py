@@ -2459,9 +2459,11 @@ class ChargeState(DictLikeMixin):
             is_fully_charged=bool(raw_is_fully_charged) if raw_is_fully_charged is not None else None,
             is_plugged_in=bool(data["isPluggedIn"]),
             last_updated=last_updated,
-            power_delivery_state=PowerDeliveryState(data["powerDeliveryState"])
-            if data.get("powerDeliveryState")
-            else PowerDeliveryState.UNKNOWN,
+            power_delivery_state=(
+                PowerDeliveryState(data["powerDeliveryState"])
+                if data.get("powerDeliveryState")
+                else PowerDeliveryState.UNKNOWN
+            ),
             range=int(raw_range) if raw_range is not None else None,
         )
 
@@ -4176,9 +4178,11 @@ class SmartBatterySummary:
 
         return cls(
             last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
-            last_known_status=SmartBatteryStatus(data["lastKnownStatus"])
-            if data.get("lastKnownStatus")
-            else SmartBatteryStatus.UNKNOWN,
+            last_known_status=(
+                SmartBatteryStatus(data["lastKnownStatus"])
+                if data.get("lastKnownStatus")
+                else SmartBatteryStatus.UNKNOWN
+            ),
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
         )
@@ -4280,8 +4284,15 @@ class SmartBatterySession:
         """Parse the session payload from SmartBatterySessions."""
         _LOGGER.debug("Parsing SmartBatterySession: %s", payload)
         try:
+            # Sessions carry a date-only value ("2024-05-01"). Parsing it with a
+            # bare ``.astimezone(UTC)`` treats the naive datetime as *system local
+            # time*, so the result shifts by the host's UTC offset. Pin it to UTC
+            # instead, matching the period_* fields above.
+            session_date = _parse_iso_datetime(payload["date"], "session date")
+            if session_date is None:
+                raise ValueError(f"Invalid or missing session date: {payload['date']!r}")
             return SmartBatterySession(
-                date=datetime.fromisoformat(payload["date"]).astimezone(UTC),
+                date=session_date,
                 cumulative_result=_safe_float(payload.get("cumulativeResult")),
                 result=_safe_float(payload.get("result")),
                 status=SessionStatus(payload["status"]) if payload.get("status") else SessionStatus.UNKNOWN,
@@ -4387,12 +4398,16 @@ class SmartBatteryDetails:
             settings_data = {}
 
         smart_battery_settings = SmartBatterySettings(
-            battery_mode=SmartBatteryMode(settings_data["batteryMode"])
-            if settings_data.get("batteryMode")
-            else SmartBatteryMode.UNKNOWN,
-            imbalance_trading_strategy=SmartBatteryImbalanceStrategy(settings_data["imbalanceTradingStrategy"])
-            if settings_data.get("imbalanceTradingStrategy")
-            else SmartBatteryImbalanceStrategy.UNKNOWN,
+            battery_mode=(
+                SmartBatteryMode(settings_data["batteryMode"])
+                if settings_data.get("batteryMode")
+                else SmartBatteryMode.UNKNOWN
+            ),
+            imbalance_trading_strategy=(
+                SmartBatteryImbalanceStrategy(settings_data["imbalanceTradingStrategy"])
+                if settings_data.get("imbalanceTradingStrategy")
+                else SmartBatteryImbalanceStrategy.UNKNOWN
+            ),
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
             self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
         )
@@ -4739,9 +4754,7 @@ class SmartPvSystemSummary(DictLikeMixin):
 
         return cls(
             operational_status=SmartPvOperationalStatus(str(payload["operationalStatus"])),
-            operational_status_timestamp=(
-                _parse_datetime(timestamp_raw) if isinstance(timestamp_raw, str) else None
-            ),
+            operational_status_timestamp=(_parse_datetime(timestamp_raw) if isinstance(timestamp_raw, str) else None),
             steering_status=SmartPvSteeringStatus(str(payload["steeringStatus"])),
             total_bonus=_safe_float(payload.get("totalBonus")),
             total_result=_safe_float(payload.get("totalResult")),

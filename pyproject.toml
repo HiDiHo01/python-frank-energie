@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2026.8.1"
+version = "2026.8.8"
 description = "Asynchronous Python client for the Frank Energie"
 authors = ["HiDiHo01"]
 maintainers = ["HiDiHo01"]
@@ -39,7 +39,7 @@ aiohttp = ">=3.13.5"
 PyJWT = ">=2.10.1"
 
 # Crypto
-cryptography = ">=44.0.1"
+cryptography = ">=50.0.0"
 
 typing-extensions = ">=4.10.0"
 
@@ -62,7 +62,7 @@ pytest = ">=8.4,<10.0"
 pytest-asyncio = ">=0.24,<1.5"
 pytest-cov = ">=6,<8"
 ruff = ">=0.15.9,<0.17.0"
-syrupy = ">=4.9.1,<6.0.0"
+syrupy = ">=4.9.1,<7.0.0"
 vulture = "^2.12"
 freezegun = "^1.5.1"
 safety = "^3.2.7"

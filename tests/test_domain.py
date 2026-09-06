@@ -19,6 +19,8 @@ from python_frank_energie.domain import (
         (ServiceStatus, "ACTIVE", "ACTIVE"),
         (PowerDeliveryState, "UNPLUGGED", "UNPLUGGED"),
         (PowerDeliveryState, "PLUGGED_IN_STOPPED", "PLUGGED_IN:STOPPED"),
+        (PowerDeliveryState, "PLUGGED_IN_INITIALIZING", "PLUGGED_IN:INITIALIZING"),
+        (PowerDeliveryState, "PLUGGED_IN_COMPLETE", "PLUGGED_IN:COMPLETE"),
         (SessionStatus, "PENDING", "PENDING"),
         (SmartBatteryMode, "IMBALANCE_TRADING", "imbalance_trading"),
         (SmartBatteryImbalanceStrategy, "BALANCED", "balanced"),
@@ -26,6 +28,7 @@ from python_frank_energie.domain import (
         (SmartBatteryStatus, "STATUS_IDLE", "status_idle"),
         (SmartPvOperationalStatus, "ON", "ON"),
         (SmartPvSteeringStatus, "ACTIVE", "ACTIVE"),
+        (SmartPvSteeringStatus, "INACTIVE", "INACTIVE"),
         (SmartPvOnboardingStatus, "COMPLETED", "COMPLETED"),
     ],
 )
@@ -56,3 +59,28 @@ def test_enum_unknown_and_none_fall_back_to_unknown(enum_cls) -> None:
     assert enum_cls("GARBAGE_VALUE") is enum_cls.UNKNOWN
     assert enum_cls("") is enum_cls.UNKNOWN
     assert enum_cls(None) is enum_cls.UNKNOWN
+    # An unhashable value must still fall back rather than raise while the
+    # warning is de-duplicated.
+    assert enum_cls(["unexpected", "list"]) is enum_cls.UNKNOWN
+
+
+def test_unknown_enum_value_is_warned_once(caplog) -> None:
+    """A given unrecognised value is logged once, not on every lookup.
+
+    ``_missing_`` runs on every API poll, so without de-duplication a status
+    added server-side floods the log until it ships as an enum member.
+    """
+    import logging
+
+    from python_frank_energie import domain
+
+    domain._warned_unknown_enum_values.discard(("SmartPvSteeringStatus", repr("FLOOD")))
+
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            assert SmartPvSteeringStatus("FLOOD") is SmartPvSteeringStatus.UNKNOWN
+
+    warnings = [
+        record for record in caplog.records if record.getMessage() == "Unknown SmartPvSteeringStatus encountered: FLOOD"
+    ]
+    assert len(warnings) == 1

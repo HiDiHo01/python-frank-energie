@@ -1,4 +1,5 @@
 """Authentication handling for Frank Energie integration."""
+
 # python_frank_energie/authentication.py
 
 import base64
