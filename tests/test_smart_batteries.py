@@ -57,3 +57,41 @@ async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion):
 
     assert sessions is not None
     assert sessions == snapshot
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_details_not_found():
+    """Test smart_battery_details returns None when battery is not found."""
+    from unittest.mock import patch
+    from python_frank_energie.exceptions import SmartBatteryNotFoundException
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        with patch.object(
+            api,
+            "_query",
+            side_effect=SmartBatteryNotFoundException("smart-battery-error:battery-not-found"),
+        ):
+            result = await api.smart_battery_details("missing_device")
+            assert result is None
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_not_found():
+    """Test smart_battery_sessions returns None when battery is not found."""
+    from unittest.mock import patch
+    from python_frank_energie.exceptions import SmartBatteryNotFoundException
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        with patch.object(
+            api,
+            "_query",
+            side_effect=SmartBatteryNotFoundException("smart-battery-error:battery-not-found"),
+        ):
+            result = await api.smart_battery_sessions(
+                "missing_device",
+                datetime.now(UTC),
+                datetime.now(UTC),
+            )
+            assert result is None
