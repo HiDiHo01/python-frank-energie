@@ -63,6 +63,7 @@ async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion):
 async def test_smart_battery_details_not_found():
     """Test smart_battery_details returns None when battery is not found."""
     from unittest.mock import patch
+
     from python_frank_energie.exceptions import SmartBatteryNotFoundException
 
     async with aiohttp.ClientSession() as session:
@@ -80,6 +81,7 @@ async def test_smart_battery_details_not_found():
 async def test_smart_battery_sessions_not_found():
     """Test smart_battery_sessions returns None when battery is not found."""
     from unittest.mock import patch
+
     from python_frank_energie.exceptions import SmartBatteryNotFoundException
 
     async with aiohttp.ClientSession() as session:
