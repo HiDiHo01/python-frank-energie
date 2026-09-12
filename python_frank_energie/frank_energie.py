@@ -24,6 +24,7 @@ from .exceptions import (
     FrankEnergieException,
     NetworkError,
     RequestException,
+    SmartBatteryNotFoundException,
     SmartChargingNotEnabledException,
     SmartTradingNotEnabledException,
 )
@@ -309,7 +310,8 @@ class FrankEnergie:
         )
 
         await self._ensure_session()
-        assert self._session is not None
+        if self._session is None:
+            raise FrankEnergieException("Client session not initialized")
 
         timeout = ClientTimeout(total=30)
         try:
@@ -452,6 +454,8 @@ class FrankEnergie:
             elif message == "user-error:smart-feed-in-not-enabled":
                 _LOGGER.debug("Smart fed-in is not enabled for this user.")
                 continue
+            elif message == "smart-battery-error:battery-not-found":
+                raise SmartBatteryNotFoundException("Smart battery not found for this user.")
 
             # --- Other specific messages ---
             elif message == "'Base' niet aanwezig in prijzen verzameling":
@@ -2630,6 +2634,9 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Querying smart battery details for device_id: %s", device_id)
             response = await self._query(query)
+        except SmartBatteryNotFoundException:
+            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            return None
         except Exception as err:
             _LOGGER.error(
                 "Failed to query smart battery details for device_id %s: %s",
@@ -2763,6 +2770,9 @@ class FrankEnergie:
             _LOGGER.debug("Querying smart battery sessions for device_id: %s", device_id)
             response = await self._query(query)
             _LOGGER.debug("SmartBatterySessions Response: %s", response)
+        except SmartBatteryNotFoundException:
+            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            return None
         except Exception as e:
             _LOGGER.error("Failed to query smart battery sessions: %s", e)
             return None

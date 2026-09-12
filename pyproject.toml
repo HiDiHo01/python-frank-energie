@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "python-frank-energie"
-version = "2026.9.9r2"
+version = "2026.9.9.post2"
 description = "Asynchronous Python client for the Frank Energie integration"
 authors = ["HiDiHo01"]
 maintainers = ["HiDiHo01"]

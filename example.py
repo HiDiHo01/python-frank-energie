@@ -30,9 +30,7 @@ async def main():
         user_prices_today = await fe.userPrices(today)
         user_prices_tomorrow = await fe.userPrices(tomorrow)
 
-        for price in (
-            user_prices_today.electricity + user_prices_tomorrow.electricity
-        ).all:
+        for price in (user_prices_today.electricity + user_prices_tomorrow.electricity).all:
             print(f"Electricity: {price.date_from} -> {price.date_till}: {price.total}")
 
         for price in (user_prices_today.gas + user_prices_tomorrow.gas).all:

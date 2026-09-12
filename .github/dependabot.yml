@@ -51,7 +51,7 @@ updates:
           - "black*"
           - "pre-commit*"
           - "coverage*"
-    
+
       dev-dependencies:
         patterns:
           - "pytest*"

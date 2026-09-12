@@ -1,0 +1,68 @@
+# serializer version: 1
+# name: test_invoices
+  dict({
+    'all_invoices_dict': dict({
+    }),
+    'all_invoices_dict_previous_year': dict({
+    }),
+    'all_invoices_dict_this_year': dict({
+    }),
+    'all_periods_invoices': list([
+    ]),
+    'current_period_invoice': dict({
+      'PeriodDescription': 'April 2023',
+      'StartDate': datetime.datetime(2023, 4, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='Europe/Amsterdam')),
+      'TotalAmount': 80.34,
+      'id': 'abcd2',
+    }),
+    'previous_period_invoice': dict({
+      'PeriodDescription': 'Maart 2023',
+      'StartDate': datetime.datetime(2023, 3, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='Europe/Amsterdam')),
+      'TotalAmount': 140.12,
+      'id': 'abcd1',
+    }),
+    'total_costs_previous_year': 0,
+    'total_costs_this_year': 0,
+    'upcoming_period_invoice': dict({
+      'PeriodDescription': 'Mei 2023',
+      'StartDate': datetime.datetime(2023, 5, 1, 0, 0, tzinfo=zoneinfo.ZoneInfo(key='Europe/Amsterdam')),
+      'TotalAmount': 80.34,
+      'id': 'abcd3',
+    }),
+  })
+# ---
+# name: test_me
+  dict({
+    'InviteLinkUser': None,
+    'PushNotificationPriceAlerts': list([
+    ]),
+    'addressHasMultipleSites': None,
+    'advancedPaymentAmount': 100.0,
+    'countryCode': 'NL',
+    'createdAt': None,
+    'email': 'contact@email.nl',
+    'hasCO2Compensation': False,
+    'hasInviteLink': True,
+    'id': 'vb10h3v01nfb0vh1f',
+    'meterReadingExportPeriods': list([
+    ]),
+    'smartCharging': dict({
+    }),
+    'treesCount': None,
+    'updatedAt': None,
+  })
+# ---
+# name: test_month_summary
+  dict({
+    '_id': 'summary_123',
+    'actualCostsUntilLastMeterReadingDate': 12.34,
+    'costs_per_day_till_now': 12.34,
+    'expectedCosts': 50.0,
+    'expectedCostsPerDay': 1.6129032258064515,
+    'expectedCostsUntilLastMeterReadingDate': 20.0,
+    'gasExcluded': False,
+    'lastMeterReadingDate': '2023-01-01',
+    'meterReadingDayCompleteness': 1,
+    'typename': 'MonthSummary',
+  })
+# ---
