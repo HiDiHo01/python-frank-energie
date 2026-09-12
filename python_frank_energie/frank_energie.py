@@ -310,7 +310,8 @@ class FrankEnergie:
         )
 
         await self._ensure_session()
-        assert self._session is not None
+        if self._session is None:
+            raise FrankEnergieException("Client session not initialized")
 
         timeout = ClientTimeout(total=30)
         try:

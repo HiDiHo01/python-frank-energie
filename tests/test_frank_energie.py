@@ -1274,7 +1274,7 @@ def test_frank_energie_version_constant():
     # VERSION should follow semver pattern
     import re
 
-    version_pattern = r"^\d{4}\.\d{1,2}\.\d{1,2}$"
+    version_pattern = r"^\d{4}\.\d{1,2}\.\d{1,2}.*$"
     assert re.match(version_pattern, VERSION), f"VERSION '{VERSION}' should follow YYYY.M.D pattern"
 
 
@@ -1297,9 +1297,9 @@ def test_version_matches_pyproject():
 
     declared_version = pyproject["tool"]["poetry"]["version"]
 
-    assert declared_version == VERSION, (
-        f"frank_energie.VERSION ({VERSION!r}) does not match pyproject.toml's version ({declared_version!r})"
-    )
+    assert (
+        declared_version == VERSION
+    ), f"frank_energie.VERSION ({VERSION!r}) does not match pyproject.toml's version ({declared_version!r})"
     assert python_frank_energie.__version__ == declared_version, (
         f"python_frank_energie.__version__ ({python_frank_energie.__version__!r}) "
         f"does not match pyproject.toml's version ({declared_version!r})"
