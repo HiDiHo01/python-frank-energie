@@ -24,9 +24,9 @@ from .exceptions import (
     FrankEnergieException,
     NetworkError,
     RequestException,
+    SmartBatteryNotFoundException,
     SmartChargingNotEnabledException,
     SmartTradingNotEnabledException,
-    SmartBatteryNotFoundException,
 )
 from .models import (
     Authentication,
@@ -2673,9 +2673,6 @@ class FrankEnergie:
         try:
             battery = SmartBattery.from_dict(battery_data)
             summary = SmartBatterySummary.from_dict(summary_data)
-        except SmartBatteryNotFoundException:
-            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
-            return None
         except Exception as err:
             _LOGGER.error(
                 "Failed to parse smart battery response for device_id %s: %s",
