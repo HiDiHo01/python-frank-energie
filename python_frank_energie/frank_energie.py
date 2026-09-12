@@ -26,6 +26,7 @@ from .exceptions import (
     RequestException,
     SmartChargingNotEnabledException,
     SmartTradingNotEnabledException,
+    SmartBatteryNotFoundException,
 )
 from .models import (
     Authentication,
@@ -452,6 +453,8 @@ class FrankEnergie:
             elif message == "user-error:smart-feed-in-not-enabled":
                 _LOGGER.debug("Smart fed-in is not enabled for this user.")
                 continue
+            elif message == "smart-battery-error:battery-not-found":
+                raise SmartBatteryNotFoundException("Smart battery not found for this user.")
 
             # --- Other specific messages ---
             elif message == "'Base' niet aanwezig in prijzen verzameling":
@@ -2630,6 +2633,9 @@ class FrankEnergie:
         try:
             _LOGGER.debug("Querying smart battery details for device_id: %s", device_id)
             response = await self._query(query)
+        except SmartBatteryNotFoundException:
+            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            return None
         except Exception as err:
             _LOGGER.error(
                 "Failed to query smart battery details for device_id %s: %s",
@@ -2667,6 +2673,9 @@ class FrankEnergie:
         try:
             battery = SmartBattery.from_dict(battery_data)
             summary = SmartBatterySummary.from_dict(summary_data)
+        except SmartBatteryNotFoundException:
+            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            return None
         except Exception as err:
             _LOGGER.error(
                 "Failed to parse smart battery response for device_id %s: %s",
@@ -2763,6 +2772,9 @@ class FrankEnergie:
             _LOGGER.debug("Querying smart battery sessions for device_id: %s", device_id)
             response = await self._query(query)
             _LOGGER.debug("SmartBatterySessions Response: %s", response)
+        except SmartBatteryNotFoundException:
+            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            return None
         except Exception as e:
             _LOGGER.error("Failed to query smart battery sessions: %s", e)
             return None

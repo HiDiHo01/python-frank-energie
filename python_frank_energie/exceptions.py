@@ -45,5 +45,9 @@ class SmartChargingNotEnabledException(FrankEnergieException):
     """Exception raised when smart charging is not enabled for the user."""
 
 
+class SmartBatteryNotFoundException(FrankEnergieException):
+    """Exception raised when a smart battery is not found for the user."""
+
+
 class ConnectionException(FrankEnergieException):
     """Raised for network-related errors in FrankEnergie."""
