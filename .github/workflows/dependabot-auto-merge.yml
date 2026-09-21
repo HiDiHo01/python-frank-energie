@@ -1,4 +1,5 @@
 name: Dependabot auto-merge
+
 on: pull_request
 
 permissions:
@@ -12,6 +13,7 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     if: ${{ github.actor == 'dependabot[bot]' }}
+
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # @v2.21.1
@@ -33,6 +35,7 @@ jobs:
             cli.codecov.io:443
             storage.googleapis.com:443
             github-releases.githubusercontent.com:443
+
       - name: Dependabot metadata
         id: metadata
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # @v3
@@ -40,8 +43,25 @@ jobs:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Enable auto-merge for Dependabot PRs
-        if: ${{steps.metadata.outputs.update-type == 'version-update:semver-minor' || steps.metadata.outputs.update-type == 'version-update:semver-patch'}}
-        run: gh pr merge --auto --squash "$PR_URL"
+        if: >-
+          ${{
+            steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+            steps.metadata.outputs.update-type == 'version-update:semver-patch'
+          }}
         env:
-          PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge --auto --squash "$PR_URL"; then
+              exit 0
+            fi
+
+            echo "Merge attempt $attempt failed; retrying after the base branch settles..."
+            sleep $((attempt * 15))
+          done
+
+          echo "Unable to enable auto-merge after 5 attempts"
+          exit 1
