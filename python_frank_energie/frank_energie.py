@@ -21,6 +21,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout
 from .exceptions import (
     AuthException,
     AuthRequiredException,
+    RefreshTokenInvalidException,
     FrankEnergieException,
     NetworkError,
     RequestException,
@@ -426,6 +427,10 @@ class FrankEnergie:
                 raise AuthException("Not authorized")
             elif message == "user-error:auth-required":
                 raise AuthRequiredException("Authentication required")
+            elif message == "user-error:refresh-token-invalid":
+                raise RefreshTokenInvalidException(
+                    "Refresh token is invalid; reauthentication is required."
+                )
             elif message == "Graphql validation error":
                 log_level = logging.DEBUG if active_query == "SmartHvacStatus" else logging.ERROR
                 _LOGGER.log(
