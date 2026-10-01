@@ -549,6 +549,7 @@ class FrankEnergie:
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
+            RefreshTokenInvalidException: If the refresh token is no longer valid.
             AuthException: If the token renewal fails.
         """
         if self._auth is None:
@@ -570,14 +571,24 @@ class FrankEnergie:
             },
         )
 
-        response = await self._query(query)
+        try:
+            response = await self._query(query)
+        except RefreshTokenInvalidException:
+            _LOGGER.warning(
+                "Refresh token is invalid; authentication must be renewed."
+            )
+            self._auth = None
+            raise
+
         self._auth = Authentication.from_dict(response)
+
         if self._auth:
             expires_str = self._auth.token_expires_at.isoformat() if self._auth.token_expires_at else "unknown/mock"
             _LOGGER.debug(
                 "Authentication token updated; expires_at=%s",
                 expires_str,
             )
+
         return self._auth
 
     async def meter_readings(self, site_reference: str) -> EnergyConsumption | None:
