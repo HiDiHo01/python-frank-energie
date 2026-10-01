@@ -1,7 +1,7 @@
 """Frank Energie API implementation."""
 
 # python_frank_energie/frank_energie.py
-# version 2026.06.10
+# version 2026.10.1
 
 import asyncio
 import logging
