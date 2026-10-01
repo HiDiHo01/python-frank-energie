@@ -32,6 +32,8 @@ class NoMarketPricesAvailableException(RequestException):
 class LoginError(FrankEnergieException):
     """Raised when login to FrankEnergie fails."""
 
+class RefreshTokenInvalidException(AuthException):
+    """Raised when the refresh token is no longer valid."""
 
 class NetworkError(FrankEnergieException):
     """Raised for network-related errors in FrankEnergie."""
