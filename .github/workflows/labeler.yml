@@ -43,7 +43,7 @@ jobs:
         uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # @v7.0.0
 
       - name: Size label
-        uses: codelytv/pr-size-labeler@095a41fca88b8764fd9e008ad269bcdb82bb38b9 # @095a41fca88b8764fd9e008ad269bcdb82bb38b9
+        uses: codelytv/pr-size-labeler@19c335e7695ba922de938806dd129f0a9b992644 # @095a41fca88b8764fd9e008ad269bcdb82bb38b9
         with:
           xs_label: size/xs
           xs_max_size: 10
