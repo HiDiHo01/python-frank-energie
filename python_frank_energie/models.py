@@ -2354,7 +2354,7 @@ class MonthSummary:
 class ChargeSettings(DictLikeMixin):
     """Represents the charge settings for an enode charger."""
 
-    calculated_deadline: datetime
+    calculated_deadline: datetime | None
     capacity: float
     deadline: datetime | None
     hour_friday: int
@@ -2374,9 +2374,7 @@ class ChargeSettings(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict) -> ChargeSettings:
-        calculated_deadline = _parse_datetime(data["calculatedDeadline"])
-        if calculated_deadline is None:
-            raise ValueError(f"Invalid or missing calculatedDeadline: {data.get('calculatedDeadline')!r}")
+        calculated_deadline = _parse_datetime(data.get("calculatedDeadline"))
 
         return cls(
             calculated_deadline=calculated_deadline,
