@@ -75,6 +75,13 @@ poetry run pre-commit run --all-files
 - If a check cannot be run, state that clearly in the pull request. Report the actual command and result; never claim that a test, review, or workflow passed without verifying its result.
 - Do not add new mandatory tools or change CI policy without a clear need and corresponding configuration/documentation updates.
 
+### Key project setup recommendations
+
+- **Pytest Configuration**: Consolidate pytest configurations into `pyproject.toml` (under `[tool.pytest.ini_options]`) or maintain `pytest.ini` exclusively, avoiding duplicate definitions that trigger config override warnings.
+- **Poetry Metadata**: Follow standard PEP 621 `[project]` metadata structures in `pyproject.toml` as updated Poetry releases deprecate legacy `[tool.poetry]` key fields.
+- **Linting Compliance**: Ensure `poetry run ruff check .` passes cleanly (including import block formatting under `I001`) before submitting pull requests.
+- **Async Test Mocks**: Ensure coroutines and response mocks (such as `raise_for_status()`) in unit tests are properly awaited to maintain warning-free and deterministic test suite execution.
+
 ## Automated code review
 
 - Follow the repository's current `AI_POLICY.md`, `AGENTS.md`, and any applicable Copilot, CodeRabbit, or other automated-review instructions.
