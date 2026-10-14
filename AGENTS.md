@@ -29,6 +29,7 @@ This repository contains `python-frank-energie`, an asynchronous Python client l
 - Add clear docstrings to modules, classes, methods, and public functions, following the surrounding code's conventions.
 - Prefer built-in generic types such as `list[str]` and `dict[str, object]`; do not introduce legacy `typing.List` or `typing.Dict`.
 - Use asynchronous I/O for network operations. Do not block the event loop with synchronous network or file I/O.
+- Prefer the standard-library `asyncio.timeout()` for timeout management when the project's minimum Python version is Python 3.11 or later. Do not add or use `async-timeout` solely for timeout handling when `asyncio.timeout()` is available. Preserve compatibility with the declared minimum Python version and catch `TimeoutError` outside the timeout context manager.
 - Apply explicit timeouts to network operations and handle cancellation correctly. Do not swallow `asyncio.CancelledError`.
 - Use timezone-aware datetimes; avoid naive timestamps and deprecated datetime APIs.
 - Use lazy `%` formatting in logging calls.
