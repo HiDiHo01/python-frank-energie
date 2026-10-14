@@ -24,6 +24,14 @@ This repository contains `python-frank-energie`, an asynchronous Python client l
 
 ## Python and implementation standards
 
+### Python version compatibility
+
+- Keep this standalone library's `requires-python` declaration, syntax, standard-library APIs, dependencies, and CI matrix aligned with the minimum Python version the library explicitly supports.
+- Do not automatically raise the library's minimum Python version to match Home Assistant Core: this repository is HA-independent, and its compatibility policy must be based on the library's own consumers and dependency constraints.
+- When the library is used by a Home Assistant integration, verify the target Core release's Python requirement (including `requires-python` in that exact Core release's `pyproject.toml`) and ensure the library remains compatible with the integration's supported Python range.
+- For Home Assistant Core 2026.10 development, the observed Core requirement is Python **3.14.2 or newer**. This is a release-specific reference, not a permanent requirement for this library; re-check the target release rather than relying on memory.
+- Keep CI versions within the declared support range and test the minimum supported Python version as well as the primary supported version where practical. Do not claim compatibility with a Python version that CI, dependencies, or source syntax do not support.
+
 - Respect the Python version declared in `pyproject.toml`; do not introduce syntax or APIs unsupported by the project's minimum Python version.
 - Use modern Python syntax, precise type hints, and `snake_case` names.
 - Add clear docstrings to modules, classes, methods, and public functions, following the surrounding code's conventions.
