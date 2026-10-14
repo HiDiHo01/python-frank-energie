@@ -13,6 +13,7 @@ from python_frank_energie.domain import SmartBatteryImbalanceStrategy, SmartBatt
 from python_frank_energie.exceptions import AuthException, NoMarketPricesAvailableException, RequestException
 from python_frank_energie.models import (
     Authentication,
+    ChargeSettings,
     ChargeState,
     Connection,
     EnergyCategory,
@@ -774,6 +775,30 @@ class TestChargeStateNoCarScenario:
         assert state.is_fully_charged is False
         assert state.range == 250
         assert state.is_charging is True
+
+    @pytest.mark.parametrize("deadline", [None, "missing"])
+    def test_charge_settings_without_calculated_deadline(self, deadline) -> None:
+        settings = dict(_CHARGER_NO_CAR["chargeSettings"])
+        if deadline == "missing":
+            settings.pop("calculatedDeadline")
+        else:
+            settings["calculatedDeadline"] = deadline
+
+        assert ChargeSettings.from_dict(settings).calculated_deadline is None
+
+    def test_enode_charger_accepts_missing_calculated_deadline(self) -> None:
+        """Parse a charger when no charging schedule has a calculated deadline (issue #193)."""
+        charger_data = {
+            **_CHARGER_NO_CAR,
+            "chargeSettings": {
+                **_CHARGER_NO_CAR["chargeSettings"],
+                "calculatedDeadline": None,
+            },
+        }
+
+        charger = EnodeCharger.from_dict(charger_data)
+
+        assert charger.charge_settings.calculated_deadline is None
 
 
 class TestEnergyCategory:
