@@ -1,7 +1,7 @@
 """Test rate-limit classification, metadata, and request behavior."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -13,6 +13,8 @@ from python_frank_energie.exceptions import (
     AuthException,
     AuthRequiredException,
     FrankEnergieException,
+    RefreshTokenInvalidException,
+    SmartBatteryNotFoundException,
 )
 from python_frank_energie.frank_energie import FrankEnergieQuery, _parse_retry_after
 
@@ -224,6 +226,84 @@ async def test_renewal_preserves_authentication_on_rate_limit(
     assert raised.value.operation_name == "RenewToken"
     assert client._auth is original_auth
     session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_automatic_renewal_rate_limit_prevents_invoice_request(
+    rate_limit_payload: dict[str, object],
+) -> None:
+    """Preserve expired authentication and send only the rate-limited renewal."""
+    client, session, _ = _create_client(rate_limit_payload)
+    original_auth = client._auth
+    assert original_auth is not None
+    original_auth.token_expires_at = datetime.now(UTC) - timedelta(minutes=10)
+
+    with pytest.raises(RateLimitException) as raised:
+        await client.invoices("synthetic-site")
+
+    assert raised.value.operation_name == "RenewToken"
+    assert client._auth is original_auth
+    session.post.assert_called_once()
+    assert session.post.call_args.kwargs["json"]["operationName"] == "RenewToken"
+
+
+@pytest.mark.parametrize(
+    ("first_message", "second_message", "exception_type"),
+    [
+        ("user-error:password-invalid", "Too Many Requests", AuthException),
+        ("Too Many Requests", "user-error:password-invalid", RateLimitException),
+        ("Graphql validation error", "Too Many Requests", FrankEnergieException),
+        ("Too Many Requests", "Graphql validation error", RateLimitException),
+        ("No reading dates found for user synthetic-user", "Too Many Requests", RateLimitException),
+        ("Some unknown error message", "Too Many Requests", RateLimitException),
+    ],
+)
+def test_graphql_errors_keep_response_order(
+    first_message: str,
+    second_message: str,
+    exception_type: type[FrankEnergieException],
+) -> None:
+    """Keep the existing first recognized failure, without masking auth errors."""
+    client = FrankEnergie()
+    response = {"errors": [{"message": first_message}, {"message": second_message}]}
+
+    with pytest.raises(exception_type) as raised:
+        client._handle_errors(response, operation_name="Invoices", retry_after=120.0)
+
+    assert type(raised.value) is exception_type
+    if isinstance(raised.value, RateLimitException):
+        assert raised.value.operation_name == "Invoices"
+        assert raised.value.retry_after == 120.0
+
+
+@pytest.mark.parametrize(
+    ("message", "exception_type", "expected_message"),
+    [
+        (
+            "user-error:refresh-token-invalid",
+            RefreshTokenInvalidException,
+            "Refresh token is invalid; reauthentication is required.",
+        ),
+        (
+            "smart-battery-error:battery-not-found",
+            SmartBatteryNotFoundException,
+            "Smart battery not found for this user.",
+        ),
+    ],
+)
+def test_graphql_errors_preserve_specific_exception_types(
+    message: str,
+    exception_type: type[FrankEnergieException],
+    expected_message: str,
+) -> None:
+    """Keep token and feature exceptions distinct after dispatch is refactored."""
+    client = FrankEnergie()
+
+    with pytest.raises(exception_type) as raised:
+        client._handle_errors({"errors": [{"message": message}]})
+
+    assert type(raised.value) is exception_type
+    assert str(raised.value) == expected_message
 
 
 def test_graphql_rate_limit_without_operation_name(

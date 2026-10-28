@@ -76,6 +76,29 @@ except PackageNotFoundError:
     VERSION = "0.0.0"
 
 
+_GRAPHQL_ERROR_EXCEPTIONS: dict[str, tuple[type[FrankEnergieException], str]] = {
+    "user-error:password-invalid": (AuthException, "Invalid password"),
+    "user-error:auth-not-authorised": (AuthException, "Not authorized"),
+    "user-error:auth-required": (AuthRequiredException, "Authentication required"),
+    "user-error:refresh-token-invalid": (
+        RefreshTokenInvalidException,
+        "Refresh token is invalid; reauthentication is required.",
+    ),
+    "user-error:smart-trading-not-enabled": (
+        SmartTradingNotEnabledException,
+        "Smart trading is not enabled for this user.",
+    ),
+    "user-error:smart-charging-not-enabled": (
+        SmartChargingNotEnabledException,
+        "Smart charging is not enabled for this user.",
+    ),
+    "smart-battery-error:battery-not-found": (
+        SmartBatteryNotFoundException,
+        "Smart battery not found for this user.",
+    ),
+}
+
+
 def _parse_retry_after(value: str | None) -> float | None:
     """Return Retry-After seconds, or None when no usable delay was supplied.
 
@@ -422,13 +445,13 @@ class FrankEnergie:
 
     def _handle_errors(
         self,
-        response: dict[str, object],
+        response: dict[str, object] | None,
         operation_name: str | None = None,
         *,
         retry_after: float | None = None,
     ) -> None:
         """
-        Handle common GraphQL error messages and raise specific exceptions when needed.
+        Validate the GraphQL error list and process its entries in response order.
 
         Args:
             response: The API response as a dictionary.
@@ -460,75 +483,65 @@ class FrankEnergie:
                 _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
                 continue
 
-            message_obj: object | None = error_obj.get("message")
-            message: str = message_obj if isinstance(message_obj, str) else ""
-            path: object | None = error_obj.get("path")
-            ext_obj: object | None = error_obj.get("extensions")  # GraphQL extension metadata
-            extensions: dict[str, object] | None = ext_obj if isinstance(ext_obj, dict) else None
+            self._handle_graphql_error(
+                error_obj,
+                operation_name=active_query,
+                response=response,
+                retry_after=retry_after,
+            )
 
-            if message == "Too Many Requests":
-                raise RateLimitException(active_query, retry_after=retry_after)
+    def _handle_graphql_error(
+        self,
+        error_obj: dict[str, object],
+        *,
+        operation_name: str,
+        response: dict[str, object],
+        retry_after: float | None,
+    ) -> None:
+        """Classify one GraphQL error while preserving its diagnostic context."""
+        message_obj = error_obj.get("message")
+        message = message_obj if isinstance(message_obj, str) else ""
+        path = error_obj.get("path")
 
-            # --- Authentication errors ---
-            if message == "user-error:password-invalid":
-                raise AuthException("Invalid password")
-            elif message == "user-error:auth-not-authorised":
-                raise AuthException("Not authorized")
-            elif message == "user-error:auth-required":
-                raise AuthRequiredException("Authentication required")
-            elif message == "user-error:refresh-token-invalid":
-                raise RefreshTokenInvalidException(
-                    "Refresh token is invalid; reauthentication is required."
-                )
-            elif message == "Graphql validation error":
-                log_level = logging.DEBUG if active_query == "SmartHvacStatus" else logging.ERROR
-                _LOGGER.log(
-                    log_level,
-                    "GraphQL validation error - query %s: %s path=%s (response: %s)",
-                    active_query,
-                    message,
-                    path,
-                    response,
-                )
-                raise FrankEnergieException("Request failed: Graphql validation error")
+        if message == "Too Many Requests":
+            raise RateLimitException(operation_name, retry_after=retry_after)
 
-            # --- Expected "no data" cases (not failures) ---
-            elif message.startswith("No marketprices found for segment"):
-                # Normal scenario, just skip
-                continue
-            elif message.startswith("No reading dates found for user"):
-                # Typical for IN_DELIVERY sites
-                continue
+        exception_spec = _GRAPHQL_ERROR_EXCEPTIONS.get(message)
+        if exception_spec is not None:
+            exception_type, exception_message = exception_spec
+            raise exception_type(exception_message)
 
-            # --- Feature not enabled ---
-            elif message == "user-error:smart-trading-not-enabled":
-                raise SmartTradingNotEnabledException("Smart trading is not enabled for this user.")
-            elif message == "user-error:smart-charging-not-enabled":
-                raise SmartChargingNotEnabledException("Smart charging is not enabled for this user.")
-            elif message == "user-error:smart-feed-in-not-enabled":
-                _LOGGER.debug("Smart fed-in is not enabled for this user.")
-                continue
-            elif message == "smart-battery-error:battery-not-found":
-                raise SmartBatteryNotFoundException("Smart battery not found for this user.")
+        if message == "Graphql validation error":
+            log_level = logging.DEBUG if operation_name == "SmartHvacStatus" else logging.ERROR
+            _LOGGER.log(
+                log_level,
+                "GraphQL validation error - query %s: %s path=%s (response: %s)",
+                operation_name,
+                message,
+                path,
+                response,
+            )
+            raise FrankEnergieException("Request failed: Graphql validation error")
 
-            # --- Other specific messages ---
-            elif message == "'Base' niet aanwezig in prijzen verzameling":
-                _LOGGER.debug("'Base' niet aanwezig in prijzen verzameling %s.", path)
-                continue
+        if message.startswith(("No marketprices found for segment", "No reading dates found for user")):
+            return
+        if message == "user-error:smart-feed-in-not-enabled":
+            _LOGGER.debug("Smart fed-in is not enabled for this user.")
+            return
+        if message == "'Base' niet aanwezig in prijzen verzameling":
+            _LOGGER.debug("'Base' niet aanwezig in prijzen verzameling %s.", path)
+            return
+        if message.startswith("No connections found for user"):
+            raise FrankEnergieException(f"Request failed: {message}")
+        if message == "request-error:request-not-supported-in-country":
+            _LOGGER.error("Request not supported in user's country: %s", error_obj)
+            raise FrankEnergieException("Request not supported in the user's country")
 
-            # --- Critical errors ---
-            elif message.startswith("No connections found for user"):
-                raise FrankEnergieException(f"Request failed: {message}")
-            elif message == "request-error:request-not-supported-in-country":
-                _LOGGER.error("Request not supported in user's country: %s", error_obj)
-                raise FrankEnergieException("Request not supported in the user's country")
-            else:
-                # --- Unhandled errors ---
-                _LOGGER.error("Unhandled GraphQL error message: %s", message)
-                _LOGGER.error("Unhandled GraphQL error object: %s", error_obj)
-
-            if extensions:
-                _LOGGER.debug("GraphQL extensions: %s", extensions)
+        _LOGGER.error("Unhandled GraphQL error message: %s", message)
+        _LOGGER.error("Unhandled GraphQL error object: %s", error_obj)
+        extensions = error_obj.get("extensions")
+        if isinstance(extensions, dict) and extensions:
+            _LOGGER.debug("GraphQL extensions: %s", extensions)
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
