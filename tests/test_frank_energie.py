@@ -1,7 +1,7 @@
 """Test for Frank Energie."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -1063,7 +1063,8 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 
         mock_response = AsyncMock()
         mock_response.json.return_value = None
-        mock_response.raise_for_status.return_value = None
+        mock_response.raise_for_status = MagicMock()
+        mock_response.headers = {}
         mock_session.post.return_value.__aenter__.return_value = mock_response
 
         query = FrankEnergieQuery("query { test }", "Test")
@@ -1086,7 +1087,8 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 
         mock_response = AsyncMock()
         mock_response.json.return_value = {"data": {"test": "result"}}
-        mock_response.raise_for_status.return_value = None
+        mock_response.raise_for_status = MagicMock()
+        mock_response.headers = {}
         mock_session.post.return_value.__aenter__.return_value = mock_response
 
         query = FrankEnergieQuery("query { test }", "Test", {"param": "value"})
@@ -1442,3 +1444,4 @@ async def test_user_prices_date_validation():
 
         assert variables["date"] == str(start_date)
         assert variables["siteReference"] == "site_ref"
+

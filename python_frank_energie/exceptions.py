@@ -17,6 +17,16 @@ class RequestException(FrankEnergieException):
     """Request failed."""
 
 
+class RateLimitException(RequestException):
+    """Report a rate-limited request and an optional server-provided delay."""
+
+    def __init__(self, operation_name: str, *, retry_after: float | None = None) -> None:
+        """Store the operation and Retry-After seconds without scheduling retries."""
+        self.operation_name = operation_name
+        self.retry_after = retry_after
+        super().__init__(f"Frank Energie rate limit exceeded during operation [{operation_name}].")
+
+
 class NoSuitableSitesFoundError(FrankEnergieException):
     """Request failed."""
 

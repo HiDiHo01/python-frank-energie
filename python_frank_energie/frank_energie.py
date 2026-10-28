@@ -5,11 +5,13 @@
 
 import asyncio
 import logging
+import math
 import platform
 import re
 import sys
 import time
 from datetime import UTC, date, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -21,9 +23,10 @@ from aiohttp import ClientError, ClientSession, ClientTimeout
 from .exceptions import (
     AuthException,
     AuthRequiredException,
-    RefreshTokenInvalidException,
     FrankEnergieException,
     NetworkError,
+    RateLimitException,
+    RefreshTokenInvalidException,
     RequestException,
     SmartBatteryNotFoundException,
     SmartChargingNotEnabledException,
@@ -71,6 +74,31 @@ try:
     VERSION = _pkg_version(_DISTRIBUTION_NAME)
 except PackageNotFoundError:
     VERSION = "0.0.0"
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Return Retry-After seconds, or None when no usable delay was supplied.
+
+    Accept the HTTP delay-seconds and timezone-aware HTTP-date forms. Never
+    invent a cooldown when the header is absent or malformed.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    header = value.strip()
+    if header.isascii() and header.isdecimal():
+        delay_seconds = float(header)
+        return delay_seconds if math.isfinite(delay_seconds) else None
+
+    try:
+        retry_at = parsedate_to_datetime(header)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+    if retry_at.tzinfo is None or retry_at.utcoffset() is None:
+        return None
+
+    return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
 
 
 def _dig(data: object, *keys: str) -> object:
@@ -264,6 +292,7 @@ class FrankEnergie:
 
         Raises:
             NetworkError: If the network request fails.
+            RateLimitException: If HTTP or GraphQL reports a rate limit.
             FrankEnergieException: If the request fails.
         """
         if not hasattr(query, "to_dict") or not callable(query.to_dict):
@@ -320,6 +349,7 @@ class FrankEnergie:
                 resp.raise_for_status()
 
                 response: dict[str, object] = await resp.json()
+                retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
 
             if not response:
                 _LOGGER.debug(
@@ -330,7 +360,7 @@ class FrankEnergie:
 
             # _LOGGER.debug("Response body: %s", response)
 
-            self._handle_errors(response, operation_name)
+            self._handle_errors(response, operation_name, retry_after=retry_after)
 
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
@@ -353,6 +383,13 @@ class FrankEnergie:
             raise NetworkError("Frank Energie API timeout") from err
 
         except aiohttp.ClientResponseError as error:
+            if error.status == HTTPStatus.TOO_MANY_REQUESTS:
+                retry_after_header = error.headers.get("Retry-After") if error.headers else None
+                raise RateLimitException(
+                    operation_name,
+                    retry_after=_parse_retry_after(retry_after_header),
+                ) from error
+
             _LOGGER.error(
                 "Frank Energie API error during operation [%s]: %s",
                 operation_name,
@@ -383,16 +420,25 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
-    def _handle_errors(self, response: dict[str, object], operation_name: str | None = None) -> None:
+    def _handle_errors(
+        self,
+        response: dict[str, object],
+        operation_name: str | None = None,
+        *,
+        retry_after: float | None = None,
+    ) -> None:
         """
         Handle common GraphQL error messages and raise specific exceptions when needed.
 
         Args:
             response: The API response as a dictionary.
+            operation_name: The operation associated with this response.
+            retry_after: The server-provided delay in seconds, if available.
 
         Raises:
             AuthException: For authentication-related errors.
             AuthRequiredException: When authentication is required.
+            RateLimitException: When the API reports Too Many Requests.
             FrankEnergieException: For unhandled or critical API errors.
         """
         if not response:
@@ -419,6 +465,9 @@ class FrankEnergie:
             path: object | None = error_obj.get("path")
             ext_obj: object | None = error_obj.get("extensions")  # GraphQL extension metadata
             extensions: dict[str, object] | None = ext_obj if isinstance(ext_obj, dict) else None
+
+            if message == "Too Many Requests":
+                raise RateLimitException(active_query, retry_after=retry_after)
 
             # --- Authentication errors ---
             if message == "user-error:password-invalid":
@@ -507,6 +556,7 @@ class FrankEnergie:
         Raises:
             ValueError: If username or password is missing.
             AuthException: If the login fails.
+            RateLimitException: If the API asks the caller to retry later.
         """
         if not username or not password:
             raise ValueError("Username and password must be provided.")
@@ -534,7 +584,7 @@ class FrankEnergie:
             )
             return auth
 
-        except (asyncio.CancelledError, AuthException):
+        except (asyncio.CancelledError, AuthException, RateLimitException):
             raise
 
         except Exception as err:
@@ -672,7 +722,7 @@ class FrankEnergie:
             response = await self._query(query)
             _LOGGER.debug("MonthSummary raw response: %s", response)
             return MonthSummary.from_dict(response)
-        except (AuthException, AuthRequiredException):
+        except (AuthException, AuthRequiredException, RateLimitException):
             raise
         except Exception as e:
             _LOGGER.exception(
@@ -868,6 +918,9 @@ class FrankEnergie:
 
         Returns an Invoices object containing all, previous, current,
         and upcoming invoices.
+
+        Raises:
+            RateLimitException: If the API asks the caller to retry later.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
