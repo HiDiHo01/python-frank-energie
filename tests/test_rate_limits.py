@@ -63,8 +63,13 @@ def _create_client(payload: dict[str, object]) -> tuple[FrankEnergie, MagicMock,
         ("١٢٠", None),
         ("9" * 400, None),
         ("Wed, 28 Oct 2026 12:02:00 GMT", 120.0),
+        ("Wednesday, 28-Oct-26 12:02:00 GMT", 120.0),
+        ("Wed Oct 28 14:00:00 2026", 7200.0),
+        ("Wed Oct 28 11:59:00 2026", 0.0),
+        ("Fri Nov  6 12:02:00 2026", 777720.0),
         ("Wed, 28 Oct 2026 11:59:00 GMT", 0.0),
         ("Wed, 28 Oct 2026 12:02:00", None),
+        ("Wed, 28 Oct 2026 12:02:00 -0000", None),
     ],
 )
 def test_parse_retry_after(header: str | None, expected: float | None) -> None:
@@ -118,6 +123,33 @@ async def test_http_429_does_not_require_json(header: str | None) -> None:
     assert raised.value.__cause__ is http_error
     response.json.assert_not_awaited()
     session.post.assert_called_once()
+
+
+@pytest.mark.parametrize("status", [HTTPStatus.OK, HTTPStatus.TOO_MANY_REQUESTS])
+@pytest.mark.asyncio
+async def test_invoices_preserves_asctime_retry_after(
+    rate_limit_payload: dict[str, object], status: HTTPStatus
+) -> None:
+    """Expose the UTC delay from a legacy HTTP date through both error paths."""
+    client, session, response = _create_client(rate_limit_payload)
+    response.headers = {"Retry-After": "Wed Oct 28 14:00:00 2026"}
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
+        response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+            request_info=MagicMock(), history=(), status=status, headers=response.headers
+        )
+
+    with patch("python_frank_energie.frank_energie.datetime") as clock:
+        clock.now.return_value = datetime(2026, 10, 28, 12, tzinfo=UTC)
+        with pytest.raises(RateLimitException) as raised:
+            await client.invoices("synthetic-site")
+
+    assert raised.value.operation_name == "Invoices"
+    assert raised.value.retry_after == 7200.0
+    session.post.assert_called_once()
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
+        response.json.assert_not_awaited()
+    else:
+        response.json.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

@@ -99,11 +99,18 @@ _GRAPHQL_ERROR_EXCEPTIONS: dict[str, tuple[type[FrankEnergieException], str]] = 
 }
 
 
+_ASCTIME_HTTP_DATE_PATTERN = re.compile(
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} "
+    r"(?:[0-9]{2}| [0-9]) [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}"
+)
+
+
 def _parse_retry_after(value: str | None) -> float | None:
     """Return Retry-After seconds, or None when no usable delay was supplied.
 
-    Accept the HTTP delay-seconds and timezone-aware HTTP-date forms. Never
-    invent a cooldown when the header is absent or malformed.
+    Accept HTTP delay-seconds and all three HTTP-date formats. The legacy
+    asctime form uses UTC even though it contains no explicit timezone.
+    Never invent a cooldown when the header is absent or malformed.
     """
     if not isinstance(value, str) or not value.strip():
         return None
@@ -119,7 +126,10 @@ def _parse_retry_after(value: str | None) -> float | None:
         return None
 
     if retry_at.tzinfo is None or retry_at.utcoffset() is None:
-        return None
+        # Calendar fields have already been validated by the email parser.
+        if _ASCTIME_HTTP_DATE_PATTERN.fullmatch(header) is None:
+            return None
+        retry_at = retry_at.replace(tzinfo=UTC)
 
     return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
 

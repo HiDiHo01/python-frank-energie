@@ -8,9 +8,11 @@ subclass of `RequestException`, with these attributes:
 - `retry_after`: a nonnegative delay in seconds from a valid `Retry-After`
   response header, or `None` when no usable delay was supplied.
 
-Both HTTP delay-seconds and timezone-aware HTTP-date headers are supported.
-An expired HTTP-date produces zero seconds. No default API quota or cooldown
-is inferred from a missing or malformed header.
+HTTP delay-seconds and all three HTTP-date formats are supported: IMF-fixdate,
+obsolete RFC 850, and asctime. The asctime form has no timezone marker and is
+interpreted as UTC, as required by HTTP. Other dates without a usable timezone
+remain invalid. An expired HTTP-date produces zero seconds. No default API
+quota or cooldown is inferred from a missing or malformed header.
 
 `invoices()`, `login()`, and `month_summary()` propagate this exception.
 Token renewal also propagates it without discarding authentication. Other
