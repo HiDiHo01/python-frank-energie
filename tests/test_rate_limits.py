@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 from multidict import CIMultiDict, CIMultiDictProxy
+from multidict import CIMultiDict, CIMultiDictProxy
 
 from python_frank_energie import FrankEnergie, RateLimitException, RequestException
 from python_frank_energie.exceptions import (
