@@ -31,6 +31,12 @@ cooldown. Callers can schedule a later update using `retry_after`, or use their
 configured polling policy when it is `None`. Mutation retries require an
 explicit decision by the caller.
 
+`retry_after` is passed through unmodified. Callers should clamp it to a
+sane maximum before scheduling, since a misbehaving server could send an
+arbitrarily large value. A value of `0` (or an expired HTTP-date) means
+"now"; schedulers that treat `0` as an immediate retry should fall back to
+their normal interval instead.
+
 The reported `path: ['invoices']` identifies the affected GraphQL field. It
 does not establish whether the provider applies a field, account, IP, or global
 rate limit.
