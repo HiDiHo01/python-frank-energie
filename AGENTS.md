@@ -57,6 +57,8 @@ Inspect `pyproject.toml`, `poetry.lock`, `.pre-commit-config.yaml`, and the appl
 
 Run the relevant tests and checks in the Poetry environment. The repository workflows currently configure pytest with coverage, Ruff, mypy, Poetry lock validation, and a pre-commit matrix that includes formatting, documentation, YAML/TOML/JSON, spelling, security, and unused-code checks. Confirm the current workflow definitions rather than assuming every check runs for every event.
 
+The PR pre-commit workflow uses independent `python-version` and `hook` matrix axes so every configured hook runs on each matrix Python version. Keep each matrix hook ID aligned with `.pre-commit-config.yaml`, including Ruff and mypy. Do not replace the hook axis with repeated `matrix.include` entries that overwrite the same fields and leave only the last hook active.
+
 Useful local commands include:
 
 ```bash

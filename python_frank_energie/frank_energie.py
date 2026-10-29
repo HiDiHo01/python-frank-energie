@@ -77,7 +77,7 @@ except PackageNotFoundError:
     VERSION = "0.0.0"
 
 
-_GRAPHQL_ERROR_EXCEPTIONS: dict[str, tuple[type[FrankEnergieException], str]] = {
+_GRAPHQL_ERROR_EXCEPTIONS: Mapping[str, tuple[type[FrankEnergieException], str]] = {
     "user-error:password-invalid": (AuthException, "Invalid password"),
     "user-error:auth-not-authorised": (AuthException, "Not authorized"),
     "user-error:auth-required": (AuthRequiredException, "Authentication required"),
@@ -101,8 +101,7 @@ _GRAPHQL_ERROR_EXCEPTIONS: dict[str, tuple[type[FrankEnergieException], str]] = 
 
 
 _ASCTIME_HTTP_DATE_PATTERN = re.compile(
-    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} "
-    r"(?:[0-9]{2}| [0-9]) [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}"
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} " r"(?:[0-9]{2}| [0-9]) [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}"
 )
 
 
@@ -126,7 +125,7 @@ def _parse_retry_after(value: str | None) -> float | None:
     except (TypeError, ValueError, OverflowError):
         return None
 
-    if retry_at.tzinfo is None or retry_at.utcoffset() is None:
+    if retry_at.utcoffset() is None:
         # Calendar fields have already been validated by the email parser.
         if _ASCTIME_HTTP_DATE_PATTERN.fullmatch(header) is None:
             return None
@@ -238,7 +237,15 @@ class FrankEnergie:
         return bool(self._auth is not None and self._auth.authToken)
 
     async def validate_authentication(self) -> bool:
-        """Validate the current authentication tokens."""
+        """Validate tokens, renewing an expired access token when needed.
+
+        Returns:
+            False if authentication is absent or rejected; True otherwise.
+
+        Raises:
+            RateLimitException: If renewal is rate limited, preserving authentication.
+            FrankEnergieException: If renewal fails for another request-level reason.
+        """
 
         if not self.is_authenticated:
             return False
@@ -383,7 +390,7 @@ class FrankEnergie:
                 resp.raise_for_status()
 
                 response: dict[str, object] = await resp.json()
-                retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+                retry_after_header = resp.headers.get("Retry-After")
 
             if not response:
                 _LOGGER.debug(
@@ -394,7 +401,7 @@ class FrankEnergie:
 
             # _LOGGER.debug("Response body: %s", response)
 
-            self._handle_errors(response, operation_name, retry_after=retry_after)
+            self._handle_errors(response, operation_name, retry_after_header=retry_after_header)
 
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
@@ -419,10 +426,13 @@ class FrankEnergie:
         except aiohttp.ClientResponseError as error:
             if error.status == HTTPStatus.TOO_MANY_REQUESTS:
                 retry_after_header = error.headers.get("Retry-After") if error.headers else None
-                raise RateLimitException(
+                retry_after = _parse_retry_after(retry_after_header)
+                _LOGGER.debug(
+                    "Frank Energie API rate limited operation [%s]; retry_after=%s",
                     operation_name,
-                    retry_after=_parse_retry_after(retry_after_header),
-                ) from error
+                    retry_after,
+                )
+                raise RateLimitException(operation_name, retry_after=retry_after) from error
 
             _LOGGER.error(
                 "Frank Energie API error during operation [%s]: %s",
@@ -459,7 +469,7 @@ class FrankEnergie:
         response: dict[str, object] | None,
         operation_name: str | None = None,
         *,
-        retry_after: float | None = None,
+        retry_after_header: str | None = None,
     ) -> None:
         """
         Validate the GraphQL error list and process its entries in response order.
@@ -467,7 +477,7 @@ class FrankEnergie:
         Args:
             response: The API response as a dictionary.
             operation_name: The operation associated with this response.
-            retry_after: The server-provided delay in seconds, if available.
+            retry_after_header: The raw server-provided retry hint, if available.
 
         Raises:
             AuthException: For authentication-related errors.
@@ -487,7 +497,7 @@ class FrankEnergie:
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
             raise FrankEnergieException("Invalid GraphQL error structure")
 
-        active_query = operation_name or getattr(self, "_operation_name", "<unknown>")
+        active_query = operation_name or "<unknown>"
 
         for error_obj in errors_obj:
             if not isinstance(error_obj, dict):
@@ -498,7 +508,7 @@ class FrankEnergie:
                 error_obj,
                 operation_name=active_query,
                 response=response,
-                retry_after=retry_after,
+                retry_after_header=retry_after_header,
             )
 
     def _handle_graphql_error(
@@ -507,7 +517,7 @@ class FrankEnergie:
         *,
         operation_name: str,
         response: dict[str, object],
-        retry_after: float | None,
+        retry_after_header: str | None,
     ) -> None:
         """Classify one GraphQL error while preserving its diagnostic context."""
         message_obj = error_obj.get("message")
@@ -517,6 +527,12 @@ class FrankEnergie:
         # Exact match on the only observed payload (issue #205). Don't widen to
         # substrings or extension codes without a captured real response.
         if message == "Too Many Requests":
+            retry_after = _parse_retry_after(retry_after_header)
+            _LOGGER.debug(
+                "Frank Energie API rate limited operation [%s]; retry_after=%s",
+                operation_name,
+                retry_after,
+            )
             raise RateLimitException(operation_name, retry_after=retry_after)
 
         exception_spec = _GRAPHQL_ERROR_EXCEPTIONS.get(message)
@@ -627,6 +643,7 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             RefreshTokenInvalidException: If the refresh token is no longer valid.
             AuthException: If the token renewal fails.
+            RateLimitException: If renewal is rate limited, preserving authentication.
         """
         if self._auth is None:
             raise AuthRequiredException("Authentication is required.")
@@ -650,9 +667,7 @@ class FrankEnergie:
         try:
             response = await self._query(query)
         except RefreshTokenInvalidException:
-            _LOGGER.warning(
-                "Refresh token is invalid; authentication must be renewed."
-            )
+            _LOGGER.warning("Refresh token is invalid; authentication must be renewed.")
             self._auth = None
             raise
 

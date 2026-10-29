@@ -26,14 +26,21 @@ rate limited. Methods with their own catch-all (for example
 return-on-error or rewrap contracts; this is not a promise that every public
 method propagates all request exceptions.
 
+`validate_authentication()` returns `False` when authentication is absent or
+rejected. If renewing an expired token is rate limited, it now raises
+`RateLimitException` instead of returning `False`; the existing tokens remain
+intact. Callers must treat that exception as a temporary API failure rather
+than a request to enter credentials again.
+
 The client does not sleep, automatically replay a request, or impose a global
 cooldown. Callers can schedule a later update using `retry_after`, or use their
 configured polling policy when it is `None`. Mutation retries require an
 explicit decision by the caller.
 
-`retry_after` is passed through unmodified. Callers should clamp it to a
-sane maximum before scheduling, since a misbehaving server could send an
-arbitrarily large value. A value of `0` (or an expired HTTP-date) means
+`retry_after` has no application-specific maximum. A scheduler with a bounded
+horizon can wait in bounded chunks while keeping the request deferred until
+the server-provided delay has elapsed. Do not shorten that delay by clamping
+it and retrying earlier. A value of `0` (or an expired HTTP-date) means
 "now"; schedulers that treat `0` as an immediate retry should fall back to
 their normal interval instead.
 

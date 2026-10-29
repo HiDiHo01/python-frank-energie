@@ -1,12 +1,16 @@
 """Test rate-limit classification, metadata, and request behavior."""
 
 import asyncio
+import copy
+import logging
+import pickle
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
+from multidict import CIMultiDict, CIMultiDictProxy
 
 from python_frank_energie import FrankEnergie, RateLimitException, RequestException
 from python_frank_energie.exceptions import (
@@ -43,6 +47,29 @@ def _create_client(payload: dict[str, object]) -> tuple[FrankEnergie, MagicMock,
     session.post.return_value.__aenter__.return_value = response
     client = FrankEnergie(session, auth_token="synthetic-token")  # noqa: S106
     return client, session, response
+
+
+@pytest.mark.parametrize("clone_method", ["pickle", "copy", "deepcopy"])
+@pytest.mark.parametrize("retry_after", [None, 12.0])
+def test_rate_limit_exception_round_trip(clone_method: str, retry_after: float | None) -> None:
+    """Preserve the exception message, metadata, and notes when cloning it."""
+    original = RateLimitException("Invoices", retry_after=retry_after)
+    original.add_note("synthetic note")
+
+    if clone_method == "pickle":
+        cloned = pickle.loads(pickle.dumps(original))  # noqa: S301
+    elif clone_method == "copy":
+        cloned = copy.copy(original)
+    else:
+        cloned = copy.deepcopy(original)
+
+    assert cloned is not original
+    assert type(cloned) is RateLimitException
+    assert cloned.operation_name == original.operation_name
+    assert cloned.retry_after == retry_after
+    assert cloned.args == original.args
+    assert str(cloned) == str(original)
+    assert cloned.__notes__ == ["synthetic note"]
 
 
 @pytest.mark.parametrize(
@@ -90,9 +117,11 @@ async def test_invoices_propagates_graphql_rate_limit(
         response.headers["Retry-After"] = header
     original_auth = client._auth
 
-    with patch("python_frank_energie.frank_energie.Invoices.from_dict") as parser:
-        with pytest.raises(RateLimitException) as raised:
-            await client.invoices("synthetic-site")
+    with (
+        patch("python_frank_energie.frank_energie.Invoices.from_dict") as parser,
+        pytest.raises(RateLimitException) as raised,
+    ):
+        await client.invoices("synthetic-site")
 
     assert isinstance(raised.value, RequestException)
     assert raised.value.operation_name == "Invoices"
@@ -103,26 +132,60 @@ async def test_invoices_propagates_graphql_rate_limit(
     session.post.assert_called_once()
 
 
-@pytest.mark.parametrize("header", [None, "120", "not-a-date"])
+@pytest.mark.parametrize(
+    ("headers", "expected_retry_after"),
+    [
+        (None, None),
+        (CIMultiDictProxy(CIMultiDict({"Retry-After": "120"})), 120.0),
+        (CIMultiDictProxy(CIMultiDict({"Retry-After": "not-a-date"})), None),
+        (CIMultiDictProxy(CIMultiDict({"retry-after": "30"})), 30.0),
+    ],
+    ids=["no_header", "seconds", "malformed", "case_insensitive"],
+)
 @pytest.mark.asyncio
-async def test_http_429_does_not_require_json(header: str | None) -> None:
+async def test_http_429_does_not_require_json(
+    headers: CIMultiDictProxy[str] | None, expected_retry_after: float | None
+) -> None:
     """Expose retry metadata from HTTP 429 even when its body is plain text."""
     client, session, response = _create_client({})
     response.json.side_effect = AssertionError("HTTP 429 body must not be parsed as JSON")
-    headers = {"Retry-After": header} if header is not None else None
-    http_error = aiohttp.ClientResponseError(
-        request_info=MagicMock(), history=(), status=429, headers=headers
-    )
+    http_error = aiohttp.ClientResponseError(request_info=MagicMock(), history=(), status=429, headers=headers)
     response.raise_for_status.side_effect = http_error
 
     with pytest.raises(RateLimitException) as raised:
         await client.invoices("synthetic-site")
 
     assert raised.value.operation_name == "Invoices"
-    assert raised.value.retry_after == (120.0 if header == "120" else None)
+    assert raised.value.retry_after == expected_retry_after
     assert raised.value.__cause__ is http_error
     response.json.assert_not_awaited()
     session.post.assert_called_once()
+
+
+@pytest.mark.parametrize("status", [HTTPStatus.OK, HTTPStatus.TOO_MANY_REQUESTS])
+@pytest.mark.asyncio
+async def test_rate_limit_logs_operation_and_delay(
+    rate_limit_payload: dict[str, object], status: HTTPStatus, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log the same safe rate-limit outcome for HTTP and GraphQL responses."""
+    client, _, response = _create_client(rate_limit_payload)
+    response.headers = CIMultiDictProxy(CIMultiDict({"Retry-After": "30"}))
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
+        response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+            request_info=MagicMock(), history=(), status=status, headers=response.headers
+        )
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+        pytest.raises(RateLimitException),
+    ):
+        await client.invoices("synthetic-site")
+
+    outcome_records = [record for record in caplog.records if "rate limited operation" in record.getMessage()]
+    assert len(outcome_records) == 1
+    assert outcome_records[0].levelno == logging.DEBUG
+    assert outcome_records[0].getMessage() == ("Frank Energie API rate limited operation [Invoices]; retry_after=30.0")
+    assert "synthetic-token" not in caplog.text
 
 
 @pytest.mark.parametrize("status", [HTTPStatus.OK, HTTPStatus.TOO_MANY_REQUESTS])
@@ -279,6 +342,33 @@ async def test_automatic_renewal_rate_limit_prevents_invoice_request(
     assert session.post.call_args.kwargs["json"]["operationName"] == "RenewToken"
 
 
+@pytest.mark.parametrize("status", [HTTPStatus.OK, HTTPStatus.TOO_MANY_REQUESTS])
+@pytest.mark.asyncio
+async def test_validate_authentication_propagates_renewal_rate_limit(
+    rate_limit_payload: dict[str, object], status: HTTPStatus
+) -> None:
+    """Preserve expired authentication and retry metadata during validation."""
+    client, session, response = _create_client(rate_limit_payload)
+    original_auth = client._auth
+    assert original_auth is not None
+    original_auth.token_expires_at = datetime.now(UTC) - timedelta(minutes=10)
+    response.headers = CIMultiDictProxy(CIMultiDict({"Retry-After": "120"}))
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
+        response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+            request_info=MagicMock(), history=(), status=status, headers=response.headers
+        )
+
+    with pytest.raises(RateLimitException) as raised:
+        await client.validate_authentication()
+
+    assert raised.value.operation_name == "RenewToken"
+    assert raised.value.retry_after == 120.0
+    assert client._auth is original_auth
+    assert not client._renew_lock.locked()
+    session.post.assert_called_once()
+    assert session.post.call_args.kwargs["json"]["operationName"] == "RenewToken"
+
+
 @pytest.mark.parametrize(
     ("first_message", "second_message", "exception_type"),
     [
@@ -300,7 +390,7 @@ def test_graphql_errors_keep_response_order(
     response = {"errors": [{"message": first_message}, {"message": second_message}]}
 
     with pytest.raises(exception_type) as raised:
-        client._handle_errors(response, operation_name="Invoices", retry_after=120.0)
+        client._handle_errors(response, operation_name="Invoices", retry_after_header="120")
 
     assert type(raised.value) is exception_type
     if isinstance(raised.value, RateLimitException):
@@ -347,15 +437,21 @@ def test_graphql_rate_limit_without_operation_name(
     with pytest.raises(RateLimitException) as raised:
         client._handle_errors(rate_limit_payload)
 
+    assert raised.value.operation_name == "<unknown>"
     assert raised.value.retry_after is None
 
 
+@pytest.mark.parametrize("retry_header", [None, "not-a-date", "Wed, 28 Oct 2026 12:02:00 GMT"])
 @pytest.mark.asyncio
-async def test_successful_request_remains_unchanged() -> None:
-    """Return successful GraphQL responses without scheduling extra requests."""
+async def test_successful_request_remains_unchanged(retry_header: str | None) -> None:
+    """Return successful responses without parsing unused retry hints."""
     payload = {"data": {"example": "value"}}
-    client, session, _ = _create_client(payload)
-    result = await client._query(FrankEnergieQuery("query Example { example }", "Example"))
+    client, session, response = _create_client(payload)
+    if retry_header is not None:
+        response.headers["Retry-After"] = retry_header
+    with patch("python_frank_energie.frank_energie._parse_retry_after") as retry_parser:
+        result = await client._query(FrankEnergieQuery("query Example { example }", "Example"))
 
     assert result == payload
+    retry_parser.assert_not_called()
     session.post.assert_called_once()
