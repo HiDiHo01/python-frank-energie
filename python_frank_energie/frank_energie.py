@@ -513,6 +513,8 @@ class FrankEnergie:
         message = message_obj if isinstance(message_obj, str) else ""
         path = error_obj.get("path")
 
+        # Exact match on the only observed payload (issue #205). Don't widen to
+        # substrings or extension codes without a captured real response.
         if message == "Too Many Requests":
             raise RateLimitException(operation_name, retry_after=retry_after)
 
