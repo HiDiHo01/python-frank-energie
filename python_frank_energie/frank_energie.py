@@ -626,7 +626,7 @@ class FrankEnergie:
             )
             return auth
 
-        except (asyncio.CancelledError, AuthException, RateLimitException):
+        except (asyncio.CancelledError, AuthException, NetworkError, RateLimitException):
             raise
 
         except Exception as err:
