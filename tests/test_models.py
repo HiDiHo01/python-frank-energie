@@ -1181,6 +1181,7 @@ def test_quarter_hour_lookups_sample_the_clock_once() -> None:
             assert getattr(price_data, lookup) is not None
         assert spy.call_count == 1, lookup
 
+
 def test_enode_charger_accepts_missing_calculated_deadline() -> None:
     """Parse a charger when no charging schedule has a calculated deadline (issue #193)."""
     charger_data = {
@@ -1196,4 +1197,3 @@ def test_enode_charger_accepts_missing_calculated_deadline() -> None:
     assert charger.charge_settings.calculated_deadline is None
     assert charger.charge_state.battery_level is None
     assert charger.charge_state.is_charging is False
-

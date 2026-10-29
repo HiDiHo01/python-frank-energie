@@ -5,7 +5,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .authentication import Authentication
 from .domain import CountryCode, EnergyType, Resolution
-from .exceptions import AuthException, ConnectionException, RequestException
+from .exceptions import AuthException, ConnectionException, RateLimitException, RequestException
 from .frank_energie import _DISTRIBUTION_NAME, FrankEnergie
 from .models import (
     ContractPriceResolutionChangeResult,
@@ -42,5 +42,6 @@ __all__ = [
     # Exceptions
     "AuthException",
     "ConnectionException",
+    "RateLimitException",
     "RequestException",
 ]
