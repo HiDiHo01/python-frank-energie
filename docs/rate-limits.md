@@ -11,7 +11,9 @@ subclass of `RequestException`, with these attributes:
 HTTP delay-seconds and all three HTTP-date formats are supported: IMF-fixdate,
 obsolete RFC 850, and asctime. The asctime form has no timezone marker and is
 interpreted as UTC, as required by HTTP. Other dates without a usable timezone
-remain invalid. An expired HTTP-date produces zero seconds. No default API
+remain invalid. RFC 850 two-digit years use a rolling 50-year future boundary;
+a timestamp beyond that boundary represents the matching past year. Invalid
+calendar dates remain unusable. An expired HTTP-date produces zero seconds. No default API
 quota or cooldown is inferred from a missing or malformed header.
 
 `RateLimitException` propagates from every method that does not catch request
