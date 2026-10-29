@@ -1,7 +1,7 @@
 """Test for Frank Energie."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -1063,7 +1063,8 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 
         mock_response = AsyncMock()
         mock_response.json.return_value = None
-        mock_response.raise_for_status.return_value = None
+        mock_response.raise_for_status = MagicMock()
+        mock_response.headers = {}
         mock_session.post.return_value.__aenter__.return_value = mock_response
 
         query = FrankEnergieQuery("query { test }", "Test")
@@ -1086,7 +1087,8 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 
         mock_response = AsyncMock()
         mock_response.json.return_value = {"data": {"test": "result"}}
-        mock_response.raise_for_status.return_value = None
+        mock_response.raise_for_status = MagicMock()
+        mock_response.headers = {}
         mock_session.post.return_value.__aenter__.return_value = mock_response
 
         query = FrankEnergieQuery("query { test }", "Test", {"param": "value"})
@@ -1297,9 +1299,9 @@ def test_version_matches_pyproject():
 
     declared_version = pyproject["tool"]["poetry"]["version"]
 
-    assert declared_version == VERSION, (
-        f"frank_energie.VERSION ({VERSION!r}) does not match pyproject.toml's version ({declared_version!r})"
-    )
+    assert (
+        declared_version == VERSION
+    ), f"frank_energie.VERSION ({VERSION!r}) does not match pyproject.toml's version ({declared_version!r})"
     assert python_frank_energie.__version__ == declared_version, (
         f"python_frank_energie.__version__ ({python_frank_energie.__version__!r}) "
         f"does not match pyproject.toml's version ({declared_version!r})"
