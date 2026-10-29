@@ -104,13 +104,32 @@ _ASCTIME_HTTP_DATE_PATTERN = re.compile(
     r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} [ \d]\d \d{2}:\d{2}:\d{2} \d{4}",
     flags=re.ASCII,
 )
+_RFC850_HTTP_DATE_PATTERN = re.compile(
+    r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), \d{2}-[A-Z][a-z]{2}-\d{2} \d{2}:\d{2}:\d{2} GMT",
+    flags=re.ASCII,
+)
+
+
+def _resolve_rfc850_year(retry_at: datetime, now: datetime) -> datetime | None:
+    """Interpret a two-digit HTTP year using RFC 9110's rolling 50-year rule."""
+    latest_year = now.year + 50
+    year = latest_year - (latest_year - retry_at.year) % 100
+    # Compare calendar fields without constructing a possibly invalid leap day.
+    if year == latest_year and retry_at.timetuple()[1:6] > now.timetuple()[1:6]:
+        year -= 100
+    try:
+        return retry_at.replace(year=year)
+    except ValueError:
+        # A different century can make the original leap day invalid.
+        return None
 
 
 def _parse_retry_after(value: str | None) -> float | None:
     """Return Retry-After seconds, or None when no usable delay was supplied.
 
     Accept HTTP delay-seconds and all three HTTP-date formats. The legacy
-    asctime form uses UTC even though it contains no explicit timezone.
+    asctime form uses UTC even though it contains no explicit timezone. RFC 850
+    two-digit years follow RFC 9110's rolling 50-year rule.
     Never invent a cooldown when the header is absent or malformed.
     """
     if not isinstance(value, str) or not value.strip():
@@ -132,7 +151,14 @@ def _parse_retry_after(value: str | None) -> float | None:
             return None
         retry_at = retry_at.replace(tzinfo=UTC)
 
-    return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
+    now = datetime.now(UTC)
+    if _RFC850_HTTP_DATE_PATTERN.fullmatch(header) is not None:
+        resolved_retry_at = _resolve_rfc850_year(retry_at, now)
+        if resolved_retry_at is None:
+            return None
+        retry_at = resolved_retry_at
+
+    return max(0.0, (retry_at - now).total_seconds())
 
 
 def _dig(data: object, *keys: str) -> object:
@@ -599,6 +625,7 @@ class FrankEnergie:
         Raises:
             ValueError: If username or password is missing.
             AuthException: If the login fails.
+            NetworkError: If the login request times out or the connection fails.
             RateLimitException: If the API asks the caller to retry later.
         """
         if not username or not password:

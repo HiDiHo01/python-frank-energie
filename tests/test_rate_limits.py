@@ -91,6 +91,28 @@ def test_rate_limit_exception_round_trip(clone_method: str, retry_after: float |
         ("9" * 400, None),
         ("Wed, 28 Oct 2026 12:02:00 GMT", 120.0),
         ("Wednesday, 28-Oct-26 12:02:00 GMT", 120.0),
+        (
+            "Sunday, 28-Oct-68 12:02:00 GMT",
+            (datetime(2068, 10, 28, 12, 2, tzinfo=UTC) - datetime(2026, 10, 28, 12, tzinfo=UTC)).total_seconds(),
+        ),
+        (
+            "Monday, 28-Oct-69 12:02:00 GMT",
+            (datetime(2069, 10, 28, 12, 2, tzinfo=UTC) - datetime(2026, 10, 28, 12, tzinfo=UTC)).total_seconds(),
+        ),
+        (
+            "Wednesday, 28-Oct-76 11:59:59 GMT",
+            (datetime(2076, 10, 28, 11, 59, 59, tzinfo=UTC) - datetime(2026, 10, 28, 12, tzinfo=UTC)).total_seconds(),
+        ),
+        (
+            "Wednesday, 28-Oct-76 12:00:00 GMT",
+            (datetime(2076, 10, 28, 12, tzinfo=UTC) - datetime(2026, 10, 28, 12, tzinfo=UTC)).total_seconds(),
+        ),
+        ("Thursday, 28-Oct-76 12:00:01 GMT", 0.0),
+        ("Friday, 28-Oct-77 12:00:00 GMT", 0.0),
+        (
+            "Wed, 28 Oct 2076 12:00:01 GMT",
+            (datetime(2076, 10, 28, 12, 0, 1, tzinfo=UTC) - datetime(2026, 10, 28, 12, tzinfo=UTC)).total_seconds(),
+        ),
         ("Wed Oct 28 14:00:00 2026", 7200.0),
         ("Wed Oct 28 11:59:00 2026", 0.0),
         ("Fri Nov  6 12:02:00 2026", 777720.0),
@@ -106,6 +128,48 @@ def test_parse_retry_after(header: str | None, expected: float | None) -> None:
     """Parse valid HTTP delays and leave absent or unusable hints unknown."""
     with patch("python_frank_energie.frank_energie.datetime") as clock:
         clock.now.return_value = datetime(2026, 10, 28, 12, tzinfo=UTC)
+        assert _parse_retry_after(header) == expected
+
+
+@pytest.mark.parametrize(
+    ("now", "header", "expected_date"),
+    [
+        (
+            datetime(2090, 10, 28, 12, tzinfo=UTC),
+            "Tuesday, 28-Oct-10 12:02:00 GMT",
+            datetime(2110, 10, 28, 12, 2, tzinfo=UTC),
+        ),
+        (datetime(2050, 3, 1, 12, tzinfo=UTC), "Monday, 28-Feb-00 12:00:00 GMT", datetime(2100, 2, 28, 12, tzinfo=UTC)),
+        (datetime(2050, 3, 1, 12, tzinfo=UTC), "Monday, 29-Feb-00 12:00:00 GMT", None),
+        (
+            datetime(2050, 2, 28, 12, tzinfo=UTC),
+            "Tuesday, 29-Feb-00 12:00:00 GMT",
+            datetime(2000, 2, 29, 12, tzinfo=UTC),
+        ),
+        (
+            datetime(2024, 2, 29, 12, tzinfo=UTC),
+            "Wednesday, 28-Feb-74 12:00:00 GMT",
+            datetime(2074, 2, 28, 12, tzinfo=UTC),
+        ),
+        (datetime(2024, 2, 29, 12, tzinfo=UTC), "Friday, 01-Mar-74 12:00:00 GMT", datetime(1974, 3, 1, 12, tzinfo=UTC)),
+    ],
+    ids=[
+        "next_century",
+        "non_leap_century",
+        "invalid_leap_day",
+        "past_leap_day",
+        "leap_clock_before_boundary",
+        "leap_clock_after_boundary",
+    ],
+)
+def test_parse_retry_after_rfc850_calendar_boundaries(
+    now: datetime, header: str, expected_date: datetime | None
+) -> None:
+    """Apply the rolling year rule across centuries and leap-day boundaries."""
+    expected = None if expected_date is None else max(0.0, (expected_date - now).total_seconds())
+
+    with patch("python_frank_energie.frank_energie.datetime") as clock:
+        clock.now.return_value = now
         assert _parse_retry_after(header) == expected
 
 
@@ -192,13 +256,24 @@ async def test_rate_limit_logs_operation_and_delay(
 
 
 @pytest.mark.parametrize("status", [HTTPStatus.OK, HTTPStatus.TOO_MANY_REQUESTS])
+@pytest.mark.parametrize(
+    ("header", "expected_retry_after"),
+    [
+        ("Wed Oct 28 14:00:00 2026", 7200.0),
+        (
+            "Monday, 28-Oct-69 12:02:00 GMT",
+            (datetime(2069, 10, 28, 12, 2, tzinfo=UTC) - datetime(2026, 10, 28, 12, tzinfo=UTC)).total_seconds(),
+        ),
+    ],
+    ids=["asctime", "rfc850"],
+)
 @pytest.mark.asyncio
-async def test_invoices_preserves_asctime_retry_after(
-    rate_limit_payload: dict[str, object], status: HTTPStatus
+async def test_invoices_preserves_legacy_retry_after(
+    rate_limit_payload: dict[str, object], status: HTTPStatus, header: str, expected_retry_after: float
 ) -> None:
     """Expose the UTC delay from a legacy HTTP date through both error paths."""
     client, session, response = _create_client(rate_limit_payload)
-    response.headers = {"Retry-After": "Wed Oct 28 14:00:00 2026"}
+    response.headers = {"Retry-After": header}
     if status == HTTPStatus.TOO_MANY_REQUESTS:
         response.raise_for_status.side_effect = aiohttp.ClientResponseError(
             request_info=MagicMock(), history=(), status=status, headers=response.headers
@@ -210,7 +285,7 @@ async def test_invoices_preserves_asctime_retry_after(
             await client.invoices("synthetic-site")
 
     assert raised.value.operation_name == "Invoices"
-    assert raised.value.retry_after == 7200.0
+    assert raised.value.retry_after == expected_retry_after
     session.post.assert_called_once()
     if status == HTTPStatus.TOO_MANY_REQUESTS:
         response.json.assert_not_awaited()
