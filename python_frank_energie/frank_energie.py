@@ -101,7 +101,7 @@ _GRAPHQL_ERROR_EXCEPTIONS: Mapping[str, tuple[type[FrankEnergieException], str]]
 
 
 _ASCTIME_HTTP_DATE_PATTERN = re.compile(
-    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} " r"(?:[0-9]{2}| [0-9]) [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}"
+    r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) [A-Z][a-z]{2} (?:[0-9]{2}| [0-9]) [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}"
 )
 
 
