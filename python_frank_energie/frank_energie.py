@@ -10,6 +10,7 @@ import platform
 import re
 import sys
 import time
+from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from http import HTTPStatus
