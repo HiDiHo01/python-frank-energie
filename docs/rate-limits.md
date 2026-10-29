@@ -14,10 +14,17 @@ interpreted as UTC, as required by HTTP. Other dates without a usable timezone
 remain invalid. An expired HTTP-date produces zero seconds. No default API
 quota or cooldown is inferred from a missing or malformed header.
 
-`invoices()`, `login()`, and `month_summary()` propagate this exception.
-Token renewal also propagates it without discarding authentication. Other
-convenience methods retain their existing return-on-error contracts; this is
-not a promise that every public method propagates all request exceptions.
+`RateLimitException` propagates from every method that does not catch request
+errors itself: `invoices()`, `login()`, `month_summary()`, `renew_token()`,
+`validate_authentication()`, `user()`, `me()`, `UserSites()`, `user_country()`,
+`prices()`, `user_prices()`, `country_prices()`, `meter_readings()`,
+`smart_hvac_status()`, `smart_pv_systems()`, `smart_pv_system_summary()` and
+`user_smart_feed_in()`. Token renewal keeps authentication intact when it is
+rate limited. Methods with their own catch-all (for example
+`period_usage_and_costs()`, `month_insights()`, the `enode_*` and
+`smart_batteries*` methods, and the mutations) retain their existing
+return-on-error or rewrap contracts; this is not a promise that every public
+method propagates all request exceptions.
 
 The client does not sleep, automatically replay a request, or impose a global
 cooldown. Callers can schedule a later update using `retry_after`, or use their
