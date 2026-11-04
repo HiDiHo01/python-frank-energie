@@ -313,6 +313,29 @@ async def test_month_summary_missing_readings_does_not_suppress_other_errors(are
         await api.close()
 
 
+def test_month_summary_reading_error_classifier_requires_exact_shape() -> None:
+    """Only a single, correctly scoped error with a null summary is recoverable."""
+    known_error = {
+        "message": "Could not find a first or last meter reading for redacted on 2026-03",
+        "path": ["monthSummary"],
+    }
+    valid_response: dict[str, object] = {
+        "data": {"monthSummary": None, "version": "test"},
+    }
+    classifier = FrankEnergie._is_month_summary_reading_error
+
+    assert classifier(valid_response, [known_error], "MonthSummary")
+    assert classifier({"data": None}, [known_error], "MonthSummary")
+    assert not classifier({}, [known_error], "MonthSummary")
+    assert not classifier({"data": {"version": "test"}}, [known_error], "MonthSummary")
+    assert not classifier({"data": {"monthSummary": {"_id": "summary_123"}}}, [known_error], "MonthSummary")
+    assert not classifier(valid_response, [known_error], "MonthInsights")
+    assert not classifier(valid_response, [known_error, known_error], "MonthSummary")
+    assert not classifier(valid_response, [{"message": "Unexpected error", "path": ["monthSummary"]}], "MonthSummary")
+    assert not classifier(valid_response, [{**known_error, "path": ["anotherField"]}], "MonthSummary")
+    assert not classifier(valid_response, [None], "MonthSummary")
+
+
 def test_missing_readings_error_is_month_summary_specific():
     """The missing-reading exception must not apply to other operations."""
     api = FrankEnergie(auth_token="test_token")
