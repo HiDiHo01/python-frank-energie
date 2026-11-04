@@ -42,6 +42,8 @@ jobs:
             github-releases.githubusercontent.com:443
       - name: Apply labels
         uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # @v7.0.0
+        with:
+          sync-labels: true
 
       - name: Size label
         uses: codelytv/pr-size-labeler@19c335e7695ba922de938806dd129f0a9b992644 # @095a41fca88b8764fd9e008ad269bcdb82bb38b9
@@ -55,3 +57,6 @@ jobs:
           l_label: size/l
           l_max_size: 500
           xl_label: size/xl
+          message_if_xl: >-
+            This PR exceeds 500 changed lines. Please review whether its scope
+            should be reduced before merging.
