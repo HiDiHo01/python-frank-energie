@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# A newer PR revision must supersede any still-running label synchronization.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   labeler:
     permissions:
