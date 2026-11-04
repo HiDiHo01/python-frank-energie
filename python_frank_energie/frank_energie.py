@@ -171,6 +171,10 @@ def _dig(data: object, *keys: str) -> object:
     return current
 
 
+class _MonthSummaryReadingsUnavailable(FrankEnergieException):
+    """Signal that the API cannot calculate a month summary without meter readings."""
+
+
 class FrankEnergieQuery:
     """Represents a GraphQL query for the FrankEnergie API."""
 
@@ -491,6 +495,34 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
+    @staticmethod
+    def _is_month_summary_reading_error(
+        response: dict[str, object],
+        errors: list[object],
+        operation_name: str,
+    ) -> bool:
+        """Identify the known missing-meter-reading error in a valid MonthSummary response."""
+        if operation_name != "MonthSummary" or len(errors) != 1 or "data" not in response:
+            return False
+
+        error = errors[0]
+        if not isinstance(error, dict):
+            return False
+
+        message = error.get("message")
+        if (
+            not isinstance(message, str)
+            or not message.startswith("Could not find a first or last meter reading for ")
+            or error.get("path") != ["monthSummary"]
+        ):
+            return False
+
+        data = response["data"]
+        if data is None:
+            return True
+
+        return isinstance(data, dict) and "monthSummary" in data and data["monthSummary"] is None
+
     def _handle_errors(
         self,
         response: dict[str, object] | None,
@@ -509,6 +541,7 @@ class FrankEnergie:
         Raises:
             AuthException: For authentication-related errors.
             AuthRequiredException: When authentication is required.
+            _MonthSummaryReadingsUnavailable: When required month readings are absent.
             RateLimitException: When the API reports Too Many Requests.
             FrankEnergieException: For unhandled or critical API errors.
         """
@@ -525,6 +558,9 @@ class FrankEnergie:
             raise FrankEnergieException("Invalid GraphQL error structure")
 
         active_query = operation_name or "<unknown>"
+
+        if self._is_month_summary_reading_error(response, errors_obj, active_query):
+            raise _MonthSummaryReadingsUnavailable("Required meter readings for the month summary are unavailable")
 
         for error_obj in errors_obj:
             if not isinstance(error_obj, dict):
@@ -748,13 +784,13 @@ class FrankEnergie:
         return EnergyConsumption.from_dict(response)
 
     async def month_summary(self, site_reference: str) -> MonthSummary | None:
-        """Retrieve the month summary for the specified month.
+        """Retrieve the month summary for the specified site.
 
         Args:
-            month: The month for which to retrieve the summary. Defaults to the current month.
+            site_reference: The delivery site reference.
 
         Returns:
-            The month summary information.
+            The month summary information, or None if readings are unavailable.
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
@@ -791,6 +827,9 @@ class FrankEnergie:
             response = await self._query(query)
             _LOGGER.debug("MonthSummary raw response: %s", response)
             return MonthSummary.from_dict(response)
+        except _MonthSummaryReadingsUnavailable:
+            _LOGGER.debug("MonthSummary unavailable because meter readings are missing")
+            return None
         except (AuthException, AuthRequiredException, RateLimitException):
             raise
         except Exception as e:
