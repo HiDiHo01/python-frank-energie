@@ -83,6 +83,10 @@ def _dig(data: object, *keys: str) -> object:
     return current
 
 
+class _MonthSummaryReadingsUnavailable(FrankEnergieException):
+    """Signal that the API cannot calculate a month summary without meter readings."""
+
+
 class FrankEnergieQuery:
     """Represents a GraphQL query for the FrankEnergie API."""
 
@@ -330,8 +334,7 @@ class FrankEnergie:
 
             # _LOGGER.debug("Response body: %s", response)
 
-            if self._handle_errors(response, operation_name):
-                return {"data": {"monthSummary": None}}
+            self._handle_errors(response, operation_name)
 
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
@@ -384,29 +387,26 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
-    def _handle_errors(self, response: dict[str, object], operation_name: str | None = None) -> bool:
-        """
-        Handle GraphQL errors and identify missing month-summary readings.
+    def _handle_errors(self, response: dict[str, object], operation_name: str | None = None) -> None:
+        """Handle common GraphQL errors and raise operation-specific exceptions.
 
         Args:
             response: The API response as a dictionary.
             operation_name: Name of the GraphQL operation.
 
-        Returns:
-            True only when MonthSummary is unavailable due to missing readings.
-
         Raises:
             AuthException: For authentication-related errors.
             AuthRequiredException: When authentication is required.
-            FrankEnergieException: For unhandled or critical API errors.
+            _MonthSummaryReadingsUnavailable: When required month readings are absent.
+            FrankEnergieException: For other critical API errors.
         """
         if not response:
             _LOGGER.debug("No response data to handle errors.")
-            return False
+            return
 
         errors_obj: object | None = response.get("errors")
         if not errors_obj:
-            return False
+            return
 
         if not isinstance(errors_obj, list):
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
@@ -414,23 +414,35 @@ class FrankEnergie:
 
         active_query = operation_name or getattr(self, "_operation_name", "<unknown>")
 
-        # Only suppress the exact known error for this operation.
+        # Classify only the single, known MonthSummary error. Preserve other
+        # GraphQL errors and reject malformed responses without a data field.
         if active_query == "MonthSummary" and len(errors_obj) == 1:
             missing_reading_error = errors_obj[0]
+            response_data = response.get("data")
+            has_missing_summary = (
+                "data" in response
+                and (
+                    response_data is None
+                    or (
+                        isinstance(response_data, dict)
+                        and "monthSummary" in response_data
+                        and response_data["monthSummary"] is None
+                    )
+                )
+            )
             if isinstance(missing_reading_error, dict):
                 missing_reading_message = missing_reading_error.get("message")
                 if (
-                    isinstance(missing_reading_message, str)
+                    has_missing_summary
+                    and isinstance(missing_reading_message, str)
                     and missing_reading_message.startswith(
                         "Could not find a first or last meter reading for "
                     )
                     and missing_reading_error.get("path") == ["monthSummary"]
-                    and response.get("data") is None
                 ):
-                    _LOGGER.debug(
-                        "MonthSummary unavailable: required meter readings are missing"
+                    raise _MonthSummaryReadingsUnavailable(
+                        "Required meter readings for the month summary are unavailable"
                     )
-                    return True
 
         for error_obj in errors_obj:
             if not isinstance(error_obj, dict):
@@ -503,8 +515,6 @@ class FrankEnergie:
 
             if extensions:
                 _LOGGER.debug("GraphQL extensions: %s", extensions)
-
-        return False
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
@@ -654,13 +664,13 @@ class FrankEnergie:
         return EnergyConsumption.from_dict(response)
 
     async def month_summary(self, site_reference: str) -> MonthSummary | None:
-        """Retrieve the month summary for the specified month.
+        """Retrieve the month summary for the specified site.
 
         Args:
-            month: The month for which to retrieve the summary. Defaults to the current month.
+            site_reference: The delivery site reference.
 
         Returns:
-            The month summary information.
+            The month summary information, or None if readings are unavailable.
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
@@ -697,6 +707,9 @@ class FrankEnergie:
             response = await self._query(query)
             _LOGGER.debug("MonthSummary raw response: %s", response)
             return MonthSummary.from_dict(response)
+        except _MonthSummaryReadingsUnavailable:
+            _LOGGER.debug("MonthSummary unavailable because meter readings are missing")
+            return None
         except (AuthException, AuthRequiredException):
             raise
         except Exception as e:
