@@ -14,7 +14,6 @@ async def main():
     day_after_tomorrow = today + timedelta(days=2)
 
     async with FrankEnergie() as fe:
-
         prices_today = await fe.prices(today, tomorrow)
         prices_tomorrow = await fe.prices(tomorrow, day_after_tomorrow)
 
