@@ -33,9 +33,5 @@ api:
       - any-glob-to-any-file:
           - "python_frank_energie/**"
 
-# Authentication code changes should receive the label via review;
-# broad source-file globs also match unrelated edits.
-authentication:
-  - changed-files:
-      - any-glob-to-any-file:
-          - "docs/authentication.md"
+# Apply the authentication label manually after reviewing the change.
+# Automatic matching of shared Python modules is too broad.
