@@ -21,6 +21,11 @@ github-actions:
       - any-glob-to-any-file:
           - ".github/**"
 
+workflow:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/workflows/**"
+
 api:
   - changed-files:
       - any-glob-to-any-file:
