@@ -61,7 +61,7 @@ jobs:
           POETRY_INSTALLER_ONLY_BINARY: ":all:"
 
       - name: Check formatting (ruff)
-        run: poetry run ruff format --check .
+        run: poetry run ruff format --diff .
 
       - name: Lint (ruff)
         run: |
