@@ -9,17 +9,18 @@ repos:
         entry: poetry run bandit -c pyproject.toml
         files: ^python_frank_energie/
         require_serial: true
-      - id: black
-        name: Format using black
+      - id: ruff-format
+        name: Format Python using Ruff
         language: system
         types: [python]
-        entry: poetry run black
+        entry: poetry run ruff format
         require_serial: true
       - id: blacken-docs
         name: Format documentation examples using black
         language: system
         files: '\.(rst|md|markdown|py|tex)$'
         entry: poetry run blacken-docs
+        args: [--line-length=120]
         require_serial: true
       - id: check-ast
         name: Check Python AST
