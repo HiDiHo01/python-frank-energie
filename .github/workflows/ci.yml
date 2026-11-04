@@ -60,6 +60,9 @@ jobs:
         env:
           POETRY_INSTALLER_ONLY_BINARY: ":all:"
 
+      - name: Check formatting (ruff)
+        run: poetry run ruff format --check .
+
       - name: Lint (ruff)
         run: |
           poetry run ruff check .
