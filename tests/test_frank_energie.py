@@ -1,5 +1,6 @@
 """Test for Frank Energie."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -231,6 +232,213 @@ async def test_month_summary(aresponses, snapshot: SnapshotAssertion):
 
     assert summary is not None
     assert summary == snapshot
+
+
+@pytest.mark.parametrize(
+    "response_data",
+    [
+        None,
+        {"monthSummary": None, "version": "test", "__typename": "Query"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_month_summary_missing_meter_readings_returns_none(aresponses, caplog, response_data):
+    """Missing historical readings should not fail an otherwise valid request."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": response_data,
+                    "errors": [
+                        {
+                            "message": (
+                                "Could not find a first or last meter reading for "
+                                "00000000-0000-0000-0000-000000000000 on 2026-03"
+                            ),
+                            "path": ["monthSummary"],
+                            "locations": [{"line": 2, "column": 3}],
+                        }
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        assert await api.month_summary("site_ref_123") is None
+        await api.close()
+
+    assert "Unhandled GraphQL error" not in caplog.text
+    assert "00000000-0000-0000-0000-000000000000" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_month_summary_missing_readings_does_not_suppress_other_errors(aresponses):
+    """Multiple GraphQL errors must not be interpreted as an empty summary."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [
+                        {
+                            "message": ("Could not find a first or last meter reading for redacted on 2026-03"),
+                            "path": ["monthSummary"],
+                        },
+                        {"message": "Unexpected API failure", "path": ["monthSummary"]},
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        with pytest.raises(FrankEnergieException, match="Failed to fetch month summary"):
+            await api.month_summary("site_ref_123")
+        await api.close()
+
+
+def test_month_summary_reading_error_classifier_requires_exact_shape() -> None:
+    """Only a single, correctly scoped error with a null summary is recoverable."""
+    known_error = {
+        "message": "Could not find a first or last meter reading for redacted on 2026-03",
+        "path": ["monthSummary"],
+    }
+    valid_response: dict[str, object] = {
+        "data": {"monthSummary": None, "version": "test"},
+    }
+    classifier = FrankEnergie._is_month_summary_reading_error
+
+    assert classifier(valid_response, [known_error], "MonthSummary")
+    assert classifier({"data": None}, [known_error], "MonthSummary")
+    assert not classifier({}, [known_error], "MonthSummary")
+    assert not classifier({"data": {"version": "test"}}, [known_error], "MonthSummary")
+    assert not classifier({"data": {"monthSummary": {"_id": "summary_123"}}}, [known_error], "MonthSummary")
+    assert not classifier(valid_response, [known_error], "MonthInsights")
+    assert not classifier(valid_response, [known_error, known_error], "MonthSummary")
+    assert not classifier(valid_response, [{"message": "Unexpected error", "path": ["monthSummary"]}], "MonthSummary")
+    assert not classifier(valid_response, [{**known_error, "path": ["anotherField"]}], "MonthSummary")
+    assert not classifier(valid_response, [None], "MonthSummary")
+
+
+def test_missing_readings_error_is_month_summary_specific():
+    """The missing-reading exception must not apply to other operations."""
+    api = FrankEnergie(auth_token="test_token")
+    response = {
+        "data": None,
+        "errors": [
+            {
+                "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                "path": ["monthSummary"],
+            }
+        ],
+    }
+    with pytest.raises(FrankEnergieException, match="Required meter readings"):
+        api._handle_errors(response, "MonthSummary")
+    assert api._handle_errors(response, "MonthInsights") is None
+
+
+@pytest.mark.asyncio
+async def test_month_summary_rejects_missing_data_field(aresponses):
+    """The known error does not make an incomplete GraphQL payload valid."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "errors": [
+                        {
+                            "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                            "path": ["monthSummary"],
+                        }
+                    ]
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        with pytest.raises(FrankEnergieException, match="Failed to fetch month summary"):
+            await api.month_summary("site_ref_123")
+        await api.close()
+
+
+@pytest.mark.asyncio
+async def test_month_summary_rejects_error_with_non_null_summary(aresponses):
+    """An actual monthSummary payload must not be discarded because of an error."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": {"monthSummary": {"_id": "summary_123"}},
+                    "errors": [
+                        {
+                            "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                            "path": ["monthSummary"],
+                        }
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        with pytest.raises(FrankEnergieException, match="Failed to fetch month summary"):
+            await api.month_summary("site_ref_123")
+        await api.close()
+
+
+@pytest.mark.asyncio
+async def test_unrelated_graphql_operation_retains_original_response(aresponses):
+    """The shared GraphQL query should never manufacture a monthSummary payload."""
+    response = {
+        "data": None,
+        "errors": [
+            {
+                "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                "path": ["monthSummary"],
+            }
+        ],
+    }
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(response),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        query = FrankEnergieQuery("query MonthInsights { __typename }", "MonthInsights")
+        assert await api._query(query) == response
+        await api.close()
 
 
 @pytest.mark.asyncio
