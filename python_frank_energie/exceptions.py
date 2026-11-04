@@ -17,6 +17,20 @@ class RequestException(FrankEnergieException):
     """Request failed."""
 
 
+class RateLimitException(RequestException):
+    """Report a rate-limited request and an optional server-provided delay."""
+
+    def __init__(self, operation_name: str, *, retry_after: float | None = None) -> None:
+        """Store the operation and Retry-After seconds without scheduling retries."""
+        self.operation_name = operation_name
+        self.retry_after = retry_after
+        super().__init__(f"Frank Energie rate limit exceeded during operation [{operation_name}].")
+
+    def __reduce__(self) -> tuple[object, ...]:
+        """Rebuild from the operation name and restore metadata and notes."""
+        return type(self), (self.operation_name,), self.__dict__
+
+
 class NoSuitableSitesFoundError(FrankEnergieException):
     """Request failed."""
 
@@ -32,8 +46,10 @@ class NoMarketPricesAvailableException(RequestException):
 class LoginError(FrankEnergieException):
     """Raised when login to FrankEnergie fails."""
 
+
 class RefreshTokenInvalidException(AuthException):
     """Raised when the refresh token is no longer valid."""
+
 
 class NetworkError(FrankEnergieException):
     """Raised for network-related errors in FrankEnergie."""
