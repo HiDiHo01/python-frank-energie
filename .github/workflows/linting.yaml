@@ -128,6 +128,11 @@ jobs:
       - name: Check poetry.lock is up to date
         run: poetry check --lock
 
+      # Temporary diagnostic for PR #215; remove after applying Ruff's exact diff.
+      - name: Show Ruff formatting differences
+        if: matrix.hook.id == 'ruff-format'
+        run: poetry run ruff format --diff .
+
       - name: Run pre-commit migrate-config
         run: poetry run pre-commit migrate-config
 
