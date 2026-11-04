@@ -560,9 +560,7 @@ class FrankEnergie:
         active_query = operation_name or "<unknown>"
 
         if self._is_month_summary_reading_error(response, errors_obj, active_query):
-            raise _MonthSummaryReadingsUnavailable(
-                "Required meter readings for the month summary are unavailable"
-            )
+            raise _MonthSummaryReadingsUnavailable("Required meter readings for the month summary are unavailable")
 
         for error_obj in errors_obj:
             if not isinstance(error_obj, dict):
