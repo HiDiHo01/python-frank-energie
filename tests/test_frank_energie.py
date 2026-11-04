@@ -249,19 +249,21 @@ async def test_month_summary_missing_meter_readings_returns_none(aresponses, cap
         "/",
         "POST",
         aresponses.Response(
-            text=json.dumps({
-                "data": response_data,
-                "errors": [
-                    {
-                        "message": (
-                            "Could not find a first or last meter reading for "
-                            "00000000-0000-0000-0000-000000000000 on 2026-03"
-                        ),
-                        "path": ["monthSummary"],
-                        "locations": [{"line": 2, "column": 3}],
-                    }
-                ],
-            }),
+            text=json.dumps(
+                {
+                    "data": response_data,
+                    "errors": [
+                        {
+                            "message": (
+                                "Could not find a first or last meter reading for "
+                                "00000000-0000-0000-0000-000000000000 on 2026-03"
+                            ),
+                            "path": ["monthSummary"],
+                            "locations": [{"line": 2, "column": 3}],
+                        }
+                    ],
+                }
+            ),
             status=200,
             headers={"Content-Type": "application/json"},
         ),
@@ -284,19 +286,21 @@ async def test_month_summary_missing_readings_does_not_suppress_other_errors(are
         "/",
         "POST",
         aresponses.Response(
-            text=json.dumps({
-                "data": None,
-                "errors": [
-                    {
-                        "message": (
-                            "Could not find a first or last meter reading for "
-                            "redacted on 2026-03"
-                        ),
-                        "path": ["monthSummary"],
-                    },
-                    {"message": "Unexpected API failure", "path": ["monthSummary"]},
-                ],
-            }),
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [
+                        {
+                            "message": (
+                                "Could not find a first or last meter reading for "
+                                "redacted on 2026-03"
+                            ),
+                            "path": ["monthSummary"],
+                        },
+                        {"message": "Unexpected API failure", "path": ["monthSummary"]},
+                    ],
+                }
+            ),
             status=200,
             headers={"Content-Type": "application/json"},
         ),
@@ -334,14 +338,16 @@ async def test_month_summary_rejects_missing_data_field(aresponses):
         "/",
         "POST",
         aresponses.Response(
-            text=json.dumps({
-                "errors": [
-                    {
-                        "message": "Could not find a first or last meter reading for redacted on 2026-03",
-                        "path": ["monthSummary"],
-                    }
-                ]
-            }),
+            text=json.dumps(
+                {
+                    "errors": [
+                        {
+                            "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                            "path": ["monthSummary"],
+                        }
+                    ]
+                }
+            ),
             status=200,
             headers={"Content-Type": "application/json"},
         ),
@@ -362,15 +368,17 @@ async def test_month_summary_rejects_error_with_non_null_summary(aresponses):
         "/",
         "POST",
         aresponses.Response(
-            text=json.dumps({
-                "data": {"monthSummary": {"_id": "summary_123"}},
-                "errors": [
-                    {
-                        "message": "Could not find a first or last meter reading for redacted on 2026-03",
-                        "path": ["monthSummary"],
-                    }
-                ],
-            }),
+            text=json.dumps(
+                {
+                    "data": {"monthSummary": {"_id": "summary_123"}},
+                    "errors": [
+                        {
+                            "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                            "path": ["monthSummary"],
+                        }
+                    ],
+                }
+            ),
             status=200,
             headers={"Content-Type": "application/json"},
         ),
