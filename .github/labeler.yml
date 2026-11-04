@@ -14,6 +14,7 @@ dependencies:
       - any-glob-to-any-file:
           - "requirements*.txt"
           - "pyproject.toml"
+          - "poetry.lock"
           - "uv.lock"
 
 github-actions:
@@ -32,9 +33,9 @@ api:
       - any-glob-to-any-file:
           - "python_frank_energie/**"
 
+# Authentication code changes should receive the label via review;
+# broad source-file globs also match unrelated edits.
 authentication:
   - changed-files:
       - any-glob-to-any-file:
-          - "python_frank_energie/frank_energie.py"
-          - "python_frank_energie/models.py"
           - "docs/authentication.md"
