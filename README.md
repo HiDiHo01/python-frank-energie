@@ -24,6 +24,16 @@ This repo uses [Python Poetry](https://python-poetry.org) to easily run CI/CD sc
 
 When making a commit, pre-commit runs to check, format and test the code. If everything passes you can push the changes via a Pull request. There GitHub Actions will check if you did everything right and it will notify me. Feel free to ask me to review your PR.
 
+Use Ruff for Python source formatting and linting (Python 3.12+):
+
+```bash
+poetry run ruff format .
+poetry run ruff format --check .
+poetry run ruff check .
+```
+
+The separate `blacken-docs` hook is retained for Python examples in documentation.
+
 Some nice or useful commands:
 - `poetry shell` -> Run commands like `pytest test` with the correct environment, no need to prefix commands with `poetry run ...`
 - `(poetry run) pytest tests` -> Runs the unit tests
