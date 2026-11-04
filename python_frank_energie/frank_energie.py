@@ -523,6 +523,34 @@ class FrankEnergie:
 
         return isinstance(data, dict) and "monthSummary" in data and data["monthSummary"] is None
 
+    @staticmethod
+    def _redact_meter_reading_errors(response: dict[str, object]) -> dict[str, object]:
+        """Remove connection details from known meter-reading errors without mutating the API response."""
+        errors = response.get("errors")
+        if not isinstance(errors, list):
+            return response
+
+        redacted_errors: list[object] = []
+        needs_redaction = False
+        for error in errors:
+            if not isinstance(error, dict):
+                redacted_errors.append(error)
+                continue
+
+            message = error.get("message")
+            if isinstance(message, str) and message.startswith("Could not find a first or last meter reading for "):
+                redacted_errors.append(
+                    {
+                        "message": "Could not find a first or last meter reading (connection details redacted)",
+                        "path": error.get("path"),
+                    }
+                )
+                needs_redaction = True
+            else:
+                redacted_errors.append(error)
+
+        return {**response, "errors": redacted_errors} if needs_redaction else response
+
     def _handle_errors(
         self,
         response: dict[str, object] | None,
@@ -562,7 +590,12 @@ class FrankEnergie:
         if self._is_month_summary_reading_error(response, errors_obj, active_query):
             raise _MonthSummaryReadingsUnavailable("Required meter readings for the month summary are unavailable")
 
-        for error_obj in errors_obj:
+        safe_response = self._redact_meter_reading_errors(response)
+        safe_errors = safe_response.get("errors")
+        if not isinstance(safe_errors, list):
+            raise FrankEnergieException("Invalid GraphQL error structure")
+
+        for error_obj in safe_errors:
             if not isinstance(error_obj, dict):
                 _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
                 continue
@@ -570,7 +603,7 @@ class FrankEnergie:
             self._handle_graphql_error(
                 error_obj,
                 operation_name=active_query,
-                response=response,
+                response=safe_response,
                 retry_after_header=retry_after_header,
             )
 
@@ -825,8 +858,7 @@ class FrankEnergie:
 
         try:
             response = await self._query(query)
-            _LOGGER.debug("MonthSummary raw response: %s", response)
-            return MonthSummary.from_dict(response)
+            return MonthSummary.from_dict(self._redact_meter_reading_errors(response))
         except _MonthSummaryReadingsUnavailable:
             _LOGGER.debug("MonthSummary unavailable because meter readings are missing")
             return None
