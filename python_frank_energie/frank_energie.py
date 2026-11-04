@@ -538,7 +538,9 @@ class FrankEnergie:
                 continue
 
             message = error.get("message")
-            if isinstance(message, str) and message.startswith("Could not find a first or last meter reading for "):
+            if isinstance(message, str) and message.startswith(
+                "Could not find a first or last meter reading for "
+            ):
                 redacted_errors.append(
                     {
                         "message": "Could not find a first or last meter reading (connection details redacted)",
