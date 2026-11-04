@@ -37,6 +37,7 @@ This repository contains `python-frank-energie`, an asynchronous Python client l
 
 ### Implementation standards
 
+- Use Ruff (`poetry run ruff format`) to format Python source and `poetry run ruff check` to lint it. Keep the existing 120-character line length and Python 3.12 target. Black is not the Python source formatter; `blacken-docs` remains for fenced documentation examples.
 - Use modern Python syntax, precise type hints, and `snake_case` names.
 - Add clear docstrings to modules, classes, methods, and public functions, following the surrounding code's conventions.
 - Prefer built-in generic types such as `list[str]` and `dict[str, object]`; do not introduce legacy `typing.List` or `typing.Dict`.
@@ -63,6 +64,7 @@ Useful local commands include:
 
 ```bash
 poetry run pytest tests
+poetry run ruff format --check .
 poetry run ruff check .
 poetry run mypy python_frank_energie
 poetry check --lock
