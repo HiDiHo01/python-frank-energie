@@ -96,6 +96,14 @@ poetry run pre-commit run --all-files
 - Repeat the review-and-fix cycle for new actionable findings. Before merge, ensure actionable findings are fixed or explicitly resolved with a technically justified explanation, subject to required human review.
 - Automated approval does not replace human review. A human reviewer must verify correctness, compatibility, security, and regression risk.
 
+### Tracking prioritized findings
+
+- **Always create a separate GitHub issue for every newly identified priority finding (P0, P1, P2, or P3)**, whether it originates in a manual/AI review, SonarQube Cloud, CI, or a pull request. An inline review comment or PR discussion alone does not satisfy this requirement.
+- Search existing open and closed issues before filing. When an issue already tracks the **same root cause**, update and link that issue instead of creating a duplicate; unrelated findings require separate issues.
+- Put the priority in the issue title (for example, `[P2]`) and include the affected code, observed and expected behavior, impact, reproduction or supporting evidence, clear acceptance criteria, and links to the originating review/PR/check.
+- Cross-reference the tracking issue in the relevant PR or review thread. Do not mark an issue resolved solely because a patch was proposed: verify the fix and relevant tests first.
+- Never include sensitive identifiers, account details, secrets, or unsanitized logs in an issue.
+
 ## Pull request expectations
 
 - Explain the problem, root cause, and behavior changed.
