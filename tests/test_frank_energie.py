@@ -291,10 +291,7 @@ async def test_month_summary_missing_readings_does_not_suppress_other_errors(are
                     "data": None,
                     "errors": [
                         {
-                            "message": (
-                                "Could not find a first or last meter reading for "
-                                "redacted on 2026-03"
-                            ),
+                            "message": ("Could not find a first or last meter reading for redacted on 2026-03"),
                             "path": ["monthSummary"],
                         },
                         {"message": "Unexpected API failure", "path": ["monthSummary"]},
