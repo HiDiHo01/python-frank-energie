@@ -17,8 +17,8 @@ jobs:
         hook:
           - id: bandit
             name: Check with bandit
-          - id: black
-            name: Check code style
+          - id: ruff-format
+            name: Check Ruff formatting
           - id: blacken-docs
             name: Check code style in documentation
           - id: check-ast
