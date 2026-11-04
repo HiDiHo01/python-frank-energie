@@ -495,6 +495,34 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
+    @staticmethod
+    def _is_month_summary_reading_error(
+        response: dict[str, object],
+        errors: list[object],
+        operation_name: str,
+    ) -> bool:
+        """Identify the known missing-meter-reading error in a valid MonthSummary response."""
+        if operation_name != "MonthSummary" or len(errors) != 1 or "data" not in response:
+            return False
+
+        error = errors[0]
+        if not isinstance(error, dict):
+            return False
+
+        message = error.get("message")
+        if (
+            not isinstance(message, str)
+            or not message.startswith("Could not find a first or last meter reading for ")
+            or error.get("path") != ["monthSummary"]
+        ):
+            return False
+
+        data = response["data"]
+        if data is None:
+            return True
+
+        return isinstance(data, dict) and "monthSummary" in data and data["monthSummary"] is None
+
     def _handle_errors(
         self,
         response: dict[str, object] | None,
@@ -531,35 +559,10 @@ class FrankEnergie:
 
         active_query = operation_name or "<unknown>"
 
-        # Classify only the single, known MonthSummary error. Preserve other
-        # GraphQL errors and reject malformed responses without a data field.
-        if active_query == "MonthSummary" and len(errors_obj) == 1:
-            missing_reading_error = errors_obj[0]
-            response_data = response.get("data")
-            has_missing_summary = (
-                "data" in response
-                and (
-                    response_data is None
-                    or (
-                        isinstance(response_data, dict)
-                        and "monthSummary" in response_data
-                        and response_data["monthSummary"] is None
-                    )
-                )
+        if self._is_month_summary_reading_error(response, errors_obj, active_query):
+            raise _MonthSummaryReadingsUnavailable(
+                "Required meter readings for the month summary are unavailable"
             )
-            if isinstance(missing_reading_error, dict):
-                missing_reading_message = missing_reading_error.get("message")
-                if (
-                    has_missing_summary
-                    and isinstance(missing_reading_message, str)
-                    and missing_reading_message.startswith(
-                        "Could not find a first or last meter reading for "
-                    )
-                    and missing_reading_error.get("path") == ["monthSummary"]
-                ):
-                    raise _MonthSummaryReadingsUnavailable(
-                        "Required meter readings for the month summary are unavailable"
-                    )
 
         for error_obj in errors_obj:
             if not isinstance(error_obj, dict):
