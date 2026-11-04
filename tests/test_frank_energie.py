@@ -1,5 +1,6 @@
 """Test for Frank Energie."""
 
+import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
@@ -241,7 +242,7 @@ async def test_month_summary_missing_meter_readings_returns_none(aresponses, cap
         "/",
         "POST",
         aresponses.Response(
-            json={
+            text=json.dumps({
                 "data": None,
                 "errors": [
                     {
@@ -253,8 +254,9 @@ async def test_month_summary_missing_meter_readings_returns_none(aresponses, cap
                         "locations": [{"line": 2, "column": 3}],
                     }
                 ],
-            },
+            }),
             status=200,
+            headers={"Content-Type": "application/json"},
         ),
     )
 
@@ -275,7 +277,7 @@ async def test_month_summary_missing_readings_does_not_suppress_other_errors(are
         "/",
         "POST",
         aresponses.Response(
-            json={
+            text=json.dumps({
                 "data": None,
                 "errors": [
                     {
@@ -287,8 +289,9 @@ async def test_month_summary_missing_readings_does_not_suppress_other_errors(are
                     },
                     {"message": "Unexpected API failure", "path": ["monthSummary"]},
                 ],
-            },
+            }),
             status=200,
+            headers={"Content-Type": "application/json"},
         ),
     )
 
