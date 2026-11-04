@@ -19,12 +19,13 @@ dependencies:
 github-actions:
   - changed-files:
       - any-glob-to-any-file:
-          - ".github/**"
-
-workflow:
-  - changed-files:
-      - any-glob-to-any-file:
           - ".github/workflows/**"
+
+github-config:
+  - changed-files:
+      - all-globs-to-any-file:
+          - ".github/**"
+          - "!.github/workflows/**"
 
 api:
   - changed-files:
