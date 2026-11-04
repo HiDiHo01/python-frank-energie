@@ -330,7 +330,8 @@ class FrankEnergie:
 
             # _LOGGER.debug("Response body: %s", response)
 
-            self._handle_errors(response, operation_name)
+            if self._handle_errors(response, operation_name):
+                return {"data": {"monthSummary": None}}
 
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
@@ -383,12 +384,16 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
-    def _handle_errors(self, response: dict[str, object], operation_name: str | None = None) -> None:
+    def _handle_errors(self, response: dict[str, object], operation_name: str | None = None) -> bool:
         """
-        Handle common GraphQL error messages and raise specific exceptions when needed.
+        Handle GraphQL errors and identify missing month-summary readings.
 
         Args:
             response: The API response as a dictionary.
+            operation_name: Name of the GraphQL operation.
+
+        Returns:
+            True only when MonthSummary is unavailable due to missing readings.
 
         Raises:
             AuthException: For authentication-related errors.
@@ -397,17 +402,35 @@ class FrankEnergie:
         """
         if not response:
             _LOGGER.debug("No response data to handle errors.")
-            return
+            return False
 
         errors_obj: object | None = response.get("errors")
         if not errors_obj:
-            return
+            return False
 
         if not isinstance(errors_obj, list):
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
             raise FrankEnergieException("Invalid GraphQL error structure")
 
         active_query = operation_name or getattr(self, "_operation_name", "<unknown>")
+
+        # Only suppress the exact known error for this operation.
+        if active_query == "MonthSummary" and len(errors_obj) == 1:
+            missing_reading_error = errors_obj[0]
+            if isinstance(missing_reading_error, dict):
+                missing_reading_message = missing_reading_error.get("message")
+                if (
+                    isinstance(missing_reading_message, str)
+                    and missing_reading_message.startswith(
+                        "Could not find a first or last meter reading for "
+                    )
+                    and missing_reading_error.get("path") == ["monthSummary"]
+                    and response.get("data") is None
+                ):
+                    _LOGGER.debug(
+                        "MonthSummary unavailable: required meter readings are missing"
+                    )
+                    return True
 
         for error_obj in errors_obj:
             if not isinstance(error_obj, dict):
@@ -480,6 +503,8 @@ class FrankEnergie:
 
             if extensions:
                 _LOGGER.debug("GraphQL extensions: %s", extensions)
+
+        return False
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
