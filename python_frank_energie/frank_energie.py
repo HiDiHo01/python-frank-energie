@@ -171,6 +171,10 @@ def _dig(data: object, *keys: str) -> object:
     return current
 
 
+class _MonthSummaryReadingsUnavailable(FrankEnergieException):
+    """Signal that the API cannot calculate a month summary without meter readings."""
+
+
 class FrankEnergieQuery:
     """Represents a GraphQL query for the FrankEnergie API."""
 
@@ -491,6 +495,62 @@ class FrankEnergie:
             )
             raise NetworkError(f"Invalid API response: missing {err}") from err
 
+    @staticmethod
+    def _is_month_summary_reading_error(
+        response: dict[str, object],
+        errors: list[object],
+        operation_name: str,
+    ) -> bool:
+        """Identify the known missing-meter-reading error in a valid MonthSummary response."""
+        if operation_name != "MonthSummary" or len(errors) != 1 or "data" not in response:
+            return False
+
+        error = errors[0]
+        if not isinstance(error, dict):
+            return False
+
+        message = error.get("message")
+        if (
+            not isinstance(message, str)
+            or not message.startswith("Could not find a first or last meter reading for ")
+            or error.get("path") != ["monthSummary"]
+        ):
+            return False
+
+        data = response["data"]
+        if data is None:
+            return True
+
+        return isinstance(data, dict) and "monthSummary" in data and data["monthSummary"] is None
+
+    @staticmethod
+    def _redact_meter_reading_errors(response: dict[str, object]) -> dict[str, object]:
+        """Remove connection details from known meter-reading errors without mutating the API response."""
+        errors = response.get("errors")
+        if not isinstance(errors, list):
+            return response
+
+        redacted_errors: list[object] = []
+        needs_redaction = False
+        for error in errors:
+            if not isinstance(error, dict):
+                redacted_errors.append(error)
+                continue
+
+            message = error.get("message")
+            if isinstance(message, str) and message.startswith("Could not find a first or last meter reading for "):
+                redacted_errors.append(
+                    {
+                        "message": "Could not find a first or last meter reading (connection details redacted)",
+                        "path": error.get("path"),
+                    }
+                )
+                needs_redaction = True
+            else:
+                redacted_errors.append(error)
+
+        return {**response, "errors": redacted_errors} if needs_redaction else response
+
     def _handle_errors(
         self,
         response: dict[str, object] | None,
@@ -509,6 +569,7 @@ class FrankEnergie:
         Raises:
             AuthException: For authentication-related errors.
             AuthRequiredException: When authentication is required.
+            _MonthSummaryReadingsUnavailable: When required month readings are absent.
             RateLimitException: When the API reports Too Many Requests.
             FrankEnergieException: For unhandled or critical API errors.
         """
@@ -526,7 +587,15 @@ class FrankEnergie:
 
         active_query = operation_name or "<unknown>"
 
-        for error_obj in errors_obj:
+        if self._is_month_summary_reading_error(response, errors_obj, active_query):
+            raise _MonthSummaryReadingsUnavailable("Required meter readings for the month summary are unavailable")
+
+        safe_response = self._redact_meter_reading_errors(response)
+        safe_errors = safe_response.get("errors")
+        if not isinstance(safe_errors, list):
+            raise FrankEnergieException("Invalid GraphQL error structure")
+
+        for error_obj in safe_errors:
             if not isinstance(error_obj, dict):
                 _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
                 continue
@@ -534,7 +603,7 @@ class FrankEnergie:
             self._handle_graphql_error(
                 error_obj,
                 operation_name=active_query,
-                response=response,
+                response=safe_response,
                 retry_after_header=retry_after_header,
             )
 
@@ -748,13 +817,13 @@ class FrankEnergie:
         return EnergyConsumption.from_dict(response)
 
     async def month_summary(self, site_reference: str) -> MonthSummary | None:
-        """Retrieve the month summary for the specified month.
+        """Retrieve the month summary for the specified site.
 
         Args:
-            month: The month for which to retrieve the summary. Defaults to the current month.
+            site_reference: The delivery site reference.
 
         Returns:
-            The month summary information.
+            The month summary information, or None if readings are unavailable.
 
         Raises:
             AuthRequiredException: If the client is not authenticated.
@@ -789,8 +858,10 @@ class FrankEnergie:
 
         try:
             response = await self._query(query)
-            _LOGGER.debug("MonthSummary raw response: %s", response)
-            return MonthSummary.from_dict(response)
+            return MonthSummary.from_dict(self._redact_meter_reading_errors(response))
+        except _MonthSummaryReadingsUnavailable:
+            _LOGGER.debug("MonthSummary unavailable because meter readings are missing")
+            return None
         except (AuthException, AuthRequiredException, RateLimitException):
             raise
         except Exception as e:

@@ -1,5 +1,7 @@
 """Test for Frank Energie."""
 
+import json
+import logging
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -231,6 +233,284 @@ async def test_month_summary(aresponses, snapshot: SnapshotAssertion):
 
     assert summary is not None
     assert summary == snapshot
+
+
+@pytest.mark.parametrize(
+    "response_data",
+    [
+        None,
+        {"monthSummary": None, "version": "test", "__typename": "Query"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_month_summary_missing_meter_readings_returns_none(aresponses, caplog, response_data):
+    """Missing historical readings should not fail an otherwise valid request."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": response_data,
+                    "errors": [
+                        {
+                            "message": (
+                                "Could not find a first or last meter reading for "
+                                "00000000-0000-0000-0000-000000000000 on 2026-03"
+                            ),
+                            "path": ["monthSummary"],
+                            "locations": [{"line": 2, "column": 3}],
+                        }
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        assert await api.month_summary("site_ref_123") is None
+        await api.close()
+
+    assert "Unhandled GraphQL error" not in caplog.text
+    assert "00000000-0000-0000-0000-000000000000" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_month_summary_missing_readings_does_not_suppress_other_errors(aresponses):
+    """Multiple GraphQL errors must not be interpreted as an empty summary."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [
+                        {
+                            "message": ("Could not find a first or last meter reading for redacted on 2026-03"),
+                            "path": ["monthSummary"],
+                        },
+                        {"message": "Unexpected API failure", "path": ["monthSummary"]},
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        with pytest.raises(FrankEnergieException, match="Failed to fetch month summary"):
+            await api.month_summary("site_ref_123")
+        await api.close()
+
+
+def test_month_summary_reading_error_classifier_requires_exact_shape() -> None:
+    """Only a single, correctly scoped error with a null summary is recoverable."""
+    known_error = {
+        "message": "Could not find a first or last meter reading for redacted on 2026-03",
+        "path": ["monthSummary"],
+    }
+    valid_response: dict[str, object] = {
+        "data": {"monthSummary": None, "version": "test"},
+    }
+    classifier = FrankEnergie._is_month_summary_reading_error
+
+    assert classifier(valid_response, [known_error], "MonthSummary")
+    assert classifier({"data": None}, [known_error], "MonthSummary")
+    assert not classifier({}, [known_error], "MonthSummary")
+    assert not classifier({"data": {"version": "test"}}, [known_error], "MonthSummary")
+    assert not classifier({"data": {"monthSummary": {"_id": "summary_123"}}}, [known_error], "MonthSummary")
+    assert not classifier(valid_response, [known_error], "MonthInsights")
+    assert not classifier(valid_response, [known_error, known_error], "MonthSummary")
+    assert not classifier(valid_response, [{"message": "Unexpected error", "path": ["monthSummary"]}], "MonthSummary")
+    assert not classifier(valid_response, [{**known_error, "path": ["anotherField"]}], "MonthSummary")
+    assert not classifier(valid_response, [None], "MonthSummary")
+
+
+def test_missing_readings_error_is_month_summary_specific():
+    """The missing-reading exception must not apply to other operations."""
+    api = FrankEnergie(auth_token="test_token")
+    response = {
+        "data": None,
+        "errors": [
+            {
+                "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                "path": ["monthSummary"],
+            }
+        ],
+    }
+    with pytest.raises(FrankEnergieException, match="Required meter readings"):
+        api._handle_errors(response, "MonthSummary")
+    assert api._handle_errors(response, "MonthInsights") is None
+
+
+@pytest.mark.asyncio
+async def test_month_summary_rejects_missing_data_field(aresponses, caplog):
+    """An incomplete GraphQL response must fail without exposing connection identifiers."""
+    caplog.set_level(logging.DEBUG)
+    connection_id = "11111111-2222-3333-4444-555555555555"
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "errors": [
+                        {
+                            "message": f"Could not find a first or last meter reading for {connection_id} on 2026-03",
+                            "path": ["monthSummary"],
+                        }
+                    ]
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        with pytest.raises(FrankEnergieException, match="Failed to fetch month summary") as exc_info:
+            await api.month_summary("site_ref_123")
+        await api.close()
+
+    assert connection_id not in caplog.text
+    assert connection_id not in str(exc_info.value)
+    assert connection_id not in str(exc_info.value.__cause__)
+
+
+@pytest.mark.asyncio
+async def test_month_summary_rejects_error_with_non_null_summary(aresponses, caplog):
+    """An actual monthSummary payload must not be discarded or leak connection details."""
+    caplog.set_level(logging.DEBUG)
+    connection_id = "11111111-2222-3333-4444-555555555555"
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": {"monthSummary": {"_id": "summary_123"}},
+                    "errors": [
+                        {
+                            "message": f"Could not find a first or last meter reading for {connection_id} on 2026-03",
+                            "path": ["monthSummary"],
+                        }
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        with pytest.raises(FrankEnergieException, match="Failed to fetch month summary") as exc_info:
+            await api.month_summary("site_ref_123")
+        await api.close()
+
+    assert connection_id not in caplog.text
+    assert connection_id not in str(exc_info.value)
+    assert connection_id not in str(exc_info.value.__cause__)
+
+
+def test_redacting_meter_reading_errors_preserves_original_api_response() -> None:
+    """Sanitize only a copy of the known error, preserving other response fields."""
+    connection_id = "11111111-2222-3333-4444-555555555555"
+    response: dict[str, object] = {
+        "data": {"monthSummary": {"_id": "summary_123"}},
+        "errors": [
+            {
+                "message": f"Could not find a first or last meter reading for {connection_id} on 2026-03",
+                "path": ["monthSummary"],
+                "extensions": {"connection_id": connection_id},
+            },
+            {"message": "Unrelated error", "path": ["version"]},
+        ],
+    }
+
+    sanitized = FrankEnergie._redact_meter_reading_errors(response)
+    assert connection_id in str(response)
+    assert connection_id not in str(sanitized)
+    assert sanitized["data"] is response["data"]
+    assert sanitized["errors"][1] is response["errors"][1]
+
+
+@pytest.mark.asyncio
+async def test_month_summary_redacts_mixed_graphql_validation_response(aresponses, caplog):
+    """Mixed GraphQL validation errors must not log raw meter-reading identifiers."""
+    caplog.set_level(logging.DEBUG)
+    connection_id = "11111111-2222-3333-4444-555555555555"
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [
+                        {
+                            "message": f"Could not find a first or last meter reading for {connection_id} on 2026-03",
+                            "path": ["monthSummary"],
+                        },
+                        {"message": "Graphql validation error", "path": ["version"]},
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        with pytest.raises(FrankEnergieException, match="Failed to fetch month summary") as exc_info:
+            await api.month_summary("site_ref_123")
+        await api.close()
+
+    assert connection_id not in caplog.text
+    assert connection_id not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_unrelated_graphql_operation_retains_original_response(aresponses):
+    """The shared GraphQL query should never manufacture a monthSummary payload."""
+    response = {
+        "data": None,
+        "errors": [
+            {
+                "message": "Could not find a first or last meter reading for redacted on 2026-03",
+                "path": ["monthSummary"],
+            }
+        ],
+    }
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(response),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="test_token")
+        query = FrankEnergieQuery("query MonthInsights { __typename }", "MonthInsights")
+        assert await api._query(query) == response
+        await api.close()
 
 
 @pytest.mark.asyncio
