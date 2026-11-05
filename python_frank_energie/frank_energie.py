@@ -2917,6 +2917,8 @@ class FrankEnergie:
             AuthRequiredException: If the client is not authenticated.
             AuthException: If the API rejects the authentication.
             RateLimitException: If the API rate limits the request.
+            FrankEnergieException: For other request failures, so an outage is
+                not mistaken for a battery without settings.
             ValueError: If ``device_id`` is empty.
         """
         if not self.is_authenticated:
@@ -2975,11 +2977,6 @@ class FrankEnergie:
             response = await self._query(query)
         except SmartBatteryNotFoundException:
             _LOGGER.debug(_SMART_BATTERY_NOT_FOUND_LOG, device_id)
-            return None
-        except (AuthException, AuthRequiredException, RateLimitException):
-            raise
-        except Exception:
-            _LOGGER.exception("Failed to query smart battery settings for device_id %s", device_id)
             return None
 
         if not response:

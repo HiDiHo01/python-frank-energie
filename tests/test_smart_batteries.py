@@ -9,7 +9,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.exceptions import RateLimitException
+from python_frank_energie.exceptions import NetworkError, RateLimitException
 
 from . import load_fixtures
 
@@ -153,13 +153,18 @@ async def test_smart_battery_settings_not_found(aresponses):
 
 
 @pytest.mark.asyncio
-async def test_smart_battery_settings_reraises_rate_limit():
-    """Rate limits propagate so callers can back off instead of seeing 'no settings'."""
+@pytest.mark.parametrize(
+    "error",
+    [RateLimitException("SmartBatterySettings"), NetworkError("Frank Energie API timeout")],
+    ids=["rate-limit", "network"],
+)
+async def test_smart_battery_settings_propagates_request_failures(error):
+    """Request failures propagate so callers can back off or retry instead of seeing 'no settings'."""
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
         with (
-            patch.object(api, "_query", side_effect=RateLimitException("SmartBatterySettings")),
-            pytest.raises(RateLimitException),
+            patch.object(api, "_query", side_effect=error),
+            pytest.raises(type(error)),
         ):
             await api.smart_battery_settings("device_id")
 
@@ -173,6 +178,8 @@ async def test_smart_battery_settings_reraises_rate_limit():
             "errors": [{"message": "Something failed", "path": ["smartBatterySettings", "imbalanceTradingStrategy"]}],
         },
         {"data": {"smartBatterySettings": {"lockedForUpdatesTill": "tomorrow"}}},
+        {"data": {"smartBatterySettings": {"lockedForUpdatesTill": "2026-11-05T23:00:00"}}},
+        {"data": {"smartBatterySettings": {"lockedForUpdatesTill": "2026-11-05"}}},
         None,
         {"data": None},
         {"data": {"smartBatterySettings": None}},
@@ -189,16 +196,30 @@ async def test_smart_battery_settings_reraises_rate_limit():
                 }
             }
         },
+        {
+            "data": {
+                "smartBatterySettings": {
+                    "selfConsumptionTradingThresholdPrice": {
+                        "current": 0.2,
+                        "updatable": True,
+                        "options": [{"amount": 10**400}],
+                    }
+                }
+            }
+        },
     ],
     ids=[
         "graphql-errors",
         "bad-datetime",
+        "datetime-without-timezone",
+        "date-only",
         "no-response",
         "no-data",
         "no-settings",
         "missing-updatable",
         "options-not-a-list",
         "non-numeric-amount",
+        "amount-too-large-for-float",
     ],
 )
 async def test_smart_battery_settings_missing_or_malformed(response):

@@ -877,6 +877,18 @@ def test_smart_battery_settings_from_dict_trading_algorithm(
     assert settings.trading_algorithm is expected
 
 
+def test_smart_battery_settings_positional_order_is_unchanged() -> None:
+    """New fields are appended so existing positional construction keeps its meaning."""
+    created = datetime(2026, 1, 1, tzinfo=UTC)
+    updated = datetime(2026, 1, 2, tzinfo=UTC)
+
+    settings = SmartBatterySettings(None, None, None, None, created, updated)
+
+    assert settings.created_at == created
+    assert settings.updated_at == updated
+    assert settings.trading_algorithm is None
+
+
 def test_smart_battery_settings_from_dict_congestion_mode() -> None:
     """CONGESTION is a known battery mode in the Frank Energie app's GraphQL enum."""
     settings = SmartBatterySettings.from_dict({"batteryMode": "CONGESTION"})

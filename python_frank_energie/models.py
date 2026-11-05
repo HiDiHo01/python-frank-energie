@@ -4102,9 +4102,10 @@ class SmartBatterySettings:
     imbalance_trading_strategy: SmartBatteryImbalanceStrategy | None = None
     self_consumption_trading_allowed: bool | None = None
     self_consumption_trading_threshold_price: float | None = None
-    trading_algorithm: SmartBatteryTradingAlgorithm | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Appended last so existing positional construction keeps its meaning.
+    trading_algorithm: SmartBatteryTradingAlgorithm | None = None
 
     @classmethod
     def from_dict(
@@ -4168,22 +4169,34 @@ def _optional_number(data: Mapping[str, object], key: str, context: str) -> floa
     value = data.get(key)
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(value):
-        raise ValueError(f"{context}: '{key}' must be a number, got {value!r}")
-    return float(value)
+    if not isinstance(value, bool) and isinstance(value, int | float):
+        try:
+            number = float(value)
+        except OverflowError:
+            pass
+        else:
+            if math.isfinite(number):
+                return number
+    raise ValueError(f"{context}: '{key}' must be a finite number, got {value!r}")
 
 
 def _optional_datetime(data: Mapping[str, object], key: str, context: str) -> datetime | None:
-    """Return ``data[key]`` as a UTC datetime, ``None`` when absent, or raise on an unparseable value."""
+    """Return ``data[key]`` as a UTC datetime, ``None`` when absent, or raise on an invalid value.
+
+    Timestamps without an explicit timezone (including date-only values) are
+    rejected rather than read in the host's local timezone.
+    """
     value = data.get(key)
     if value is None:
         return None
     if isinstance(value, str):
         try:
-            return parse_utc_isoformat(value)
+            parsed = datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX))
         except ValueError:
-            pass
-    raise ValueError(f"{context}: '{key}' must be an ISO 8601 datetime, got {value!r}")
+            parsed = None
+        if parsed is not None and parsed.tzinfo is not None:
+            return parsed.astimezone(UTC)
+    raise ValueError(f"{context}: '{key}' must be an ISO 8601 datetime with a timezone, got {value!r}")
 
 
 def _optional_enum[EnumT: StrEnum](
@@ -4295,13 +4308,13 @@ class SmartBatteryAdjustableSetting[ValueT, OptionT]:
         """
         if data is None:
             return None
-        if not isinstance(data, dict):
+        if not isinstance(data, Mapping):
             raise ValueError(f"{name} must be an object, got {data!r}")
 
         raw_options = data.get("options")
         if raw_options is None:
             raw_options = []
-        if not isinstance(raw_options, list) or not all(isinstance(option, dict) for option in raw_options):
+        if not isinstance(raw_options, list) or not all(isinstance(option, Mapping) for option in raw_options):
             raise ValueError(f"{name}: 'options' must be a list of objects, got {raw_options!r}")
 
         return cls(
@@ -4628,6 +4641,11 @@ class SmartBatteryDetails:
             ),
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
             self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
+            trading_algorithm=(
+                SmartBatteryTradingAlgorithm(settings_data["tradingAlgorithm"])
+                if isinstance(settings_data.get("tradingAlgorithm"), str) and settings_data["tradingAlgorithm"]
+                else None
+            ),
         )
 
         smart_battery = SmartBattery(
