@@ -8,10 +8,11 @@ import calendar
 import logging
 import math
 from collections import defaultdict
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
+from functools import partial
 from statistics import mean
 from typing import Any, TypedDict, cast, overload
 from zoneinfo import ZoneInfo
@@ -28,6 +29,7 @@ from .domain import (
     SmartBatteryImbalanceStrategy,
     SmartBatteryMode,
     SmartBatteryStatus,
+    SmartBatteryTradingAlgorithm,
     SmartPvOnboardingStatus,
     SmartPvOperationalStatus,
     SmartPvSteeringStatus,
@@ -4102,6 +4104,8 @@ class SmartBatterySettings:
     self_consumption_trading_threshold_price: float | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Appended last so existing positional construction keeps its meaning.
+    trading_algorithm: SmartBatteryTradingAlgorithm | None = None
 
     @classmethod
     def from_dict(
@@ -4123,6 +4127,7 @@ class SmartBatterySettings:
 
         battery_mode_raw = data.get("batteryMode")
         imbalance_strategy_raw = data.get("imbalanceTradingStrategy")
+        trading_algorithm_raw = data.get("tradingAlgorithm")
         created_at_raw = data.get("createdAt")
         updated_at_raw = data.get("updatedAt")
 
@@ -4141,8 +4146,240 @@ class SmartBatterySettings:
                 else None
             ),
             self_consumption_trading_threshold_price=(_safe_float(data.get("selfConsumptionTradingThresholdPrice"))),
+            trading_algorithm=(
+                SmartBatteryTradingAlgorithm(trading_algorithm_raw)
+                if isinstance(trading_algorithm_raw, str) and trading_algorithm_raw
+                else None
+            ),
             created_at=_try_parse_datetime(created_at_raw),
             updated_at=_try_parse_datetime(updated_at_raw),
+        )
+
+
+def _require_bool(data: Mapping[str, object], key: str, context: str) -> bool:
+    """Return ``data[key]`` when it is a bool, otherwise raise ``ValueError``."""
+    value = data.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"{context}: '{key}' must be a boolean, got {value!r}")
+    return value
+
+
+def _optional_number(data: Mapping[str, object], key: str, context: str) -> float | None:
+    """Return ``data[key]`` as a float, ``None`` when absent, or raise on a non-numeric value."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, bool) and isinstance(value, int | float):
+        try:
+            number = float(value)
+        except OverflowError:
+            pass
+        else:
+            if math.isfinite(number):
+                return number
+    raise ValueError(f"{context}: '{key}' must be a finite number, got {value!r}")
+
+
+def _optional_datetime(data: Mapping[str, object], key: str, context: str) -> datetime | None:
+    """Return ``data[key]`` as a UTC datetime, ``None`` when absent, or raise on an invalid value.
+
+    Timestamps without an explicit timezone (including date-only values) are
+    rejected rather than read in the host's local timezone.
+    """
+    value = data.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX))
+        except ValueError:
+            parsed = None
+        if parsed is not None and parsed.tzinfo is not None:
+            return parsed.astimezone(UTC)
+    raise ValueError(f"{context}: '{key}' must be an ISO 8601 datetime with a timezone, got {value!r}")
+
+
+def _optional_enum[EnumT: StrEnum](
+    enum_type: type[EnumT], data: Mapping[str, object], key: str, context: str
+) -> EnumT | None:
+    """Return ``data[key]`` as ``enum_type``, ``None`` when absent, or raise on a non-string value."""
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{context}: '{key}' must be a non-empty string, got {value!r}")
+    return enum_type(value)
+
+
+def _required[ValueT](value: ValueT | None, key: str, context: str) -> ValueT:
+    """Return ``value``, raising ``ValueError`` when a required field is absent."""
+    if value is None:
+        raise ValueError(f"{context}: '{key}' is required")
+    return value
+
+
+@dataclass(slots=True)
+class SmartBatteryModeOption:
+    """A battery mode offered for one smart battery."""
+
+    code: SmartBatteryMode
+    selectable: bool
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> SmartBatteryModeOption:
+        """Parse one ``batteryMode.options`` entry."""
+        context = "batteryMode option"
+        return cls(
+            code=_required(_optional_enum(SmartBatteryMode, data, "code", context), "code", context),
+            selectable=_require_bool(data, "selectable", context),
+        )
+
+
+@dataclass(slots=True)
+class SmartBatteryStrategyOption:
+    """An imbalance trading strategy offered for one smart battery."""
+
+    code: SmartBatteryImbalanceStrategy
+    expected_cycles_per_day: float | None = None
+    expected_result_percent_delta: float | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> SmartBatteryStrategyOption:
+        """Parse one ``imbalanceTradingStrategy.options`` entry."""
+        context = "imbalanceTradingStrategy option"
+        return cls(
+            code=_required(_optional_enum(SmartBatteryImbalanceStrategy, data, "code", context), "code", context),
+            expected_cycles_per_day=_optional_number(data, "expectedCyclesPerDay", context),
+            expected_result_percent_delta=_optional_number(data, "expectedResultPercentDelta", context),
+        )
+
+
+@dataclass(slots=True)
+class SmartBatteryThresholdPriceOption:
+    """A self-consumption trading threshold price offered for one smart battery."""
+
+    amount: float
+    expected_result_percent_delta: float | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> SmartBatteryThresholdPriceOption:
+        """Parse one ``selfConsumptionTradingThresholdPrice.options`` entry."""
+        context = "selfConsumptionTradingThresholdPrice option"
+        return cls(
+            amount=_required(_optional_number(data, "amount", context), "amount", context),
+            expected_result_percent_delta=_optional_number(data, "expectedResultPercentDelta", context),
+        )
+
+
+@dataclass(slots=True)
+class SmartBatteryAdjustableSetting[ValueT, OptionT]:
+    """One adjustable smart battery setting as reported by ``smartBatterySettings``.
+
+    Attributes:
+        current: The value currently in effect.
+        updatable: Whether Frank Energie currently allows this setting to be changed.
+        options: The values Frank Energie offers for this specific battery.
+        pending: A requested value that has not taken effect yet.
+        pending_value_effective_from: When ``pending`` takes effect.
+        request_update_before: Deadline for a change to take effect at the next switch moment.
+        update_delayed_till: When a change requested now would take effect.
+    """
+
+    current: ValueT | None
+    updatable: bool
+    options: list[OptionT] = field(default_factory=list)
+    pending: ValueT | None = None
+    pending_value_effective_from: datetime | None = None
+    request_update_before: datetime | None = None
+    update_delayed_till: datetime | None = None
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: object,
+        name: str,
+        parse_value: Callable[[Mapping[str, object], str, str], ValueT | None],
+        parse_option: Callable[[Mapping[str, object]], OptionT],
+    ) -> SmartBatteryAdjustableSetting[ValueT, OptionT] | None:
+        """Parse one setting block, returning ``None`` when the API omits it.
+
+        Raises:
+            ValueError: If the block or one of its options is malformed.
+        """
+        if data is None:
+            return None
+        if not isinstance(data, Mapping):
+            raise ValueError(f"{name} must be an object, got {data!r}")
+
+        # The query always selects ``options``, so a missing key means a
+        # malformed response; an explicit null means nothing is on offer.
+        if "options" not in data:
+            raise ValueError(f"{name}: 'options' is missing")
+        raw_options = data["options"]
+        if raw_options is None:
+            raw_options = []
+        if not isinstance(raw_options, list) or not all(isinstance(option, Mapping) for option in raw_options):
+            raise ValueError(f"{name}: 'options' must be a list of objects, got {raw_options!r}")
+
+        return cls(
+            current=parse_value(data, "current", name),
+            updatable=_require_bool(data, "updatable", name),
+            options=[parse_option(option) for option in raw_options],
+            pending=parse_value(data, "pending", name),
+            pending_value_effective_from=_optional_datetime(data, "pendingValueEffectiveFrom", name),
+            request_update_before=_optional_datetime(data, "requestUpdateBefore", name),
+            update_delayed_till=_optional_datetime(data, "updateDelayedTill", name),
+        )
+
+
+@dataclass(slots=True)
+class SmartBatteryAdjustableSettings:
+    """Per-battery adjustable settings, their allowed options and pending changes.
+
+    Parsed from the ``smartBatterySettings`` query, which the Frank Energie app
+    uses to decide which modes, strategies and threshold prices a specific
+    battery may select.
+
+    The threshold price block is queried without the pending-change fields
+    (as the app does), so its ``pending`` and date fields are always ``None``.
+    """
+
+    battery_mode: SmartBatteryAdjustableSetting[SmartBatteryMode, SmartBatteryModeOption] | None = None
+    imbalance_trading_strategy: (
+        SmartBatteryAdjustableSetting[SmartBatteryImbalanceStrategy, SmartBatteryStrategyOption] | None
+    ) = None
+    self_consumption_trading_threshold_price: (
+        SmartBatteryAdjustableSetting[float, SmartBatteryThresholdPriceOption] | None
+    ) = None
+    locked_for_updates_till: datetime | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> SmartBatteryAdjustableSettings:
+        """Parse the ``smartBatterySettings`` payload.
+
+        Raises:
+            ValueError: If a setting block or one of its options is malformed.
+        """
+        return cls(
+            battery_mode=SmartBatteryAdjustableSetting.from_dict(
+                data.get("batteryMode"),
+                "batteryMode",
+                partial(_optional_enum, SmartBatteryMode),
+                SmartBatteryModeOption.from_dict,
+            ),
+            imbalance_trading_strategy=SmartBatteryAdjustableSetting.from_dict(
+                data.get("imbalanceTradingStrategy"),
+                "imbalanceTradingStrategy",
+                partial(_optional_enum, SmartBatteryImbalanceStrategy),
+                SmartBatteryStrategyOption.from_dict,
+            ),
+            self_consumption_trading_threshold_price=SmartBatteryAdjustableSetting.from_dict(
+                data.get("selfConsumptionTradingThresholdPrice"),
+                "selfConsumptionTradingThresholdPrice",
+                _optional_number,
+                SmartBatteryThresholdPriceOption.from_dict,
+            ),
+            locked_for_updates_till=_optional_datetime(data, "lockedForUpdatesTill", "smartBatterySettings"),
         )
 
 
@@ -4408,6 +4645,11 @@ class SmartBatteryDetails:
             ),
             self_consumption_trading_allowed=settings_data.get("selfConsumptionTradingAllowed", False),
             self_consumption_trading_threshold_price=settings_data.get("selfConsumptionTradingThresholdPrice"),
+            trading_algorithm=(
+                SmartBatteryTradingAlgorithm(settings_data["tradingAlgorithm"])
+                if isinstance(settings_data.get("tradingAlgorithm"), str) and settings_data["tradingAlgorithm"]
+                else None
+            ),
         )
 
         smart_battery = SmartBattery(
