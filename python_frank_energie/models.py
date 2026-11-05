@@ -4311,7 +4311,11 @@ class SmartBatteryAdjustableSetting[ValueT, OptionT]:
         if not isinstance(data, Mapping):
             raise ValueError(f"{name} must be an object, got {data!r}")
 
-        raw_options = data.get("options")
+        # The query always selects ``options``, so a missing key means a
+        # malformed response; an explicit null means nothing is on offer.
+        if "options" not in data:
+            raise ValueError(f"{name}: 'options' is missing")
+        raw_options = data["options"]
         if raw_options is None:
             raw_options = []
         if not isinstance(raw_options, list) or not all(isinstance(option, Mapping) for option in raw_options):

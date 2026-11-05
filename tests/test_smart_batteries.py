@@ -194,6 +194,7 @@ async def test_smart_battery_settings_propagates_request_failures(error):
         {"data": None},
         {"data": {"smartBatterySettings": None}},
         {"data": {"smartBatterySettings": {"batteryMode": {"current": "TRADING", "options": []}}}},
+        {"data": {"smartBatterySettings": {"batteryMode": {"current": "TRADING", "updatable": True}}}},
         {"data": {"smartBatterySettings": {"batteryMode": {"current": "TRADING", "updatable": True, "options": {}}}}},
         {
             "data": {
@@ -227,6 +228,7 @@ async def test_smart_battery_settings_propagates_request_failures(error):
         "no-data",
         "no-settings",
         "missing-updatable",
+        "missing-options",
         "options-not-a-list",
         "non-numeric-amount",
         "amount-too-large-for-float",
