@@ -9,6 +9,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
+from python_frank_energie.domain import SmartBatteryMode, SmartBatteryTradingAlgorithm
 from python_frank_energie.exceptions import AuthException, AuthRequiredException, NetworkError, RateLimitException
 
 from . import load_fixtures
@@ -237,3 +238,122 @@ async def test_smart_battery_settings_missing_or_malformed(response):
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
         with patch.object(api, "_query", return_value=response):
             assert await api.smart_battery_settings("device_id") is None
+
+
+def _details_response(trading_algorithm_field: dict) -> str:
+    """Build a SmartBattery response whose settings carry the given tradingAlgorithm field."""
+    return json.dumps(
+        {
+            "data": {
+                "smartBattery": {
+                    "brand": "Sessy",
+                    "capacity": 5.2,
+                    "id": "device_id",
+                    "settings": {
+                        "batteryMode": "IMBALANCE_TRADING",
+                        "imbalanceTradingStrategy": "AGGRESSIVE",
+                        "selfConsumptionTradingAllowed": True,
+                        "selfConsumptionTradingThresholdPrice": 0.2,
+                        **trading_algorithm_field,
+                    },
+                },
+                "smartBatterySummary": {
+                    "lastKnownStateOfCharge": 50,
+                    "lastKnownStatus": "ONLINE",
+                    "lastUpdate": "2026-11-05T08:00:00.000Z",
+                    "totalResult": 1.5,
+                },
+            }
+        }
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("trading_algorithm_field", "expected"),
+    [
+        ({"tradingAlgorithm": "T1"}, SmartBatteryTradingAlgorithm.T1),
+        ({"tradingAlgorithm": "T2"}, SmartBatteryTradingAlgorithm.T2),
+        ({"tradingAlgorithm": None}, None),
+        ({}, None),
+    ],
+    ids=["t1", "t2", "null", "absent"],
+)
+async def test_smart_battery_details_trading_algorithm(aresponses, trading_algorithm_field, expected):
+    """smart_battery_details parses T1, T2, null and absent tradingAlgorithm values alike."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=_details_response(trading_algorithm_field),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        details = await api.smart_battery_details("device_id")
+        await api.close()
+
+    assert details is not None
+    assert details.smart_battery.settings is not None
+    assert details.smart_battery.settings.battery_mode is SmartBatteryMode.IMBALANCE_TRADING
+    assert details.smart_battery.settings.trading_algorithm is expected
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_settings_are_per_device(aresponses):
+    """Each device gets its own options: requests carry their own deviceId and
+    two batteries with different options never share them."""
+    responses = {
+        "battery_t2": {
+            "batteryMode": {
+                "current": "SELF_CONSUMPTION_MIX",
+                "updatable": True,
+                "options": [
+                    {"code": "IMBALANCE_TRADING", "selectable": True},
+                    {"code": "SELF_CONSUMPTION_MIX", "selectable": True},
+                ],
+            },
+        },
+        "battery_t1": {
+            "batteryMode": {
+                "current": "TRADING",
+                "updatable": True,
+                "options": [
+                    {"code": "TRADING", "selectable": True},
+                    {"code": "SELF_CONSUMPTION", "selectable": True},
+                ],
+            },
+        },
+    }
+
+    async def handler(request):
+        device_id = (await request.json())["variables"]["deviceId"]
+        return aresponses.Response(
+            text=json.dumps({"data": {"smartBatterySettings": responses[device_id]}}),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        )
+
+    aresponses.add(SIMPLE_DATA_URL, "/", "POST", handler)
+    aresponses.add(SIMPLE_DATA_URL, "/", "POST", handler)
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        t2 = await api.smart_battery_settings("battery_t2")
+        t1 = await api.smart_battery_settings("battery_t1")
+        await api.close()
+
+    assert t2 is not None and t2.battery_mode is not None
+    assert t1 is not None and t1.battery_mode is not None
+    assert [option.code for option in t2.battery_mode.options] == [
+        SmartBatteryMode.IMBALANCE_TRADING,
+        SmartBatteryMode.SELF_CONSUMPTION_MIX,
+    ]
+    assert [option.code for option in t1.battery_mode.options] == [
+        SmartBatteryMode.TRADING,
+        SmartBatteryMode.SELF_CONSUMPTION,
+    ]
