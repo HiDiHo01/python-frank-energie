@@ -9,7 +9,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.exceptions import NetworkError, RateLimitException
+from python_frank_energie.exceptions import AuthException, AuthRequiredException, NetworkError, RateLimitException
 
 from . import load_fixtures
 
@@ -105,22 +105,26 @@ async def test_smart_battery_sessions_not_found():
 @pytest.mark.asyncio
 async def test_smart_battery_settings(aresponses, snapshot: SnapshotAssertion):
     """Test the per-battery adjustable settings, options and update windows."""
-    aresponses.add(
-        SIMPLE_DATA_URL,
-        "/",
-        "POST",
-        aresponses.Response(
+    requests: list[dict] = []
+
+    async def handler(request):
+        requests.append(await request.json())
+        return aresponses.Response(
             text=load_fixtures("smart_battery_settings.json"),
             status=200,
             headers={"Content-Type": "application/json"},
-        ),
-    )
+        )
+
+    aresponses.add(SIMPLE_DATA_URL, "/", "POST", handler)
 
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
         settings = await api.smart_battery_settings("device_id")
         await api.close()
 
+    assert [(r["operationName"], r["variables"]) for r in requests] == [
+        ("SmartBatterySettings", {"deviceId": "device_id"})
+    ]
     assert settings is not None
     assert settings == snapshot
 
@@ -155,11 +159,16 @@ async def test_smart_battery_settings_not_found(aresponses):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "error",
-    [RateLimitException("SmartBatterySettings"), NetworkError("Frank Energie API timeout")],
-    ids=["rate-limit", "network"],
+    [
+        AuthException("Not authorized"),
+        AuthRequiredException("Authentication required"),
+        RateLimitException("SmartBatterySettings"),
+        NetworkError("Frank Energie API timeout"),
+    ],
+    ids=["auth", "auth-required", "rate-limit", "network"],
 )
 async def test_smart_battery_settings_propagates_request_failures(error):
-    """Request failures propagate so callers can back off or retry instead of seeing 'no settings'."""
+    """Request failures propagate so callers can reauthenticate, back off or retry instead of seeing 'no settings'."""
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
         with (
