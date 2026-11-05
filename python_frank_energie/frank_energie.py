@@ -50,6 +50,7 @@ from .models import (
     Resolution,
     SmartBatteries,
     SmartBattery,
+    SmartBatteryAdjustableSettings,
     SmartBatteryDetails,
     SmartBatterySessions,
     SmartBatterySummary,
@@ -2826,6 +2827,7 @@ class FrankEnergie:
                             imbalanceTradingStrategy
                             selfConsumptionTradingAllowed
                             selfConsumptionTradingThresholdPrice
+                            tradingAlgorithm
                         }
                     }
                     smartBatterySummary(deviceId: $deviceId) {
@@ -2895,6 +2897,121 @@ class FrankEnergie:
             smart_battery=battery,
             smart_battery_summary=summary,
         )
+
+    async def smart_battery_settings(self, device_id: str) -> SmartBatteryAdjustableSettings | None:
+        """Retrieve the adjustable settings, allowed options and pending changes of a smart battery.
+
+        The options are battery specific: Frank Energie decides which modes,
+        trading strategies and threshold prices each battery may select, and
+        whether each setting can currently be changed.
+
+        Args:
+            device_id: The smart battery device ID.
+
+        Returns:
+            The parsed settings, or ``None`` when the battery is not found or the
+            response is missing or malformed.
+
+        Raises:
+            AuthRequiredException: If the client is not authenticated.
+            AuthException: If the API rejects the authentication.
+            RateLimitException: If the API rate limits the request.
+            ValueError: If ``device_id`` is empty.
+        """
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if not device_id:
+            raise ValueError("Missing required device_id for smart_battery_settings")
+
+        query = FrankEnergieQuery(
+            """
+                query SmartBatterySettings($deviceId: String!) {
+                    smartBatterySettings(deviceId: $deviceId) {
+                        batteryMode {
+                            current
+                            updatable
+                            options {
+                                code
+                                selectable
+                            }
+                            pending
+                            pendingValueEffectiveFrom
+                            requestUpdateBefore
+                            updateDelayedTill
+                        }
+                        imbalanceTradingStrategy {
+                            current
+                            updatable
+                            options {
+                                code
+                                expectedCyclesPerDay
+                                expectedResultPercentDelta
+                            }
+                            pending
+                            pendingValueEffectiveFrom
+                            requestUpdateBefore
+                            updateDelayedTill
+                        }
+                        selfConsumptionTradingThresholdPrice {
+                            current
+                            updatable
+                            options {
+                                amount
+                                expectedResultPercentDelta
+                            }
+                        }
+                        lockedForUpdatesTill
+                    }
+                }
+            """,
+            "SmartBatterySettings",
+            {"deviceId": device_id},
+        )
+
+        try:
+            _LOGGER.debug("Querying smart battery settings for device_id: %s", device_id)
+            response = await self._query(query)
+        except SmartBatteryNotFoundException:
+            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            return None
+        except (AuthException, AuthRequiredException, RateLimitException):
+            raise
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to query smart battery settings for device_id %s: %s",
+                device_id,
+                err,
+            )
+            return None
+
+        if not response:
+            _LOGGER.debug("Empty response received for smart battery settings device_id: %s", device_id)
+            return None
+
+        if response.get("errors"):
+            _LOGGER.error(
+                "Smart battery settings response for device_id %s contained errors: %s",
+                device_id,
+                response["errors"],
+            )
+            return None
+
+        settings_data = _dig(response, "data", "smartBatterySettings")
+
+        if not isinstance(settings_data, dict):
+            _LOGGER.debug("No smart battery settings in response for device_id: %s", device_id)
+            return None
+
+        try:
+            return SmartBatteryAdjustableSettings.from_dict(settings_data)
+        except ValueError as err:
+            _LOGGER.error(
+                "Failed to parse smart battery settings for device_id %s: %s",
+                device_id,
+                err,
+            )
+            return None
 
     async def smart_battery_sessions(
         self, device_id: str, start_date: date, end_date: date

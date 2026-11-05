@@ -1257,6 +1257,22 @@ class TestFrankEnergieAPIEndpointsAuth:
             await client.smart_battery_details("")
 
     @pytest.mark.asyncio
+    async def test_frank_energie_smart_battery_settings_not_authenticated(self):
+        """Test smart battery settings when not authenticated."""
+        client = FrankEnergie()
+
+        with pytest.raises(AuthRequiredException):
+            await client.smart_battery_settings("battery_123")
+
+    @pytest.mark.asyncio
+    async def test_frank_energie_smart_battery_settings_empty_device_id(self):
+        """Test smart battery settings with empty device ID."""
+        client = FrankEnergie(auth_token="test_token")
+
+        with pytest.raises(ValueError, match="Missing required device_id"):
+            await client.smart_battery_settings("")
+
+    @pytest.mark.asyncio
     async def test_frank_energie_smart_battery_sessions_not_authenticated(self):
         """Test smart battery sessions when not authenticated."""
         from datetime import date

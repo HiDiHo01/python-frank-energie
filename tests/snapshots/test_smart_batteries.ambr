@@ -49,3 +49,76 @@
     'trading_result': None,
   })
 # ---
+# name: test_smart_battery_settings
+  dict({
+    'battery_mode': dict({
+      'current': <SmartBatteryMode.SELF_CONSUMPTION_MIX: 'self_consumption_mix'>,
+      'options': list([
+        dict({
+          'code': <SmartBatteryMode.IMBALANCE_TRADING: 'imbalance_trading'>,
+          'selectable': True,
+        }),
+        dict({
+          'code': <SmartBatteryMode.SELF_CONSUMPTION_MIX: 'self_consumption_mix'>,
+          'selectable': True,
+        }),
+      ]),
+      'pending': None,
+      'pending_value_effective_from': None,
+      'request_update_before': datetime.datetime(2026, 11, 5, 14, 0, tzinfo=datetime.timezone.utc),
+      'updatable': True,
+      'update_delayed_till': datetime.datetime(2026, 11, 5, 23, 0, tzinfo=datetime.timezone.utc),
+    }),
+    'imbalance_trading_strategy': dict({
+      'current': <SmartBatteryImbalanceStrategy.AGGRESSIVE: 'aggressive'>,
+      'options': list([
+        dict({
+          'code': <SmartBatteryImbalanceStrategy.STANDARD: 'standard'>,
+          'expected_cycles_per_day': 1.1,
+          'expected_result_percent_delta': 0.0,
+        }),
+        dict({
+          'code': <SmartBatteryImbalanceStrategy.AGGRESSIVE: 'aggressive'>,
+          'expected_cycles_per_day': 1.3,
+          'expected_result_percent_delta': 14.62,
+        }),
+      ]),
+      'pending': None,
+      'pending_value_effective_from': None,
+      'request_update_before': None,
+      'updatable': True,
+      'update_delayed_till': None,
+    }),
+    'locked_for_updates_till': None,
+    'self_consumption_trading_threshold_price': dict({
+      'current': 0.2,
+      'options': list([
+        dict({
+          'amount': 0.2,
+          'expected_result_percent_delta': -28.0,
+        }),
+        dict({
+          'amount': 0.25,
+          'expected_result_percent_delta': -28.7,
+        }),
+        dict({
+          'amount': 0.3,
+          'expected_result_percent_delta': -29.2,
+        }),
+        dict({
+          'amount': 0.35,
+          'expected_result_percent_delta': -29.8,
+        }),
+        dict({
+          'amount': 0.4,
+          'expected_result_percent_delta': -31.4,
+        }),
+      ]),
+      'pending': None,
+      'pending_value_effective_from': None,
+      'request_update_before': None,
+      'updatable': False,
+      'update_delayed_till': None,
+    }),
+  })
+# ---

@@ -109,6 +109,7 @@ class PowerDeliveryState(_FallbackStrEnum):
 class SmartBatteryMode(_FallbackStrEnum):
     """Smart Battery mode."""
 
+    CONGESTION = "congestion"
     IMBALANCE_TRADING = "imbalance_trading"
     SELF_CONSUMPTION = "self_consumption"
     SELF_CONSUMPTION_MIX = "self_consumption_mix"
@@ -124,6 +125,18 @@ class SmartBatteryImbalanceStrategy(_FallbackStrEnum):
     IMBALANCE_ONLY = "imbalance_only"
     AGGRESSIVE = "aggressive"
     STANDARD = "standard"
+    UNKNOWN = "unknown"
+
+
+class SmartBatteryTradingAlgorithm(_FallbackStrEnum):
+    """Smart Battery trading algorithm generation.
+
+    The Frank Energie app only lets the self-consumption threshold price be
+    changed on ``T1`` batteries.
+    """
+
+    T1 = "t1"
+    T2 = "t2"
     UNKNOWN = "unknown"
 
 

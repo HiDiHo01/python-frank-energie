@@ -1,0 +1,69 @@
+{
+  "data": {
+    "smartBatterySettings": {
+      "batteryMode": {
+        "current": "SELF_CONSUMPTION_MIX",
+        "updatable": true,
+        "options": [
+          {
+            "code": "IMBALANCE_TRADING",
+            "selectable": true
+          },
+          {
+            "code": "SELF_CONSUMPTION_MIX",
+            "selectable": true
+          }
+        ],
+        "pending": null,
+        "pendingValueEffectiveFrom": null,
+        "requestUpdateBefore": "2026-11-05T14:00:00.000Z",
+        "updateDelayedTill": "2026-11-05T23:00:00.000Z"
+      },
+      "imbalanceTradingStrategy": {
+        "current": "AGGRESSIVE",
+        "updatable": true,
+        "options": [
+          {
+            "code": "STANDARD",
+            "expectedCyclesPerDay": 1.1,
+            "expectedResultPercentDelta": 0
+          },
+          {
+            "code": "AGGRESSIVE",
+            "expectedCyclesPerDay": 1.3,
+            "expectedResultPercentDelta": 14.62
+          }
+        ],
+        "pending": null,
+        "pendingValueEffectiveFrom": null
+      },
+      "selfConsumptionTradingThresholdPrice": {
+        "current": 0.2,
+        "updatable": false,
+        "options": [
+          {
+            "amount": 0.2,
+            "expectedResultPercentDelta": -28
+          },
+          {
+            "amount": 0.25,
+            "expectedResultPercentDelta": -28.7
+          },
+          {
+            "amount": 0.3,
+            "expectedResultPercentDelta": -29.2
+          },
+          {
+            "amount": 0.35,
+            "expectedResultPercentDelta": -29.8
+          },
+          {
+            "amount": 0.4,
+            "expectedResultPercentDelta": -31.4
+          }
+        ]
+      },
+      "lockedForUpdatesTill": null
+    }
+  }
+}

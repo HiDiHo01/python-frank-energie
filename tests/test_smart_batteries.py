@@ -1,12 +1,15 @@
 """Tests for Frank Energie Smart batteries implementation."""
 
+import json
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 import aiohttp
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
+from python_frank_energie.exceptions import RateLimitException
 
 from . import load_fixtures
 
@@ -97,3 +100,110 @@ async def test_smart_battery_sessions_not_found():
                 datetime.now(UTC),
             )
             assert result is None
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_settings(aresponses, snapshot: SnapshotAssertion):
+    """Test the per-battery adjustable settings, options and update windows."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=load_fixtures("smart_battery_settings.json"),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        settings = await api.smart_battery_settings("device_id")
+        await api.close()
+
+    assert settings is not None
+    assert settings == snapshot
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_settings_not_found(aresponses):
+    """Test the real battery-not-found GraphQL error maps to None."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [{"message": "smart-battery-error:battery-not-found", "path": ["smartBatterySettings"]}],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        result = await api.smart_battery_settings("missing_device")
+        await api.close()
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_settings_reraises_rate_limit():
+    """Rate limits propagate so callers can back off instead of seeing 'no settings'."""
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        with (
+            patch.object(api, "_query", side_effect=RateLimitException("SmartBatterySettings")),
+            pytest.raises(RateLimitException),
+        ):
+            await api.smart_battery_settings("device_id")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        {
+            "data": {"smartBatterySettings": {"imbalanceTradingStrategy": None, "lockedForUpdatesTill": None}},
+            "errors": [{"message": "Something failed", "path": ["smartBatterySettings", "imbalanceTradingStrategy"]}],
+        },
+        {"data": {"smartBatterySettings": {"lockedForUpdatesTill": "tomorrow"}}},
+        None,
+        {"data": None},
+        {"data": {"smartBatterySettings": None}},
+        {"data": {"smartBatterySettings": {"batteryMode": {"current": "TRADING", "options": []}}}},
+        {"data": {"smartBatterySettings": {"batteryMode": {"current": "TRADING", "updatable": True, "options": {}}}}},
+        {
+            "data": {
+                "smartBatterySettings": {
+                    "selfConsumptionTradingThresholdPrice": {
+                        "current": 0.2,
+                        "updatable": True,
+                        "options": [{"amount": "0.2"}],
+                    }
+                }
+            }
+        },
+    ],
+    ids=[
+        "graphql-errors",
+        "bad-datetime",
+        "no-response",
+        "no-data",
+        "no-settings",
+        "missing-updatable",
+        "options-not-a-list",
+        "non-numeric-amount",
+    ],
+)
+async def test_smart_battery_settings_missing_or_malformed(response):
+    """Test smart_battery_settings returns None instead of guessing on a bad response."""
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        with patch.object(api, "_query", return_value=response):
+            assert await api.smart_battery_settings("device_id") is None

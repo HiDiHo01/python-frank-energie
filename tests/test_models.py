@@ -9,7 +9,7 @@ import pytest
 from freezegun import freeze_time
 from syrupy.assertion import SnapshotAssertion
 
-from python_frank_energie.domain import SmartBatteryImbalanceStrategy, SmartBatteryMode
+from python_frank_energie.domain import SmartBatteryImbalanceStrategy, SmartBatteryMode, SmartBatteryTradingAlgorithm
 from python_frank_energie.exceptions import AuthException, NoMarketPricesAvailableException, RequestException
 from python_frank_energie.models import (
     Authentication,
@@ -23,6 +23,7 @@ from python_frank_energie.models import (
     MarketPrices,
     Me,
     MonthSummary,
+    SmartBatteryAdjustableSettings,
     SmartBatterySession,
     SmartBatterySettings,
     SmartHvac,
@@ -855,6 +856,60 @@ def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values(
     assert settings.battery_mode is SmartBatteryMode.UNKNOWN
     assert settings.imbalance_trading_strategy is SmartBatteryImbalanceStrategy.UNKNOWN
     assert settings.self_consumption_trading_threshold_price == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize(
+    ("raw_algorithm", "expected"),
+    [
+        ("T1", SmartBatteryTradingAlgorithm.T1),
+        ("T2", SmartBatteryTradingAlgorithm.T2),
+        ("T3", SmartBatteryTradingAlgorithm.UNKNOWN),
+        (None, None),
+    ],
+)
+def test_smart_battery_settings_from_dict_trading_algorithm(
+    raw_algorithm: str | None, expected: SmartBatteryTradingAlgorithm | None
+) -> None:
+    """The trading algorithm parses known values, falls back to UNKNOWN, and stays None when absent."""
+    settings = SmartBatterySettings.from_dict({"batteryMode": "IMBALANCE_TRADING", "tradingAlgorithm": raw_algorithm})
+
+    assert settings is not None
+    assert settings.trading_algorithm is expected
+
+
+def test_smart_battery_settings_from_dict_congestion_mode() -> None:
+    """CONGESTION is a known battery mode in the Frank Energie app's GraphQL enum."""
+    settings = SmartBatterySettings.from_dict({"batteryMode": "CONGESTION"})
+
+    assert settings is not None
+    assert settings.battery_mode is SmartBatteryMode.CONGESTION
+
+
+def test_smart_battery_adjustable_settings_unknown_codes_and_omitted_blocks() -> None:
+    """Unknown option codes map to UNKNOWN; omitted blocks and options stay empty rather than invented."""
+    settings = SmartBatteryAdjustableSettings.from_dict(
+        {
+            "batteryMode": {
+                "current": "NEW_MODE",
+                "updatable": False,
+                "options": [{"code": "NEW_MODE", "selectable": False}],
+                "pending": "TRADING",
+                "pendingValueEffectiveFrom": "2026-11-05T23:00:00.000Z",
+            },
+            "imbalanceTradingStrategy": {"current": None, "updatable": True, "options": None},
+        }
+    )
+
+    assert settings.battery_mode is not None
+    assert settings.battery_mode.current is SmartBatteryMode.UNKNOWN
+    assert settings.battery_mode.options[0].code is SmartBatteryMode.UNKNOWN
+    assert settings.battery_mode.pending is SmartBatteryMode.TRADING
+    assert settings.battery_mode.pending_value_effective_from == datetime(2026, 11, 5, 23, tzinfo=UTC)
+    assert settings.imbalance_trading_strategy is not None
+    assert settings.imbalance_trading_strategy.current is None
+    assert settings.imbalance_trading_strategy.options == []
+    assert settings.self_consumption_trading_threshold_price is None
+    assert settings.locked_for_updates_till is None
 
 
 @pytest.fixture
