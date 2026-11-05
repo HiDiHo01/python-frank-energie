@@ -347,8 +347,10 @@ async def test_smart_battery_settings_are_per_device(aresponses):
         t1 = await api.smart_battery_settings("battery_t1")
         await api.close()
 
-    assert t2 is not None and t2.battery_mode is not None
-    assert t1 is not None and t1.battery_mode is not None
+    assert t2 is not None
+    assert t2.battery_mode is not None
+    assert t1 is not None
+    assert t1.battery_mode is not None
     assert [option.code for option in t2.battery_mode.options] == [
         SmartBatteryMode.IMBALANCE_TRADING,
         SmartBatteryMode.SELF_CONSUMPTION_MIX,
