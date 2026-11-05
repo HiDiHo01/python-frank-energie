@@ -71,6 +71,7 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 _DISTRIBUTION_NAME = "python-frank-energie"
+_SMART_BATTERY_NOT_FOUND_LOG = "Smart battery not found for device_id: %s"
 
 try:
     VERSION = _pkg_version(_DISTRIBUTION_NAME)
@@ -2846,7 +2847,7 @@ class FrankEnergie:
             _LOGGER.debug("Querying smart battery details for device_id: %s", device_id)
             response = await self._query(query)
         except SmartBatteryNotFoundException:
-            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            _LOGGER.debug(_SMART_BATTERY_NOT_FOUND_LOG, device_id)
             return None
         except Exception as err:
             _LOGGER.error(
@@ -2973,16 +2974,12 @@ class FrankEnergie:
             _LOGGER.debug("Querying smart battery settings for device_id: %s", device_id)
             response = await self._query(query)
         except SmartBatteryNotFoundException:
-            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            _LOGGER.debug(_SMART_BATTERY_NOT_FOUND_LOG, device_id)
             return None
         except (AuthException, AuthRequiredException, RateLimitException):
             raise
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to query smart battery settings for device_id %s: %s",
-                device_id,
-                err,
-            )
+        except Exception:
+            _LOGGER.exception("Failed to query smart battery settings for device_id %s", device_id)
             return None
 
         if not response:
@@ -3005,12 +3002,8 @@ class FrankEnergie:
 
         try:
             return SmartBatteryAdjustableSettings.from_dict(settings_data)
-        except ValueError as err:
-            _LOGGER.error(
-                "Failed to parse smart battery settings for device_id %s: %s",
-                device_id,
-                err,
-            )
+        except ValueError:
+            _LOGGER.exception("Failed to parse smart battery settings for device_id %s", device_id)
             return None
 
     async def smart_battery_sessions(
@@ -3097,7 +3090,7 @@ class FrankEnergie:
             response = await self._query(query)
             _LOGGER.debug("SmartBatterySessions Response: %s", response)
         except SmartBatteryNotFoundException:
-            _LOGGER.debug("Smart battery not found for device_id: %s", device_id)
+            _LOGGER.debug(_SMART_BATTERY_NOT_FOUND_LOG, device_id)
             return None
         except Exception as e:
             _LOGGER.error("Failed to query smart battery sessions: %s", e)
