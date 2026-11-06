@@ -173,6 +173,30 @@ def _dig(data: object, *keys: str) -> object:
     return current
 
 
+def _require_device_inventory(response: object, field_name: str) -> list[dict[str, Any]]:
+    """Validate an entire inventory, including stable, unique device IDs.
+
+    Only an explicitly returned empty list in an otherwise successful response
+    means the provider has no devices of this type.
+    """
+    if not isinstance(response, dict) or response.get("errors"):
+        raise RequestException(f"Failed or invalid {field_name} GraphQL response.")
+    payload = response.get("data")
+    if not isinstance(payload, dict) or not isinstance(payload.get(field_name), list):
+        raise RequestException(f"Missing or invalid {field_name} inventory in GraphQL response.")
+
+    devices: list[dict[str, Any]] = payload[field_name]
+    seen_ids: set[str] = set()
+    for device in devices:
+        if not isinstance(device, dict):
+            raise RequestException(f"Invalid entry in {field_name} inventory.")
+        device_id = device.get("id")
+        if not isinstance(device_id, str) or not device_id.strip() or device_id in seen_ids:
+            raise RequestException(f"Missing or duplicate device ID in {field_name} inventory.")
+        seen_ids.add(device_id)
+    return devices
+
+
 class _MonthSummaryReadingsUnavailable(FrankEnergieException):
     """Signal that the API cannot calculate a month summary without meter readings."""
 
@@ -971,14 +995,13 @@ class FrankEnergie:
             start_date: The start date for filtering the enode charger information.
 
         Returns:
-            The enode charger information, or an EnodeChargers with an empty
-            charger list if not authenticated.
+            The enode charger information, only when the API explicitly supplies a complete inventory.
 
         Raises:
             FrankEnergieException: If the request fails.
         """
         if not self.is_authenticated:
-            return EnodeChargers(chargers=[])
+            raise AuthRequiredException("Authentication is required.")
 
         if not isinstance(site_reference, str) or not site_reference.strip():
             raise FrankEnergieException("A valid non-empty site_reference must be provided.")
@@ -1040,20 +1063,13 @@ class FrankEnergie:
         )
 
         try:
-            response: dict[str, Any] = await self._query(query)
-            chargers_data = _dig(response, "data", "enodeChargers")
-            if not isinstance(chargers_data, list):
-                _LOGGER.debug("No chargers found in response: %s", response)
-                return EnodeChargers(chargers=[])
-            _LOGGER.debug("%s Enode Chargers found", len(chargers_data))
+            response = await self._query(query)
+            chargers_data = _require_device_inventory(response, "enodeChargers")
             return EnodeChargers.from_dict(chargers_data)
-        except SmartChargingNotEnabledException as error:
-            _LOGGER.debug("Smart charging not enabled: %s", error)
-            return EnodeChargers(chargers=[])
-        except Exception as error:
-            _LOGGER.debug("Error in enode_chargers: %s", error)
-            _LOGGER.exception("Unexpected error during query: %s", error)
-            return EnodeChargers(chargers=[])
+        except FrankEnergieException:
+            raise
+        except Exception as err:
+            raise RequestException("Failed to parse enodeChargers inventory.") from err
 
     async def invoices(self, site_reference: str) -> Invoices:
         """Retrieve the invoices data.
@@ -2732,12 +2748,11 @@ class FrankEnergie:
             )
             raise FrankEnergieException("Could not retrieve usage and costs for the specified period.") from err
 
-    # async def smart_batteries(self) -> SmartBatteries: # < better for HA, but less explicit about possible None return
-    async def smart_batteries(self) -> SmartBatteries | None:
+    async def smart_batteries(self) -> SmartBatteries:
         """Get the users smart batteries.
         For this to work, the user must have a smart battery connected to their account and smart-trading must be enabled.
 
-        Returns a list of all smart batteries.
+        Return a complete inventory; raise on failed or malformed responses.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -2763,50 +2778,13 @@ class FrankEnergie:
         )
 
         try:
-            _LOGGER.debug("Querying smart batteries")
             response = await self._query(query)
-        except SmartTradingNotEnabledException as e:
-            _LOGGER.debug("Smart trading not enabled: %s", e)
-            return SmartBatteries([])
-        except Exception as e:
-            _LOGGER.error("Failed to query smart batteries: %s", e)
-            return SmartBatteries([])
-
-        # Handle empty or missing response data
-        if not response:
-            _LOGGER.error("Empty or missing response for 'smartBatteries'")
-            return SmartBatteries([])
-
-        if response.get("errors"):
-            _LOGGER.error("Error response for 'smartBatteries': %s", response)
-            return SmartBatteries([])
-
-        data = response.get("data")
-
-        if not isinstance(data, dict):
-            _LOGGER.warning("Missing 'data' field in smartBatteries response")
-            return SmartBatteries([])
-
-        _LOGGER.debug("Response data for 'smartBatteries': %s", response)
-        batteries_data = data.get("smartBatteries")
-
-        if not isinstance(batteries_data, list):
-            _LOGGER.debug("No smart batteries found")
-            return SmartBatteries([])
-
-        batteries: list[SmartBattery] = []
-
-        for entry in batteries_data:
-            if not isinstance(entry, dict):
-                _LOGGER.debug("Skipping invalid smart battery entry: %s", entry)
-                continue
-
-            try:
-                batteries.append(SmartBattery.from_dict(entry))
-            except Exception as err:
-                _LOGGER.debug("Failed to parse smart battery entry: %s", err)
-
-        return SmartBatteries(batteries)
+            batteries_data = _require_device_inventory(response, "smartBatteries")
+            return SmartBatteries([SmartBattery.from_dict(item) for item in batteries_data])
+        except FrankEnergieException:
+            raise
+        except Exception as err:
+            raise RequestException("Failed to parse smartBatteries inventory.") from err
 
     async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails | None:
         """Retrieve smart battery details and summary."""
@@ -3262,11 +3240,11 @@ class FrankEnergie:
     ENODE_VEHICLES_OPERATIONNAME = "EnodeVehicles"
     ENODE_VEHICLES_VARIABLES: dict[str, object] = {}
 
-    async def enode_vehicles(self) -> EnodeVehicles | None:
+    async def enode_vehicles(self) -> EnodeVehicles:
         """Get the users enode vehicles.
         For this to work, the user must have a enode vehicle connected to their account and smart-trading must be enabled.
 
-        Returns a list of all enode vehicles.
+        Return a complete inventory; raise on failed or malformed responses.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -3278,28 +3256,13 @@ class FrankEnergie:
         )
 
         try:
-            _LOGGER.debug("Querying enode vehicles")
             response = await self._query(query)
-        except SmartChargingNotEnabledException as e:
-            _LOGGER.debug("Smart charging not enabled: %s", e)
-            return None
-        except Exception as e:
-            _LOGGER.error("Failed to query enode vehicles: %s", e)
-            return None
-
-        vehicles_data = _dig(response, "data", "enodeVehicles")
-
-        if not isinstance(vehicles_data, list) or not vehicles_data:
-            _LOGGER.debug("No enode vehicles found")
-            return EnodeVehicles([])
-
-        try:
-            enode_vehicles = [EnodeVehicle.from_dict(v) for v in vehicles_data]
-        except (KeyError, ValueError, TypeError) as err:
-            _LOGGER.error("Failed to parse enode vehicles: %s", err)
-            return EnodeVehicles([])
-
-        return EnodeVehicles(enode_vehicles)
+            vehicles_data = _require_device_inventory(response, "enodeVehicles")
+            return EnodeVehicles([EnodeVehicle.from_dict(item) for item in vehicles_data])
+        except FrankEnergieException:
+            raise
+        except Exception as err:
+            raise RequestException("Failed to parse enodeVehicles inventory.") from err
 
     def _validate_not_future_date(self, value: date) -> None:
         if value > datetime.now(UTC).date():
