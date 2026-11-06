@@ -173,19 +173,44 @@ def _dig(data: object, *keys: str) -> object:
     return current
 
 
+_REQUIRED_INVENTORY_FIELDS: Mapping[str, frozenset[str]] = {
+    "enodeChargers": frozenset(
+        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable"}
+    ),
+    "enodeVehicles": frozenset(
+        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable"}
+    ),
+    "smartBatteries": frozenset(
+        {
+            "brand",
+            "capacity",
+            "createdAt",
+            "externalReference",
+            "maxChargePower",
+            "maxDischargePower",
+            "provider",
+            "updatedAt",
+        }
+    ),
+}
+
+
 def _require_device_inventory(response: object, field_name: str) -> list[dict[str, Any]]:
     """Validate an entire inventory, including stable, unique device IDs.
 
     Only an explicitly returned empty list in an otherwise successful response
     means the provider has no devices of this type.
     """
-    if not isinstance(response, dict) or response.get("errors"):
+    if not isinstance(response, dict):
+        raise RequestException(f"Failed or invalid {field_name} GraphQL response.")
+    if "errors" in response and (not isinstance(response["errors"], list) or response["errors"]):
         raise RequestException(f"Failed or invalid {field_name} GraphQL response.")
     payload = response.get("data")
     if not isinstance(payload, dict) or not isinstance(payload.get(field_name), list):
         raise RequestException(f"Missing or invalid {field_name} inventory in GraphQL response.")
 
     devices: list[dict[str, Any]] = payload[field_name]
+    required_fields = _REQUIRED_INVENTORY_FIELDS.get(field_name, frozenset())
     seen_ids: set[str] = set()
     for device in devices:
         if not isinstance(device, dict):
@@ -194,6 +219,21 @@ def _require_device_inventory(response: object, field_name: str) -> list[dict[st
         if not isinstance(device_id, str) or not device_id.strip() or device_id in seen_ids:
             raise RequestException(f"Missing or duplicate device ID in {field_name} inventory.")
         seen_ids.add(device_id)
+        if not required_fields.issubset(device):
+            raise RequestException(f"Incomplete {field_name} inventory record.")
+        if field_name in ("enodeChargers", "enodeVehicles") and (
+            not isinstance(device["canSmartCharge"], bool) or not isinstance(device["isReachable"], bool)
+        ):
+            raise RequestException(f"Invalid {field_name} inventory status.")
+        if field_name == "enodeVehicles":
+            interventions = device["interventions"]
+            if not isinstance(interventions, list) or any(
+                not isinstance(intervention, dict)
+                or not isinstance(intervention.get("title"), str)
+                or not isinstance(intervention.get("description"), str)
+                for intervention in interventions
+            ):
+                raise RequestException("Invalid enodeVehicles inventory interventions.")
     return devices
 
 

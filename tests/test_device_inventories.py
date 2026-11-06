@@ -1,5 +1,6 @@
 """Regression tests for lossless hardware-inventory error handling."""
 
+import json
 from datetime import date
 from unittest.mock import patch
 
@@ -14,6 +15,8 @@ from python_frank_energie.exceptions import (
     SmartChargingNotEnabledException,
     SmartTradingNotEnabledException,
 )
+
+from . import load_fixtures
 
 pytestmark = pytest.mark.asyncio
 
@@ -36,10 +39,16 @@ async def _fetch_inventory(client: FrankEnergie, method_name: str) -> object:
 
 
 @pytest.mark.parametrize(("method_name", "field_name", "attribute"), _INVENTORY_METHODS)
-async def test_explicit_successful_empty_inventory(method_name: str, field_name: str, attribute: str) -> None:
+@pytest.mark.parametrize("include_empty_errors", (False, True))
+async def test_explicit_successful_empty_inventory(
+    method_name: str, field_name: str, attribute: str, include_empty_errors: bool
+) -> None:
     """A complete and explicitly empty API response is a valid empty inventory."""
+    response: dict[str, object] = {"data": {field_name: []}}
+    if include_empty_errors:
+        response["errors"] = []
     client = FrankEnergie(auth_token="test_token")
-    with patch.object(client, "_query", return_value={"data": {field_name: []}}):
+    with patch.object(client, "_query", return_value=response):
         inventory = await _fetch_inventory(client, method_name)
     assert getattr(inventory, attribute) == []
 
@@ -55,6 +64,10 @@ async def test_explicit_successful_empty_inventory(method_name: str, field_name:
         "invalid_collection",
         "graphql_error",
         "partial_graphql_error",
+        "invalid_errors_empty_dict",
+        "invalid_errors_empty_string",
+        "invalid_errors_null",
+        "invalid_errors_string",
         "invalid_record",
         "missing_identifier",
         "duplicate_identifier",
@@ -75,6 +88,10 @@ async def test_failed_or_incomplete_inventory_cannot_report_device_absence(
             "data": {field_name: []},
             "errors": [{"message": "Partial upstream error"}],
         },
+        "invalid_errors_empty_dict": {"data": {field_name: []}, "errors": {}},
+        "invalid_errors_empty_string": {"data": {field_name: []}, "errors": ""},
+        "invalid_errors_null": {"data": {field_name: []}, "errors": None},
+        "invalid_errors_string": {"data": {field_name: []}, "errors": "upstream error"},
         "invalid_record": {"data": {field_name: [None]}},
         "missing_identifier": {"data": {field_name: [{"id": ""}]}},
         "duplicate_identifier": {"data": {field_name: [{"id": "device-1"}, {"id": "device-1"}]}},
@@ -123,11 +140,131 @@ async def test_unexpected_transport_error_is_not_an_empty_inventory(
     assert isinstance(caught.value.__cause__, TimeoutError)
 
 
-async def test_invalid_charger_payload_fails_atomically() -> None:
-    """An unparseable charger must not silently disappear from inventory."""
+def _fixture_inventory_record(filename: str, field_name: str) -> dict[str, object]:
+    """Return a sanitized device record from an existing API fixture."""
+    response = json.loads(load_fixtures(filename))
+    return response["data"][field_name][0]
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    (
+        "brand",
+        "capacity",
+        "createdAt",
+        "externalReference",
+        "maxChargePower",
+        "maxDischargePower",
+        "provider",
+        "updatedAt",
+    ),
+)
+async def test_missing_battery_field_rejects_inventory(missing_field: str) -> None:
+    """All queried battery fields must be present, including nullable fields."""
+    battery = _fixture_inventory_record("smart_batteries.json", "smartBatteries")
+    del battery[missing_field]
     client = FrankEnergie(auth_token="test_token")
     with (
-        patch.object(client, "_query", return_value={"data": {"enodeChargers": [{"id": "test-charger"}]}}),
+        patch.object(client, "_query", return_value={"data": {"smartBatteries": [battery]}}),
+        pytest.raises(RequestException, match="Incomplete smartBatteries"),
+    ):
+        await client.smart_batteries()
+
+
+async def test_nullable_battery_fields_are_supported() -> None:
+    """An explicitly returned null battery field is not a missing field."""
+    battery = _fixture_inventory_record("smart_batteries.json", "smartBatteries")
+    for field_name in (
+        "brand",
+        "capacity",
+        "createdAt",
+        "externalReference",
+        "maxChargePower",
+        "maxDischargePower",
+        "provider",
+        "updatedAt",
+    ):
+        battery[field_name] = None
+    client = FrankEnergie(auth_token="test_token")
+    with patch.object(client, "_query", return_value={"data": {"smartBatteries": [battery]}}):
+        inventory = await client.smart_batteries()
+    assert len(inventory.batteries) == 1
+    assert inventory.batteries[0].brand is None
+    assert inventory.batteries[0].capacity is None
+
+
+@pytest.mark.parametrize(
+    "interventions",
+    (
+        None,
+        "not-a-list",
+        [None],
+        ["invalid-record"],
+        [{"title": "Incomplete"}],
+        [{"title": None, "description": "Malformed"}],
+    ),
+)
+async def test_malformed_vehicle_interventions_reject_inventory(interventions: object) -> None:
+    """Reject vehicle records whose interventions would be dropped or misparsed."""
+    vehicle = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
+    vehicle["interventions"] = interventions
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {"enodeVehicles": [vehicle]}}),
+        pytest.raises(RequestException, match="interventions"),
+    ):
+        await client.enode_vehicles()
+
+
+async def test_nullable_vehicle_state_fields_are_supported() -> None:
+    """Retain supported nullable vehicle deadlines, charge state and last-seen time."""
+    vehicle = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
+    vehicle["lastSeen"] = None
+    vehicle["chargeSettings"]["calculatedDeadline"] = None
+    vehicle["chargeState"]["batteryLevel"] = None
+    client = FrankEnergie(auth_token="test_token")
+    with patch.object(client, "_query", return_value={"data": {"enodeVehicles": [vehicle]}}):
+        inventory = await client.enode_vehicles()
+    assert len(inventory.vehicles) == 1
+    assert inventory.vehicles[0].last_seen is None
+    assert inventory.vehicles[0].charge_settings.calculated_deadline is None
+    assert inventory.vehicles[0].charge_state.battery_level is None
+
+
+async def test_invalid_charger_payload_fails_atomically() -> None:
+    """A valid charger followed by an unparseable one must fail the whole request."""
+    valid_charger = {
+        "id": "valid-charger",
+        "canSmartCharge": True,
+        "chargeSettings": {
+            "hourFriday": 420,
+            "hourMonday": 420,
+            "hourSaturday": 420,
+            "hourSunday": 420,
+            "hourThursday": 420,
+            "hourTuesday": 420,
+            "hourWednesday": 420,
+            "id": "valid-settings",
+            "isSmartChargingEnabled": True,
+            "maxChargeLimit": 80,
+            "minChargeLimit": 20,
+        },
+        "chargeState": {"isCharging": False, "isPluggedIn": False},
+        "information": {"brand": "Test", "model": "Charger", "year": None},
+        "interventions": [],
+        "isReachable": True,
+    }
+    invalid_charger = {**valid_charger, "id": "invalid-charger", "chargeSettings": {"id": "invalid-settings"}}
+    client = FrankEnergie(auth_token="test_token")
+    with patch.object(client, "_query", return_value={"data": {"enodeChargers": [valid_charger]}}):
+        inventory = await client.enode_chargers("test_site", date(2026, 11, 6))
+    assert [charger.id for charger in inventory.chargers] == ["valid-charger"]
+    with (
+        patch.object(
+            client,
+            "_query",
+            return_value={"data": {"enodeChargers": [valid_charger, invalid_charger]}},
+        ),
         pytest.raises(RequestException, match="parse enodeChargers"),
     ):
         await client.enode_chargers("test_site", date(2026, 11, 6))
