@@ -36,9 +36,7 @@ async def _fetch_inventory(client: FrankEnergie, method_name: str) -> object:
 
 
 @pytest.mark.parametrize(("method_name", "field_name", "attribute"), _INVENTORY_METHODS)
-async def test_explicit_successful_empty_inventory(
-    method_name: str, field_name: str, attribute: str
-) -> None:
+async def test_explicit_successful_empty_inventory(method_name: str, field_name: str, attribute: str) -> None:
     """A complete and explicitly empty API response is a valid empty inventory."""
     client = FrankEnergie(auth_token="test_token")
     with patch.object(client, "_query", return_value={"data": {field_name: []}}):
@@ -100,9 +98,7 @@ async def test_failed_or_incomplete_inventory_cannot_report_device_absence(
         ("smart_batteries", RateLimitException("SmartBatteries", retry_after=30)),
     ),
 )
-async def test_request_errors_keep_original_exception_type(
-    method_name: str, error: Exception
-) -> None:
+async def test_request_errors_keep_original_exception_type(method_name: str, error: Exception) -> None:
     """Preserve authentication, feature, throttling and network exceptions."""
     client = FrankEnergie(auth_token="test_token")
     with (
