@@ -175,10 +175,10 @@ def _dig(data: object, *keys: str) -> object:
 
 _REQUIRED_INVENTORY_FIELDS: Mapping[str, frozenset[str]] = {
     "enodeChargers": frozenset(
-        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable"}
+        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable", "lastSeen"}
     ),
     "enodeVehicles": frozenset(
-        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable"}
+        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable", "lastSeen"}
     ),
     "smartBatteries": frozenset(
         {
@@ -216,6 +216,27 @@ def _validate_battery_inventory_numbers(device: dict[str, Any]) -> None:
             raise RequestException(f"Invalid smartBatteries inventory {numeric_field}.") from err
 
 
+def _validate_battery_inventory_metadata(device: dict[str, Any]) -> None:
+    """Reject malformed non-null battery metadata while preserving explicit nulls."""
+    for text_field in ("brand", "externalReference", "provider"):
+        value = device[text_field]
+        if value is not None and not isinstance(value, str):
+            raise RequestException(f"Invalid smartBatteries inventory {text_field}.")
+
+    for timestamp_field in ("createdAt", "updatedAt"):
+        value = device[timestamp_field]
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise RequestException(f"Invalid smartBatteries inventory {timestamp_field}.")
+        try:
+            parsed_timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as err:
+            raise RequestException(f"Invalid smartBatteries inventory {timestamp_field}.") from err
+        if parsed_timestamp.utcoffset() is None:
+            raise RequestException(f"Invalid smartBatteries inventory {timestamp_field}.")
+
+
 def _validate_inventory_interventions(device: dict[str, Any], field_name: str) -> None:
     """Reject malformed intervention entries instead of silently dropping them."""
     interventions = device["interventions"]
@@ -243,6 +264,7 @@ def _validate_inventory_record(device: object, field_name: str, seen_ids: set[st
     if field_name == "enodeChargers" and not isinstance(device["information"], dict):
         raise RequestException("Invalid enodeChargers inventory information.")
     if field_name == "smartBatteries":
+        _validate_battery_inventory_metadata(device)
         _validate_battery_inventory_numbers(device)
     if field_name in ("enodeChargers", "enodeVehicles"):
         _validate_inventory_interventions(device, field_name)
