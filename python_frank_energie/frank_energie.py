@@ -237,7 +237,7 @@ def _require_device_inventory(response: object, field_name: str) -> list[dict[st
                         raise ValueError("Expected a finite number")
                 except (TypeError, ValueError, OverflowError) as err:
                     raise RequestException(f"Invalid smartBatteries inventory {numeric_field}.") from err
-        if field_name == "enodeVehicles":
+        if field_name in ("enodeChargers", "enodeVehicles"):
             interventions = device["interventions"]
             if not isinstance(interventions, list) or any(
                 not isinstance(intervention, dict)
@@ -245,7 +245,7 @@ def _require_device_inventory(response: object, field_name: str) -> list[dict[st
                 or not isinstance(intervention.get("description"), str)
                 for intervention in interventions
             ):
-                raise RequestException("Invalid enodeVehicles inventory interventions.")
+                raise RequestException(f"Invalid {field_name} inventory interventions.")
     return devices
 
 

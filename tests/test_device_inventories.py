@@ -194,26 +194,37 @@ async def test_nullable_battery_fields_are_supported() -> None:
 
 
 @pytest.mark.parametrize(
+    ("method_name", "field_name"),
+    (("enode_chargers", "enodeChargers"), ("enode_vehicles", "enodeVehicles")),
+)
+@pytest.mark.parametrize(
     "interventions",
     (
         None,
         "not-a-list",
+        {},
+        [{}],
         [None],
         ["invalid-record"],
         [{"title": "Incomplete"}],
         [{"title": None, "description": "Malformed"}],
+        [{"title": 42, "description": "Malformed"}],
+        [{"title": "Malformed", "description": None}],
+        [{"title": "Malformed", "description": 42}],
     ),
 )
-async def test_malformed_vehicle_interventions_reject_inventory(interventions: object) -> None:
-    """Reject vehicle records whose interventions would be dropped or misparsed."""
+async def test_malformed_interventions_reject_inventory(
+    method_name: str, field_name: str, interventions: object
+) -> None:
+    """Reject malformed interventions with an inventory-specific error."""
     vehicle = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
     vehicle["interventions"] = interventions
     client = FrankEnergie(auth_token="test_token")
     with (
-        patch.object(client, "_query", return_value={"data": {"enodeVehicles": [vehicle]}}),
-        pytest.raises(RequestException, match="interventions"),
+        patch.object(client, "_query", return_value={"data": {field_name: [vehicle]}}),
+        pytest.raises(RequestException, match=f"Invalid {field_name} inventory interventions"),
     ):
-        await client.enode_vehicles()
+        await _fetch_inventory(client, method_name)
 
 
 async def test_nullable_vehicle_state_fields_are_supported() -> None:
@@ -279,7 +290,8 @@ async def test_valid_battery_numbers_are_supported(value: object) -> None:
     assert inventory.batteries[0].max_discharge_power == float(value)
 
 
-async def test_invalid_charger_payload_fails_atomically() -> None:
+@pytest.mark.parametrize("interventions", ([], [{"title": "Test", "description": "Test intervention"}]))
+async def test_invalid_charger_payload_fails_atomically(interventions: list[dict[str, str]]) -> None:
     """A valid charger followed by an unparseable one must fail the whole request."""
     valid_charger = {
         "id": "valid-charger",
@@ -299,7 +311,7 @@ async def test_invalid_charger_payload_fails_atomically() -> None:
         },
         "chargeState": {"isCharging": False, "isPluggedIn": False},
         "information": {"brand": "Test", "model": "Charger", "year": None},
-        "interventions": [],
+        "interventions": interventions,
         "isReachable": True,
     }
     invalid_charger = {**valid_charger, "id": "invalid-charger", "chargeSettings": {"id": "invalid-settings"}}
@@ -307,6 +319,9 @@ async def test_invalid_charger_payload_fails_atomically() -> None:
     with patch.object(client, "_query", return_value={"data": {"enodeChargers": [valid_charger]}}):
         inventory = await client.enode_chargers("test_site", date(2026, 11, 6))
     assert [charger.id for charger in inventory.chargers] == ["valid-charger"]
+    assert [
+        {"title": item.title, "description": item.description} for item in inventory.chargers[0].interventions
+    ] == interventions
     with (
         patch.object(
             client,
