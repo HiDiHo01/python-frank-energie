@@ -225,6 +225,18 @@ def _require_device_inventory(response: object, field_name: str) -> list[dict[st
             not isinstance(device["canSmartCharge"], bool) or not isinstance(device["isReachable"], bool)
         ):
             raise RequestException(f"Invalid {field_name} inventory status.")
+        if field_name == "enodeChargers" and not isinstance(device["information"], dict):
+            raise RequestException("Invalid enodeChargers inventory information.")
+        if field_name == "smartBatteries":
+            for numeric_field in ("capacity", "maxChargePower", "maxDischargePower"):
+                value = device[numeric_field]
+                if value is None:
+                    continue
+                try:
+                    if isinstance(value, bool) or not math.isfinite(float(value)):
+                        raise ValueError("Expected a finite number")
+                except (TypeError, ValueError, OverflowError) as err:
+                    raise RequestException(f"Invalid smartBatteries inventory {numeric_field}.") from err
         if field_name == "enodeVehicles":
             interventions = device["interventions"]
             if not isinstance(interventions, list) or any(

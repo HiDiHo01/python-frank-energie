@@ -231,6 +231,54 @@ async def test_nullable_vehicle_state_fields_are_supported() -> None:
     assert inventory.vehicles[0].charge_state.battery_level is None
 
 
+@pytest.mark.parametrize("information", (None, [], "invalid", 42))
+async def test_malformed_charger_information_rejects_inventory(information: object) -> None:
+    """Reject malformed information even when the other charger fields are present."""
+    charger = {
+        "id": "test-charger",
+        "canSmartCharge": True,
+        "chargeSettings": {},
+        "chargeState": {},
+        "information": information,
+        "interventions": [],
+        "isReachable": True,
+    }
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {"enodeChargers": [charger]}}),
+        pytest.raises(RequestException, match="information"),
+    ):
+        await client.enode_chargers("test_site", date(2026, 11, 6))
+
+
+@pytest.mark.parametrize("field_name", ("capacity", "maxChargePower", "maxDischargePower"))
+@pytest.mark.parametrize("value", ("invalid", "", [], {}, True, float("nan"), float("inf"), "-Infinity"))
+async def test_malformed_battery_number_rejects_inventory(field_name: str, value: object) -> None:
+    """Invalid numeric data must not be silently converted to a nullable value."""
+    battery = _fixture_inventory_record("smart_batteries.json", "smartBatteries")
+    invalid_battery = {**battery, "id": "invalid-battery", field_name: value}
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {"smartBatteries": [battery, invalid_battery]}}),
+        pytest.raises(RequestException, match=field_name),
+    ):
+        await client.smart_batteries()
+
+
+@pytest.mark.parametrize("value", (0, 10, 10.5, "10.5"))
+async def test_valid_battery_numbers_are_supported(value: object) -> None:
+    """Retain the model's existing support for numbers and numeric strings."""
+    battery = _fixture_inventory_record("smart_batteries.json", "smartBatteries")
+    for field_name in ("capacity", "maxChargePower", "maxDischargePower"):
+        battery[field_name] = value
+    client = FrankEnergie(auth_token="test_token")
+    with patch.object(client, "_query", return_value={"data": {"smartBatteries": [battery]}}):
+        inventory = await client.smart_batteries()
+    assert inventory.batteries[0].capacity == float(value)
+    assert inventory.batteries[0].max_charge_power == float(value)
+    assert inventory.batteries[0].max_discharge_power == float(value)
+
+
 async def test_invalid_charger_payload_fails_atomically() -> None:
     """A valid charger followed by an unparseable one must fail the whole request."""
     valid_charger = {
