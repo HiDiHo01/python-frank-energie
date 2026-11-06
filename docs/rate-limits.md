@@ -14,7 +14,10 @@ Hardware inventory operations `enode_chargers()`, `enode_vehicles()` and
 inventories. An empty result is authoritative **only** for a successful
 GraphQL response containing an explicit empty list. Missing or malformed
 fields, partial GraphQL errors, duplicate/missing device identifiers, and
-parse failures raise `RequestException`. Authentication, network,
+parse failures raise `RequestException`. Charger and vehicle records must
+include `lastSeen` (which may be `null`); non-null battery text metadata
+must be strings and battery timestamps must be valid timezone-aware ISO-8601
+strings. Authentication, network,
 feature-disabled and rate-limit exceptions retain their original types.
 This is a behavior change for callers that previously treated a failed
 inventory request as `[]`; such callers should handle exceptions as

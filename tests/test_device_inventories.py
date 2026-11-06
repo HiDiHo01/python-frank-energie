@@ -242,6 +242,81 @@ async def test_nullable_vehicle_state_fields_are_supported() -> None:
     assert inventory.vehicles[0].charge_state.battery_level is None
 
 
+@pytest.mark.parametrize(
+    ("method_name", "field_name"),
+    (("enode_chargers", "enodeChargers"), ("enode_vehicles", "enodeVehicles")),
+)
+async def test_missing_last_seen_rejects_inventory(method_name: str, field_name: str) -> None:
+    """Reject a missing lastSeen instead of treating it as an explicit null."""
+    device = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
+    del device["lastSeen"]
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {field_name: [device]}}),
+        pytest.raises(RequestException, match=f"Incomplete {field_name}"),
+    ):
+        await _fetch_inventory(client, method_name)
+
+
+@pytest.mark.parametrize(("method_name", "field_name", "attribute"), _INVENTORY_METHODS[:2])
+async def test_nullable_last_seen_is_valid(method_name: str, field_name: str, attribute: str) -> None:
+    """Accept an explicit null lastSeen for both chargers and vehicles."""
+    device = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
+    device["lastSeen"] = None
+    client = FrankEnergie(auth_token="test_token")
+    with patch.object(client, "_query", return_value={"data": {field_name: [device]}}):
+        inventory = await _fetch_inventory(client, method_name)
+    devices = getattr(inventory, attribute)
+    assert len(devices) == 1
+    assert devices[0].last_seen is None
+
+
+@pytest.mark.parametrize("field_name", ("brand", "externalReference", "provider"))
+@pytest.mark.parametrize("invalid_value", (False, 42, [], {}))
+async def test_malformed_battery_text_metadata_rejects_inventory(field_name: str, invalid_value: object) -> None:
+    """Reject wrong text types rather than silently dropping battery metadata."""
+    battery = _fixture_inventory_record("smart_batteries.json", "smartBatteries")
+    battery[field_name] = invalid_value
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {"smartBatteries": [battery]}}),
+        pytest.raises(RequestException, match=field_name),
+    ):
+        await client.smart_batteries()
+
+
+@pytest.mark.parametrize("field_name", ("createdAt", "updatedAt"))
+@pytest.mark.parametrize(
+    "invalid_value",
+    (42, [], {}, "", "invalid-date", "2026-11-06", "2026-11-06T10:00:00"),
+)
+async def test_malformed_battery_timestamp_rejects_inventory(field_name: str, invalid_value: object) -> None:
+    """Reject invalid and timezone-naive battery timestamps."""
+    battery = _fixture_inventory_record("smart_batteries.json", "smartBatteries")
+    battery[field_name] = invalid_value
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {"smartBatteries": [battery]}}),
+        pytest.raises(RequestException, match=field_name),
+    ):
+        await client.smart_batteries()
+
+
+@pytest.mark.parametrize("iso_datetime", ("2024-04-30T13:33:42Z", "2024-04-30T15:33:42+02:00"))
+async def test_valid_battery_timestamp_metadata_is_preserved(iso_datetime: str) -> None:
+    """Preserve the instant represented by valid timezone-aware battery timestamps."""
+    battery = _fixture_inventory_record("smart_batteries.json", "smartBatteries")
+    battery["createdAt"] = iso_datetime
+    battery["updatedAt"] = iso_datetime
+    client = FrankEnergie(auth_token="test_token")
+    with patch.object(client, "_query", return_value={"data": {"smartBatteries": [battery]}}):
+        inventory = await client.smart_batteries()
+    assert inventory.batteries[0].created_at is not None
+    assert inventory.batteries[0].updated_at is not None
+    assert inventory.batteries[0].created_at.isoformat() == "2024-04-30T13:33:42+00:00"
+    assert inventory.batteries[0].updated_at.isoformat() == "2024-04-30T13:33:42+00:00"
+
+
 @pytest.mark.parametrize("information", (None, [], "invalid", 42))
 async def test_malformed_charger_information_rejects_inventory(information: object) -> None:
     """Reject malformed information even when the other charger fields are present."""
@@ -253,6 +328,7 @@ async def test_malformed_charger_information_rejects_inventory(information: obje
         "information": information,
         "interventions": [],
         "isReachable": True,
+        "lastSeen": None,
     }
     client = FrankEnergie(auth_token="test_token")
     start_date = date(2026, 11, 6)
@@ -314,6 +390,7 @@ async def test_invalid_charger_payload_fails_atomically(interventions: list[dict
         "information": {"brand": "Test", "model": "Charger", "year": None},
         "interventions": interventions,
         "isReachable": True,
+        "lastSeen": None,
     }
     invalid_charger = {**valid_charger, "id": "invalid-charger", "chargeSettings": {"id": "invalid-settings"}}
     client = FrankEnergie(auth_token="test_token")
