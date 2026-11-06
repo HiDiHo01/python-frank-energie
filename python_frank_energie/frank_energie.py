@@ -195,9 +195,7 @@ _REQUIRED_INVENTORY_FIELDS: Mapping[str, frozenset[str]] = {
 }
 
 
-def _validate_inventory_identifier(
-    device: dict[str, Any], field_name: str, seen_ids: set[str]
-) -> None:
+def _validate_inventory_identifier(device: dict[str, Any], field_name: str, seen_ids: set[str]) -> None:
     """Require a nonempty, unique device identifier."""
     device_id = device.get("id")
     if not isinstance(device_id, str) or not device_id.strip() or device_id in seen_ids:
