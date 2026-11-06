@@ -255,11 +255,12 @@ async def test_malformed_charger_information_rejects_inventory(information: obje
         "isReachable": True,
     }
     client = FrankEnergie(auth_token="test_token")
+    start_date = date(2026, 11, 6)
     with (
         patch.object(client, "_query", return_value={"data": {"enodeChargers": [charger]}}),
         pytest.raises(RequestException, match="information"),
     ):
-        await client.enode_chargers("test_site", date(2026, 11, 6))
+        await client.enode_chargers("test_site", start_date)
 
 
 @pytest.mark.parametrize("field_name", ("capacity", "maxChargePower", "maxDischargePower"))
@@ -316,8 +317,9 @@ async def test_invalid_charger_payload_fails_atomically(interventions: list[dict
     }
     invalid_charger = {**valid_charger, "id": "invalid-charger", "chargeSettings": {"id": "invalid-settings"}}
     client = FrankEnergie(auth_token="test_token")
+    start_date = date(2026, 11, 6)
     with patch.object(client, "_query", return_value={"data": {"enodeChargers": [valid_charger]}}):
-        inventory = await client.enode_chargers("test_site", date(2026, 11, 6))
+        inventory = await client.enode_chargers("test_site", start_date)
     assert [charger.id for charger in inventory.chargers] == ["valid-charger"]
     assert [
         {"title": item.title, "description": item.description} for item in inventory.chargers[0].interventions
@@ -330,4 +332,4 @@ async def test_invalid_charger_payload_fails_atomically(interventions: list[dict
         ),
         pytest.raises(RequestException, match="parse enodeChargers"),
     ):
-        await client.enode_chargers("test_site", date(2026, 11, 6))
+        await client.enode_chargers("test_site", start_date)

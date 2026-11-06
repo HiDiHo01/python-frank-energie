@@ -195,6 +195,61 @@ _REQUIRED_INVENTORY_FIELDS: Mapping[str, frozenset[str]] = {
 }
 
 
+def _validate_inventory_identifier(
+    device: dict[str, Any], field_name: str, seen_ids: set[str]
+) -> None:
+    """Require a nonempty, unique device identifier."""
+    device_id = device.get("id")
+    if not isinstance(device_id, str) or not device_id.strip() or device_id in seen_ids:
+        raise RequestException(f"Missing or duplicate device ID in {field_name} inventory.")
+    seen_ids.add(device_id)
+
+
+def _validate_battery_inventory_numbers(device: dict[str, Any]) -> None:
+    """Reject malformed numeric values while keeping explicit nulls valid."""
+    for numeric_field in ("capacity", "maxChargePower", "maxDischargePower"):
+        value = device[numeric_field]
+        if value is None:
+            continue
+        try:
+            if isinstance(value, bool) or not math.isfinite(float(value)):
+                raise ValueError("Expected a finite number")
+        except (TypeError, ValueError, OverflowError) as err:
+            raise RequestException(f"Invalid smartBatteries inventory {numeric_field}.") from err
+
+
+def _validate_inventory_interventions(device: dict[str, Any], field_name: str) -> None:
+    """Reject malformed intervention entries instead of silently dropping them."""
+    interventions = device["interventions"]
+    if not isinstance(interventions, list) or any(
+        not isinstance(intervention, dict)
+        or not isinstance(intervention.get("title"), str)
+        or not isinstance(intervention.get("description"), str)
+        for intervention in interventions
+    ):
+        raise RequestException(f"Invalid {field_name} inventory interventions.")
+
+
+def _validate_inventory_record(device: object, field_name: str, seen_ids: set[str]) -> None:
+    """Validate the required fields and schema-specific values of one device."""
+    if not isinstance(device, dict):
+        raise RequestException(f"Invalid entry in {field_name} inventory.")
+    _validate_inventory_identifier(device, field_name, seen_ids)
+    required_fields = _REQUIRED_INVENTORY_FIELDS.get(field_name, frozenset())
+    if not required_fields.issubset(device):
+        raise RequestException(f"Incomplete {field_name} inventory record.")
+    if field_name in ("enodeChargers", "enodeVehicles") and (
+        not isinstance(device["canSmartCharge"], bool) or not isinstance(device["isReachable"], bool)
+    ):
+        raise RequestException(f"Invalid {field_name} inventory status.")
+    if field_name == "enodeChargers" and not isinstance(device["information"], dict):
+        raise RequestException("Invalid enodeChargers inventory information.")
+    if field_name == "smartBatteries":
+        _validate_battery_inventory_numbers(device)
+    if field_name in ("enodeChargers", "enodeVehicles"):
+        _validate_inventory_interventions(device, field_name)
+
+
 def _require_device_inventory(response: object, field_name: str) -> list[dict[str, Any]]:
     """Validate an entire inventory, including stable, unique device IDs.
 
@@ -210,42 +265,9 @@ def _require_device_inventory(response: object, field_name: str) -> list[dict[st
         raise RequestException(f"Missing or invalid {field_name} inventory in GraphQL response.")
 
     devices: list[dict[str, Any]] = payload[field_name]
-    required_fields = _REQUIRED_INVENTORY_FIELDS.get(field_name, frozenset())
     seen_ids: set[str] = set()
     for device in devices:
-        if not isinstance(device, dict):
-            raise RequestException(f"Invalid entry in {field_name} inventory.")
-        device_id = device.get("id")
-        if not isinstance(device_id, str) or not device_id.strip() or device_id in seen_ids:
-            raise RequestException(f"Missing or duplicate device ID in {field_name} inventory.")
-        seen_ids.add(device_id)
-        if not required_fields.issubset(device):
-            raise RequestException(f"Incomplete {field_name} inventory record.")
-        if field_name in ("enodeChargers", "enodeVehicles") and (
-            not isinstance(device["canSmartCharge"], bool) or not isinstance(device["isReachable"], bool)
-        ):
-            raise RequestException(f"Invalid {field_name} inventory status.")
-        if field_name == "enodeChargers" and not isinstance(device["information"], dict):
-            raise RequestException("Invalid enodeChargers inventory information.")
-        if field_name == "smartBatteries":
-            for numeric_field in ("capacity", "maxChargePower", "maxDischargePower"):
-                value = device[numeric_field]
-                if value is None:
-                    continue
-                try:
-                    if isinstance(value, bool) or not math.isfinite(float(value)):
-                        raise ValueError("Expected a finite number")
-                except (TypeError, ValueError, OverflowError) as err:
-                    raise RequestException(f"Invalid smartBatteries inventory {numeric_field}.") from err
-        if field_name in ("enodeChargers", "enodeVehicles"):
-            interventions = device["interventions"]
-            if not isinstance(interventions, list) or any(
-                not isinstance(intervention, dict)
-                or not isinstance(intervention.get("title"), str)
-                or not isinstance(intervention.get("description"), str)
-                for intervention in interventions
-            ):
-                raise RequestException(f"Invalid {field_name} inventory interventions.")
+        _validate_inventory_record(device, field_name, seen_ids)
     return devices
 
 

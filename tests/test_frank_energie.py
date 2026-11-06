@@ -1299,8 +1299,9 @@ class TestFrankEnergieAPIEndpointsAuth:
         from datetime import date
 
         client = FrankEnergie()
+        start_date = date.today()
         with pytest.raises(AuthRequiredException):
-            await client.enode_chargers("site_ref_123", date.today())
+            await client.enode_chargers("site_ref_123", start_date)
 
 
 #
@@ -1498,15 +1499,16 @@ async def test_month_summary_exception_handling(aresponses):
 async def test_enode_chargers_empty_response_handling():
     """Treat missing charger inventory data as failure, not no devices."""
     client = FrankEnergie(auth_token="test_token")
+    start_date = datetime.now().date()
     for response in (None, {"data": None}, {"data": {}}):
         with (
             patch.object(client, "_query", return_value=response),
             pytest.raises(RequestException, match="inventory|GraphQL"),
         ):
-            await client.enode_chargers("site_ref_123", datetime.now().date())
+            await client.enode_chargers("site_ref_123", start_date)
 
     with patch.object(client, "_query", return_value={"data": {"enodeChargers": []}}):
-        assert await client.enode_chargers("site_ref_123", datetime.now().date()) == EnodeChargers(chargers=[])
+        assert await client.enode_chargers("site_ref_123", start_date) == EnodeChargers(chargers=[])
 
 
 @pytest.mark.asyncio
