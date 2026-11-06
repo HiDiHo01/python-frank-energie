@@ -8,6 +8,18 @@ subclass of `RequestException`, with these attributes:
 - `retry_after`: a nonnegative delay in seconds from a valid `Retry-After`
   response header, or `None` when no usable delay was supplied.
 
+Hardware inventory operations `enode_chargers()`, `enode_vehicles()` and
+`smart_batteries()` now preserve request failures, including
+`RateLimitException`, rather than treating them as successful empty
+inventories. An empty result is authoritative **only** for a successful
+GraphQL response containing an explicit empty list. Missing or malformed
+fields, partial GraphQL errors, duplicate/missing device identifiers, and
+parse failures raise `RequestException`. Authentication, network,
+feature-disabled and rate-limit exceptions retain their original types.
+This is a behavior change for callers that previously treated a failed
+inventory request as `[]`; such callers should handle exceptions as
+unknown/stale data and must not interpret them as device removal.
+
 HTTP delay-seconds and all three HTTP-date formats are supported: IMF-fixdate,
 obsolete RFC 850, and asctime. The asctime form has no timezone marker and is
 interpreted as UTC, as required by HTTP. Other dates without a usable timezone
@@ -23,7 +35,7 @@ errors itself: `invoices()`, `login()`, `month_summary()`, `renew_token()`,
 `smart_hvac_status()`, `smart_pv_systems()`, `smart_pv_system_summary()` and
 `user_smart_feed_in()`. Token renewal keeps authentication intact when it is
 rate limited. Methods with their own catch-all (for example
-`period_usage_and_costs()`, `month_insights()`, the `enode_*` and
+`period_usage_and_costs()`, `month_insights()`, other `enode_*` and
 `smart_batteries*` methods, and the mutations) retain their existing
 return-on-error or rewrap contracts; this is not a promise that every public
 method propagates all request exceptions.
