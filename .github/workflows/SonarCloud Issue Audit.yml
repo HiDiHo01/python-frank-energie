@@ -1,0 +1,67 @@
+name: Temporary SonarCloud Issue Audit
+
+on:
+  push:
+    branches:
+      - fix/smart-hvac-api-issue-227
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Public nonsecurity issue metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch public PR findings without authentication
+        shell: bash
+        run: |
+          python - <<'PYCODE'
+          """Inspect public SonarCloud findings without exposing sensitive issue data."""
+          import json
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          query = urllib.parse.urlencode(
+              {
+                  "componentKeys": "HiDiHo01_python-frank-energie",
+                  "pullRequest": "228",
+                  "issueStatuses": "OPEN,CONFIRMED",
+                  "sinceLeakPeriod": "true",
+                  "ps": "100",
+              }
+          )
+          url = "https://sonarcloud.io/api/issues/search?" + query
+          request = urllib.request.Request(
+              url,
+              headers={"Accept": "application/json", "User-Agent": "public-ci-issue-audit"},
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=25) as response:
+                  results = json.load(response)
+          except (urllib.error.URLError, TimeoutError, ValueError) as error:
+              print("SonarCloud API request failed:", type(error).__name__)
+              raise SystemExit(1) from None
+
+          print("Total issues:", results.get("total"))
+          for item in results.get("issues", []):
+              impacts = item.get("impacts") or []
+              qualities = {impact.get("softwareQuality") for impact in impacts}
+              if item.get("type") == "VULNERABILITY" or "SECURITY" in qualities:
+                  print("A security-sensitive finding was omitted from public logs")
+                  continue
+              component = str(item.get("component", ""))
+              path = component.rsplit(":", 1)[-1]
+              line = (item.get("textRange") or {}).get("startLine") or item.get("line")
+              print(json.dumps({
+                  "key": item.get("key"),
+                  "rule": item.get("rule"),
+                  "path": path,
+                  "line": line,
+                  "message": item.get("message"),
+                  "type": item.get("type"),
+                  "impacts": impacts,
+              }, ensure_ascii=False))
+          PYCODE
