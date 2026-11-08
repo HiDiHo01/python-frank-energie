@@ -401,8 +401,8 @@ async def test_malformed_charger_information_rejects_inventory(information: obje
     charger = {
         "id": "test-charger",
         "canSmartCharge": True,
-        "chargeSettings": {},
-        "chargeState": {},
+        "chargeSettings": {"isSmartChargingEnabled": True},
+        "chargeState": {"isCharging": False, "isPluggedIn": False},
         "information": information,
         "interventions": [],
         "isReachable": True,
@@ -470,7 +470,11 @@ async def test_invalid_charger_payload_fails_atomically(interventions: list[dict
         "isReachable": True,
         "lastSeen": None,
     }
-    invalid_charger = {**valid_charger, "id": "invalid-charger", "chargeSettings": {"id": "invalid-settings"}}
+    invalid_charger = {
+        **valid_charger,
+        "id": "invalid-charger",
+        "chargeSettings": {"id": "invalid-settings", "isSmartChargingEnabled": True},
+    }
     client = FrankEnergie(auth_token="test_token")
     start_date = date(2026, 11, 6)
     with patch.object(client, "_query", return_value={"data": {"enodeChargers": [valid_charger]}}):
