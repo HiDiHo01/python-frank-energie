@@ -125,7 +125,8 @@ def test_me_parser_also_validates_feature_flags() -> None:
     ],
 )
 async def test_site_status_rejects_incomplete_or_malformed_responses(
-    api: FrankEnergie, payload: dict[str, object]
+    api: FrankEnergie,
+    payload: dict[str, object],
 ) -> None:
     """Do not convert upstream response corruption into feature absence."""
     with (
@@ -167,7 +168,9 @@ async def test_status_failure_then_recovers(api: FrankEnergie) -> None:
     ["Graphql validation error", "request-error:request-not-supported-in-country", "opaque-private-upstream-error"],
 )
 def test_smart_hvac_graphql_failures_are_private(
-    api: FrankEnergie, caplog: pytest.LogCaptureFixture, message: str
+    api: FrankEnergie,
+    caplog: pytest.LogCaptureFixture,
+    message: str,
 ) -> None:
     """Surface safe errors without logging nested personal identifiers."""
     fake_private_id = "synthetic-private-identifier"
@@ -211,9 +214,7 @@ async def test_smart_hvac_methods_require_authentication(method_name: str, args:
 )
 @pytest.mark.parametrize("identifier", [None, 12, "", " \t "])
 @pytest.mark.asyncio
-async def test_smart_hvac_identifiers_are_required(
-    api: FrankEnergie, method_name: str, identifier: object
-) -> None:
+async def test_smart_hvac_identifiers_are_required(api: FrankEnergie, method_name: str, identifier: object) -> None:
     """Reject blank or non-string IDs before issuing requests."""
     with pytest.raises(ValueError, match="valid non-empty"):
         await getattr(api, method_name)(identifier)
