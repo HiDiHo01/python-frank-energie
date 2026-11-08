@@ -77,6 +77,29 @@ async def test_failed_or_incomplete_inventory_cannot_report_device_absence(
     method_name: str, field_name: str, _attribute: str, scenario: str
 ) -> None:
     """Reject missing, partial, corrupt or failed inventories for all device types."""
+    duplicate_record: dict[str, object] = {
+        "id": "device-1",
+        "canSmartCharge": True,
+        "chargeSettings": {"isSmartChargingEnabled": True},
+        "chargeState": {"isCharging": False, "isPluggedIn": False},
+        "information": {},
+        "interventions": [],
+        "isReachable": True,
+        "lastSeen": None,
+    }
+    if field_name == "smartBatteries":
+        duplicate_record.update(
+            {
+                "brand": None,
+                "capacity": None,
+                "createdAt": None,
+                "externalReference": None,
+                "maxChargePower": None,
+                "maxDischargePower": None,
+                "provider": None,
+                "updatedAt": None,
+            }
+        )
     cases: dict[str, object] = {
         "no_response": None,
         "no_data": {"data": None},
@@ -94,7 +117,7 @@ async def test_failed_or_incomplete_inventory_cannot_report_device_absence(
         "invalid_errors_string": {"data": {field_name: []}, "errors": "upstream error"},
         "invalid_record": {"data": {field_name: [None]}},
         "missing_identifier": {"data": {field_name: [{"id": ""}]}},
-        "duplicate_identifier": {"data": {field_name: [{"id": "device-1"}, {"id": "device-1"}]}},
+        "duplicate_identifier": {"data": {field_name: [duplicate_record, {**duplicate_record}] }},
     }
     client = FrankEnergie(auth_token="test_token")
     with (
@@ -269,6 +292,60 @@ async def test_nullable_last_seen_is_valid(method_name: str, field_name: str, at
     devices = getattr(inventory, attribute)
     assert len(devices) == 1
     assert devices[0].last_seen is None
+
+
+
+@pytest.mark.parametrize(
+    ("method_name", "field_name"),
+    (("enode_chargers", "enodeChargers"), ("enode_vehicles", "enodeVehicles")),
+)
+@pytest.mark.parametrize("last_seen", (42, {}, "invalid", "2026-11-06T10:00:00"))
+async def test_malformed_last_seen_rejects_inventory(
+    method_name: str, field_name: str, last_seen: object
+) -> None:
+    """Reject malformed or timezone-naive lastSeen values for Enode devices."""
+    device = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
+    device["lastSeen"] = last_seen
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {field_name: [device]}}),
+        pytest.raises(RequestException, match="lastSeen"),
+    ):
+        await _fetch_inventory(client, method_name)
+
+
+@pytest.mark.parametrize(
+    ("method_name", "field_name"),
+    (("enode_chargers", "enodeChargers"), ("enode_vehicles", "enodeVehicles")),
+)
+@pytest.mark.parametrize(
+    ("container_name", "boolean_field"),
+    (
+        ("chargeSettings", "isSmartChargingEnabled"),
+        ("chargeSettings", "isSolarChargingEnabled"),
+        ("chargeState", "isCharging"),
+        ("chargeState", "isPluggedIn"),
+        ("chargeState", "isFullyCharged"),
+    ),
+)
+@pytest.mark.parametrize("invalid_value", ("false", 0, 1))
+async def test_invalid_nested_boolean_rejects_inventory(
+    method_name: str,
+    field_name: str,
+    container_name: str,
+    boolean_field: str,
+    invalid_value: object,
+) -> None:
+    """Reject truthy non-booleans before model parsing can coerce them."""
+    device = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
+    nested_data = device[container_name]
+    nested_data[boolean_field] = invalid_value
+    client = FrankEnergie(auth_token="test_token")
+    with (
+        patch.object(client, "_query", return_value={"data": {field_name: [device]}}),
+        pytest.raises(RequestException, match="inventory"),
+    ):
+        await _fetch_inventory(client, method_name)
 
 
 @pytest.mark.parametrize("field_name", ("brand", "externalReference", "provider"))
