@@ -4,7 +4,7 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 
 ## Address pull request feedback
 
-1. Record the current PR head and base. Fetch all pages of inline review threads and check their resolved state, including outdated threads. Read actionable findings in the conversation and review summaries.
+1. Record the current PR head and base. Fetch all pages of inline review threads and check their resolved state, including outdated threads. Before assessing or resolving each unresolved thread, fetch every page of its comments, including replies on outdated threads. Read actionable findings in the conversation and review summaries.
 2. Compare each finding with the current diff, tests, and API evidence. Open static analysis annotations even when the quality gate passes. If a finding points to older base code, check whether the current base already contains the fix before changing the PR.
 3. Reproduce confirmed defects with sanitized data where possible. Verify the smallest fix with relevant checks, then link the commit and evidence when replying. Explain the disposition of invalid, duplicate, or obsolete findings before resolving the thread.
 4. Check the current head after the final push and again after automated review. Verify the actual thread count, workflow jobs, and quality results for that commit. Distinguish a completed review from a skipped or rate limited review. Use a documented manual review trigger when supported and authorized.
