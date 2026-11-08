@@ -596,7 +596,6 @@ async def test_me(aresponses, snapshot: SnapshotAssertion):
     assert me == snapshot
 
 
-
 @pytest.mark.asyncio
 async def test_me_fetches_site_specific_user_smart_hvac() -> None:
     """Query and parse the root-level userSmartHvac field for a site."""
@@ -654,6 +653,24 @@ def test_me_rejects_invalid_user_smart_hvac(invalid_data: object) -> None:
 
     with pytest.raises(RequestException, match="Invalid 'userSmartHvac' data"):
         Me.from_dict(response)
+
+
+def test_me_does_not_log_private_user_data(caplog: pytest.LogCaptureFixture) -> None:
+    """Keep account and Smart HVAC identifiers out of diagnostic logs."""
+    response = {
+        "data": {
+            "me": {"id": "private-account-id"},
+            "userSmartHvac": {"userId": "private-hvac-user-id"},
+        }
+    }
+
+    with caplog.at_level(logging.DEBUG, logger="python_frank_energie.models"):
+        result = Me.from_dict(response)
+
+    assert result.userSmartHvac is not None
+    assert "private-account-id" not in caplog.text
+    assert "private-hvac-user-id" not in caplog.text
+
 
 @pytest.mark.asyncio
 async def test_me_without_authentication(aresponses):
