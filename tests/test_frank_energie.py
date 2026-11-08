@@ -711,10 +711,10 @@ def test_me_rejects_invalid_user_smart_hvac(invalid_data: object) -> None:
         Me.from_dict(response)
 
 
-@pytest.mark.parametrize("field_name", ("hasAcceptedTerms", "isAvailableOnSite"))
+@pytest.mark.parametrize("field_name", ("hasAcceptedTerms", "isActivated", "isAvailableInCountry", "isAvailableOnSite"))
 @pytest.mark.parametrize("invalid_value", ("false", 1, []))
 def test_me_rejects_non_boolean_user_smart_hvac_flag(field_name: str, invalid_value: object) -> None:
-    """Reject non-boolean values for the optional site-specific HVAC flags."""
+    """Reject non-boolean values for every optional HVAC flag."""
     response = {"data": {"me": {"id": "test-user"}, "userSmartHvac": {field_name: invalid_value}}}
 
     with pytest.raises(RequestException, match=field_name):
@@ -722,10 +722,15 @@ def test_me_rejects_non_boolean_user_smart_hvac_flag(field_name: str, invalid_va
 
 
 def test_me_does_not_log_private_user_data(caplog: pytest.LogCaptureFixture) -> None:
-    """Keep account and Smart HVAC identifiers out of diagnostic logs."""
+    """Keep account, HVAC, and invitation details out of diagnostic logs."""
+    invite_link_data = {
+        "id": "private-invite-id",
+        "fromName": "private-invite-name",
+        "slug": "private-invite-slug",
+    }
     response = {
         "data": {
-            "me": {"id": "private-account-id"},
+            "me": {"id": "private-account-id", "InviteLinkUser": invite_link_data},
             "userSmartHvac": {"userId": "private-hvac-user-id"},
         }
     }
@@ -734,8 +739,10 @@ def test_me_does_not_log_private_user_data(caplog: pytest.LogCaptureFixture) -> 
         result = Me.from_dict(response)
 
     assert result.user_smart_hvac is not None
-    assert "private-account-id" not in caplog.text
-    assert "private-hvac-user-id" not in caplog.text
+    assert result.InviteLinkUser is not None
+    assert result.InviteLinkUser.slug == invite_link_data["slug"]
+    for private_value in ("private-account-id", "private-hvac-user-id", *invite_link_data.values()):
+        assert private_value not in caplog.text
 
 
 @pytest.mark.asyncio

@@ -1061,8 +1061,6 @@ class InviteLink:
     @staticmethod
     def from_dict(data: dict[str, object]) -> InviteLink | None:
         """Parse the response from the InviteLink query."""
-        _LOGGER.debug("InviteLink %s", data)
-
         if not data:
             return None
 
@@ -1776,26 +1774,26 @@ class SmartHvac:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> SmartHvac | None:
-        """Parse Smart HVAC status and validate the optional site-specific flags."""
+        """Parse Smart HVAC status and validate its optional flags."""
         if not data:
             return None
 
-        has_accepted_terms = data.get("hasAcceptedTerms")
-        if has_accepted_terms is not None and not isinstance(has_accepted_terms, bool):
-            raise RequestException("Invalid 'userSmartHvac.hasAcceptedTerms': expected a boolean or null")
-
-        is_available_on_site = data.get("isAvailableOnSite")
-        if is_available_on_site is not None and not isinstance(is_available_on_site, bool):
-            raise RequestException("Invalid 'userSmartHvac.isAvailableOnSite': expected a boolean or null")
-
         return cls(
-            isActivated=data.get("isActivated"),
+            isActivated=cls._optional_flag(data, "isActivated"),
             userCreatedAt=data.get("userCreatedAt"),
             userId=data.get("userId"),
-            isAvailableInCountry=data.get("isAvailableInCountry"),
-            has_accepted_terms=has_accepted_terms,
-            is_available_on_site=is_available_on_site,
+            isAvailableInCountry=cls._optional_flag(data, "isAvailableInCountry"),
+            has_accepted_terms=cls._optional_flag(data, "hasAcceptedTerms"),
+            is_available_on_site=cls._optional_flag(data, "isAvailableOnSite"),
         )
+
+    @staticmethod
+    def _optional_flag(data: Mapping[str, object], field_name: str) -> bool | None:
+        """Read a nullable GraphQL boolean without coercing other types."""
+        value = data.get(field_name)
+        if value is not None and not isinstance(value, bool):
+            raise RequestException(f"Invalid Smart HVAC field '{field_name}': expected a boolean or null")
+        return value
 
 
 @dataclass
