@@ -120,9 +120,10 @@ async def test_failed_or_incomplete_inventory_cannot_report_device_absence(
         "duplicate_identifier": {"data": {field_name: [duplicate_record, {**duplicate_record}] }},
     }
     client = FrankEnergie(auth_token="test_token")
+    expected_message = "duplicate device ID" if scenario == "duplicate_identifier" else None
     with (
         patch.object(client, "_query", return_value=cases[scenario]),
-        pytest.raises(RequestException),
+        pytest.raises(RequestException, match=expected_message),
     ):
         await _fetch_inventory(client, method_name)
 
