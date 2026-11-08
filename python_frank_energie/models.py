@@ -1061,8 +1061,6 @@ class InviteLink:
     @staticmethod
     def from_dict(data: dict[str, object]) -> InviteLink | None:
         """Parse the response from the InviteLink query."""
-        _LOGGER.debug("InviteLink %s", data)
-
         if not data:
             return None
 
@@ -1187,11 +1185,12 @@ class Me:
     meterReadingExportPeriods: list[MeterReadingExportPeriod]
     smartCharging: dict[str, object]
     PushNotificationPriceAlerts: list[PushNotificationPriceAlert] = field(default_factory=list)
+    user_smart_hvac: SmartHvac | None = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> Me:
         """Parse the response from the me query."""
-        _LOGGER.debug("User payload received: %s", data)
+        _LOGGER.debug("Me response received")
 
         errors = data.get("errors")
         if isinstance(errors, list) and errors:
@@ -1205,6 +1204,10 @@ class Me:
         payload = raw_data.get("me")
         if not payload:
             raise RequestException("Unexpected response")
+
+        raw_user_smart_hvac = raw_data.get("userSmartHvac")
+        if raw_user_smart_hvac is not None and not isinstance(raw_user_smart_hvac, dict):
+            raise RequestException("Invalid 'userSmartHvac' data in response")
 
         invite_link_user = None
         if payload.get("InviteLinkUser"):
@@ -1237,6 +1240,7 @@ class Me:
             addressHasMultipleSites=payload.get("addressHasMultipleSites"),
             meterReadingExportPeriods=meter_periods,
             smartCharging=payload.get("smartCharging") or {},
+            user_smart_hvac=SmartHvac.from_dict(raw_user_smart_hvac),
         )
 
 
@@ -1759,22 +1763,37 @@ class SmartTrading:
 
 @dataclass
 class SmartHvac:
+    """Activation and availability status of the Smart HVAC service."""
+
     isActivated: bool | None = None
     userCreatedAt: str | None = None
     userId: str | None = None
     isAvailableInCountry: bool | None = None
+    has_accepted_terms: bool | None = None
+    is_available_on_site: bool | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> SmartHvac | None:
-        """Parse SmartHvac from dictionary."""
+        """Parse Smart HVAC status and validate its optional flags."""
         if not data:
             return None
+
         return cls(
-            isActivated=data.get("isActivated"),
+            isActivated=cls._optional_flag(data, "isActivated"),
             userCreatedAt=data.get("userCreatedAt"),
             userId=data.get("userId"),
-            isAvailableInCountry=data.get("isAvailableInCountry"),
+            isAvailableInCountry=cls._optional_flag(data, "isAvailableInCountry"),
+            has_accepted_terms=cls._optional_flag(data, "hasAcceptedTerms"),
+            is_available_on_site=cls._optional_flag(data, "isAvailableOnSite"),
         )
+
+    @staticmethod
+    def _optional_flag(data: Mapping[str, object], field_name: str) -> bool | None:
+        """Read a nullable GraphQL boolean without coercing other types."""
+        value = data.get(field_name)
+        if value is not None and not isinstance(value, bool):
+            raise RequestException(f"Invalid Smart HVAC field '{field_name}': expected a boolean or null")
+        return value
 
 
 @dataclass
@@ -1919,7 +1938,7 @@ class User:
     @staticmethod
     def from_dict(data: dict[str, Any]) -> User | None:
         """Parse the response from the me query."""
-        _LOGGER.debug("User %s", data)
+        _LOGGER.debug("User response received")
 
         if errors := data.get("errors"):
             raise RequestException(errors[0]["message"])
@@ -1927,8 +1946,6 @@ class User:
         payload = data.get("data", {}).get("me")
         if payload is None:
             raise RequestException("Unexpected response")
-
-        _LOGGER.debug("deliverySites %s", payload.get("deliverySites"))
 
         last_login = _parse_iso_datetime(payload.get("lastLogin"), "lastLogin")
         created_at = _parse_iso_datetime(payload.get("createdAt"), "createdAt")
