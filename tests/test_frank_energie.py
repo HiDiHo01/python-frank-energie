@@ -620,16 +620,29 @@ async def test_me_fetches_site_specific_user_smart_hvac() -> None:
     sent_query = query_mock.call_args.args[0]
     assert sent_query.operation_name == "Me"
     assert sent_query.variables == {"siteReference": "1234AB 10"}
-    assert "userSmartHvac(siteReference: $siteReference)" in sent_query.query
-    assert "hasAcceptedTerms" in sent_query.query
-    assert "isAvailableOnSite" in sent_query.query
-    assert result.userSmartHvac is not None
-    assert result.userSmartHvac.hasAcceptedTerms is True
-    assert result.userSmartHvac.isActivated is True
-    assert result.userSmartHvac.isAvailableInCountry is True
-    assert result.userSmartHvac.isAvailableOnSite is False
-    assert result.userSmartHvac.userCreatedAt == "2026-10-01T12:00:00Z"
-    assert result.userSmartHvac.userId == "test-user"
+    operation, _, _ = sent_query.query.partition("fragment ")
+    before_hvac, hvac_header, after_header = operation.partition("userSmartHvac(siteReference: $siteReference) {")
+    assert hvac_header, "Me must query userSmartHvac for the given site"
+    assert before_hvac.count("{") - before_hvac.count("}") == 1, "userSmartHvac must be selected at the root"
+    hvac_fields, closing_brace, _ = after_header.partition("}")
+    assert closing_brace
+    assert set(hvac_fields.split()) == {
+        "hasAcceptedTerms",
+        "isActivated",
+        "isAvailableInCountry",
+        "isAvailableOnSite",
+        "userCreatedAt",
+        "userId",
+    }
+
+    hvac = result.user_smart_hvac
+    assert hvac is not None
+    assert hvac.has_accepted_terms is True
+    assert hvac.isActivated is True
+    assert hvac.isAvailableInCountry is True
+    assert hvac.is_available_on_site is False
+    assert hvac.userCreatedAt == "2026-10-01T12:00:00Z"
+    assert hvac.userId == "test-user"
 
 
 def test_me_parses_available_but_inactive_user_smart_hvac() -> None:
@@ -650,13 +663,14 @@ def test_me_parses_available_but_inactive_user_smart_hvac() -> None:
 
     result = Me.from_dict(response)
 
-    assert result.userSmartHvac is not None
-    assert result.userSmartHvac.hasAcceptedTerms is False
-    assert result.userSmartHvac.isActivated is False
-    assert result.userSmartHvac.isAvailableInCountry is True
-    assert result.userSmartHvac.isAvailableOnSite is True
-    assert result.userSmartHvac.userCreatedAt is None
-    assert result.userSmartHvac.userId is None
+    hvac = result.user_smart_hvac
+    assert hvac is not None
+    assert hvac.has_accepted_terms is False
+    assert hvac.isActivated is False
+    assert hvac.isAvailableInCountry is True
+    assert hvac.is_available_on_site is True
+    assert hvac.userCreatedAt is None
+    assert hvac.userId is None
 
 
 @pytest.mark.parametrize(
@@ -670,7 +684,22 @@ def test_me_missing_user_smart_hvac_is_optional(root_data: dict[str, object]) ->
     """Keep responses without a Smart HVAC service backwards compatible."""
     result = Me.from_dict({"data": root_data})
 
-    assert result.userSmartHvac is None
+    assert result.user_smart_hvac is None
+
+
+@pytest.mark.parametrize("site_flags", ({}, {"hasAcceptedTerms": None, "isAvailableOnSite": None}))
+def test_me_accepts_absent_or_null_user_smart_hvac_flags(site_flags: dict[str, object]) -> None:
+    """Keep the two site-specific flags optional independently of activation."""
+    response = {
+        "data": {"me": {"id": "test-user"}, "userSmartHvac": {"isActivated": False, **site_flags}},
+    }
+
+    hvac = Me.from_dict(response).user_smart_hvac
+
+    assert hvac is not None
+    assert hvac.isActivated is False
+    assert hvac.has_accepted_terms is None
+    assert hvac.is_available_on_site is None
 
 
 @pytest.mark.parametrize("invalid_data", [True, "activated", []])
@@ -679,6 +708,16 @@ def test_me_rejects_invalid_user_smart_hvac(invalid_data: object) -> None:
     response = {"data": {"me": {"id": "test-user"}, "userSmartHvac": invalid_data}}
 
     with pytest.raises(RequestException, match="Invalid 'userSmartHvac' data"):
+        Me.from_dict(response)
+
+
+@pytest.mark.parametrize("field_name", ("hasAcceptedTerms", "isAvailableOnSite"))
+@pytest.mark.parametrize("invalid_value", ("false", 1, []))
+def test_me_rejects_non_boolean_user_smart_hvac_flag(field_name: str, invalid_value: object) -> None:
+    """Reject non-boolean values for the optional site-specific HVAC flags."""
+    response = {"data": {"me": {"id": "test-user"}, "userSmartHvac": {field_name: invalid_value}}}
+
+    with pytest.raises(RequestException, match=field_name):
         Me.from_dict(response)
 
 
@@ -694,7 +733,7 @@ def test_me_does_not_log_private_user_data(caplog: pytest.LogCaptureFixture) -> 
     with caplog.at_level(logging.DEBUG, logger="python_frank_energie.models"):
         result = Me.from_dict(response)
 
-    assert result.userSmartHvac is not None
+    assert result.user_smart_hvac is not None
     assert "private-account-id" not in caplog.text
     assert "private-hvac-user-id" not in caplog.text
 
