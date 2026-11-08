@@ -51,7 +51,9 @@ async def test_site_status_preserves_three_way_flags(
 ) -> None:
     """Expose activation and site availability separately, preserving null."""
     response = _feature_response(
-        activated=activated, available_on_site=available_on_site, accepted_terms=accepted_terms
+        activated=activated,
+        available_on_site=available_on_site,
+        accepted_terms=accepted_terms,
     )
     with patch.object(api, "_query", new=AsyncMock(return_value=response)) as request:
         result = await api.smart_hvac_status("1234AB 10")
@@ -147,7 +149,9 @@ async def test_site_status_null_then_recovers(api: FrankEnergie) -> None:
 async def test_status_failure_then_recovers(api: FrankEnergie) -> None:
     """Request failures must not turn into cached empty status."""
     with patch.object(
-        api, "_query", new=AsyncMock(side_effect=[RequestException("API unavailable"), _feature_response()])
+        api,
+        "_query",
+        new=AsyncMock(side_effect=[RequestException("API unavailable"), _feature_response()]),
     ):
         with pytest.raises(RequestException, match="API unavailable"):
             await api.smart_hvac_status("1234AB 10")
@@ -167,7 +171,7 @@ def test_smart_hvac_graphql_failures_are_private(
     fake_private_id = "synthetic-private-identifier"
     errors = {
         "errors": [
-            {"message": message, "path": [fake_private_id], "extensions": {"reference": fake_private_id}}
+            {"message": message, "path": [fake_private_id], "extensions": {"reference": fake_private_id}},
         ]
     }
 
@@ -237,10 +241,14 @@ async def test_smart_hvac_inventory_and_single_device_are_distinct(api: FrankEne
         "updatedAt": "2026-11-08T13:11:28.447Z",
     }
     with patch.object(
-        api, "_query", new=AsyncMock(side_effect=[
-            {"data": {"smartHvacs": [device]}},
-            {"data": {"smartHvac": device}},
-        ])
+        api,
+        "_query",
+        new=AsyncMock(
+            side_effect=[
+                {"data": {"smartHvacs": [device]}},
+                {"data": {"smartHvac": device}},
+            ]
+        ),
     ) as query_mock:
         devices = await api.smart_hvacs("1234AB 10")
         individual = await api.smart_hvac("synthetic-device")
@@ -334,12 +342,25 @@ async def test_summary_rejects_malformed_fields(api: FrankEnergie, payload: dict
 async def test_connect_requests_empty_and_typed(api: FrankEnergie) -> None:
     """Handle independently queried connect requests with opaque status strings."""
     with patch.object(
-        api, "_query", new=AsyncMock(side_effect=[
-            {"data": {"smartHvacConnectRequests": []}},
-            {"data": {"smartHvacConnectRequests": [
-                {"id": "synthetic-request", "brand": "NIBE", "error": None, "status": "opaque-provider-status"}
-            ]}},
-        ])
+        api,
+        "_query",
+        new=AsyncMock(
+            side_effect=[
+                {"data": {"smartHvacConnectRequests": []}},
+                {
+                    "data": {
+                        "smartHvacConnectRequests": [
+                            {
+                                "id": "synthetic-request",
+                                "brand": "NIBE",
+                                "error": None,
+                                "status": "opaque-provider-status",
+                            }
+                        ]
+                    }
+                },
+            ]
+        ),
     ) as request:
         assert await api.smart_hvac_connect_requests() == []
         result = await api.smart_hvac_connect_requests()
@@ -353,8 +374,11 @@ async def test_connect_requests_empty_and_typed(api: FrankEnergie) -> None:
 @pytest.mark.asyncio
 async def test_connect_requests_reject_missing_or_invalid_list(api: FrankEnergie) -> None:
     """Do not confuse an invalid connect-request response with zero requests."""
-    for payload in ({"data": {}}, {"data": {"smartHvacConnectRequests": None}},
-                    {"data": {"smartHvacConnectRequests": [None]}}):
+    for payload in (
+        {"data": {}},
+        {"data": {"smartHvacConnectRequests": None}},
+        {"data": {"smartHvacConnectRequests": [None]}},
+    ):
         with patch.object(api, "_query", new=AsyncMock(return_value=payload)):
             with pytest.raises(RequestException):
                 await api.smart_hvac_connect_requests()
