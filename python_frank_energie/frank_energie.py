@@ -249,7 +249,6 @@ def _validate_inventory_interventions(device: dict[str, Any], field_name: str) -
         raise RequestException(f"Invalid {field_name} inventory interventions.")
 
 
-
 def _validate_enode_inventory_fields(device: dict[str, Any], field_name: str) -> None:
     """Validate nested Enode settings, state flags, and last-seen metadata."""
     charge_settings = device.get("chargeSettings")
@@ -282,6 +281,7 @@ def _validate_enode_inventory_fields(device: dict[str, Any], field_name: str) ->
         raise RequestException(f"Invalid {field_name} inventory lastSeen.") from err
     if parsed_last_seen.utcoffset() is None:
         raise RequestException(f"Invalid {field_name} inventory lastSeen.")
+
 
 def _validate_inventory_record(device: object, field_name: str, seen_ids: set[str]) -> None:
     """Validate the required fields and schema-specific values of one device."""
