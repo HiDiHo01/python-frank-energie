@@ -1187,7 +1187,7 @@ class Me:
     meterReadingExportPeriods: list[MeterReadingExportPeriod]
     smartCharging: dict[str, object]
     PushNotificationPriceAlerts: list[PushNotificationPriceAlert] = field(default_factory=list)
-    userSmartHvac: SmartHvac | None = None
+    user_smart_hvac: SmartHvac | None = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> Me:
@@ -1242,7 +1242,7 @@ class Me:
             addressHasMultipleSites=payload.get("addressHasMultipleSites"),
             meterReadingExportPeriods=meter_periods,
             smartCharging=payload.get("smartCharging") or {},
-            userSmartHvac=SmartHvac.from_dict(raw_user_smart_hvac),
+            user_smart_hvac=SmartHvac.from_dict(raw_user_smart_hvac),
         )
 
 
@@ -1771,21 +1771,30 @@ class SmartHvac:
     userCreatedAt: str | None = None
     userId: str | None = None
     isAvailableInCountry: bool | None = None
-    hasAcceptedTerms: bool | None = None
-    isAvailableOnSite: bool | None = None
+    has_accepted_terms: bool | None = None
+    is_available_on_site: bool | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> SmartHvac | None:
-        """Parse SmartHvac from dictionary."""
+        """Parse Smart HVAC status and validate the optional site-specific flags."""
         if not data:
             return None
+
+        has_accepted_terms = data.get("hasAcceptedTerms")
+        if has_accepted_terms is not None and not isinstance(has_accepted_terms, bool):
+            raise RequestException("Invalid 'userSmartHvac.hasAcceptedTerms': expected a boolean or null")
+
+        is_available_on_site = data.get("isAvailableOnSite")
+        if is_available_on_site is not None and not isinstance(is_available_on_site, bool):
+            raise RequestException("Invalid 'userSmartHvac.isAvailableOnSite': expected a boolean or null")
+
         return cls(
             isActivated=data.get("isActivated"),
             userCreatedAt=data.get("userCreatedAt"),
             userId=data.get("userId"),
             isAvailableInCountry=data.get("isAvailableInCountry"),
-            hasAcceptedTerms=data.get("hasAcceptedTerms"),
-            isAvailableOnSite=data.get("isAvailableOnSite"),
+            has_accepted_terms=has_accepted_terms,
+            is_available_on_site=is_available_on_site,
         )
 
 

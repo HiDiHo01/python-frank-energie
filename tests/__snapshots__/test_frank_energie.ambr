@@ -50,7 +50,7 @@
     }),
     treesCount=None,
     updatedAt=None,
-    userSmartHvac=None,
+    user_smart_hvac=None,
   )
 # ---
 # name: test_month_summary
