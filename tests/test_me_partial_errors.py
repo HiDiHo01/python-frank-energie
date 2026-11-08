@@ -73,6 +73,10 @@ async def test_me_keeps_user_data_when_only_hvac_fails(
 
     assert result.id == "synthetic-user"
     assert result.user_smart_hvac is None
+    assert any(
+        record.levelno == logging.WARNING and "Returning partial Me data" in record.getMessage()
+        for record in caplog.records
+    )
     assert "synthetic-private-hvac-error" not in caplog.text
     assert "synthetic-private-hvac-reference" not in caplog.text
 
@@ -108,6 +112,16 @@ async def test_me_keeps_user_data_when_only_hvac_fails(
             None,
             [{"message": "HVAC failed", "path": ["userSmartHvac"]}],
             id="missing-me",
+        ),
+        pytest.param(
+            {"countryCode": "NL"},
+            [{"message": "HVAC failed", "path": ["userSmartHvac"]}],
+            id="missing-user-id",
+        ),
+        pytest.param(
+            {"id": 123},
+            [{"message": "HVAC failed", "path": ["userSmartHvac"]}],
+            id="invalid-user-id",
         ),
     ],
 )

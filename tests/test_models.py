@@ -1,6 +1,7 @@
 """Tests for Frank Energie Models."""
 
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -262,6 +263,29 @@ def test_user_datetime_z_suffix_parses():
     assert user.createdAt is not None, "createdAt should parse with Z suffix"
     assert user.updatedAt is not None, "updatedAt should parse with Z suffix"
     assert user.lastLogin.tzinfo is not None, "lastLogin should be timezone-aware"
+
+
+def test_user_parser_does_not_log_private_data(caplog: pytest.LogCaptureFixture) -> None:
+    """Keep account, invitation, and delivery address details out of model logs."""
+    user_data = {
+        "id": "synthetic-private-user-id",
+        "email": "synthetic-private-user@example.invalid",
+        "InviteLinkUser": {"slug": "synthetic-private-invitation"},
+        "deliverySites": [{"address": {"street": "synthetic-private-street"}}],
+    }
+
+    with caplog.at_level(logging.DEBUG, logger="python_frank_energie.models"):
+        user = User.from_dict({"data": {"me": user_data}})
+
+    assert user is not None
+    assert user.id == user_data["id"]
+    for private_value in (
+        "synthetic-private-user-id",
+        "synthetic-private-user@example.invalid",
+        "synthetic-private-invitation",
+        "synthetic-private-street",
+    ):
+        assert private_value not in caplog.text
 
 
 def test_user_smart_hvac_parses():

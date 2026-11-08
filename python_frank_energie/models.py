@@ -1938,7 +1938,7 @@ class User:
     @staticmethod
     def from_dict(data: dict[str, Any]) -> User | None:
         """Parse the response from the me query."""
-        _LOGGER.debug("User %s", data)
+        _LOGGER.debug("User response received")
 
         if errors := data.get("errors"):
             raise RequestException(errors[0]["message"])
@@ -1946,8 +1946,6 @@ class User:
         payload = data.get("data", {}).get("me")
         if payload is None:
             raise RequestException("Unexpected response")
-
-        _LOGGER.debug("deliverySites %s", payload.get("deliverySites"))
 
         last_login = _parse_iso_datetime(payload.get("lastLogin"), "lastLogin")
         created_at = _parse_iso_datetime(payload.get("createdAt"), "createdAt")
