@@ -1763,9 +1763,58 @@ class SmartTrading:
     isAvailableInCountry: bool | None = None
 
 
+def _smart_hvac_text(data: Mapping[str, object], field_name: str) -> str | None:
+    """Read a nullable string without coercing invalid upstream values."""
+    value = data.get(field_name)
+    if value is not None and not isinstance(value, str):
+        raise RequestException(f"Invalid Smart HVAC field '{field_name}': expected a string or null")
+    return value
+
+
+def _smart_hvac_boolean(data: Mapping[str, object], field_name: str) -> bool | None:
+    """Read a nullable boolean, rejecting numbers and string representations."""
+    value = data.get(field_name)
+    if value is not None and not isinstance(value, bool):
+        raise RequestException(f"Invalid Smart HVAC field '{field_name}': expected a boolean or null")
+    return value
+
+
+def _smart_hvac_datetime(data: Mapping[str, object], field_name: str) -> datetime | None:
+    """Parse a nullable offset-aware ISO timestamp without assuming a timezone."""
+    value = _smart_hvac_text(data, field_name)
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise RequestException(f"Invalid Smart HVAC timestamp field '{field_name}'") from None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise RequestException(f"Smart HVAC timestamp '{field_name}' must include a timezone")
+    return parsed.astimezone(UTC)
+
+
+def _smart_hvac_date(data: Mapping[str, object], field_name: str) -> date | None:
+    """Parse a nullable ISO calendar date without inventing missing dates."""
+    value = _smart_hvac_text(data, field_name)
+    if value is None:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise RequestException(f"Invalid Smart HVAC date field '{field_name}'") from None
+
+
+def _smart_hvac_id(data: Mapping[str, object]) -> str:
+    """Extract the required device ID without exposing identifiers in errors."""
+    device_id = _smart_hvac_text(data, "id")
+    if device_id is None or not device_id.strip():
+        raise RequestException("Smart HVAC device record requires a non-empty ID")
+    return device_id
+
+
 @dataclass
 class SmartHvac:
-    """Activation and availability status of the Smart HVAC service."""
+    """Site-specific Smart HVAC service activation and eligibility data."""
 
     isActivated: bool | None = None
     userCreatedAt: str | None = None
@@ -1775,17 +1824,114 @@ class SmartHvac:
     isAvailableOnSite: bool | None = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> SmartHvac | None:
-        """Parse SmartHvac from dictionary."""
-        if not data:
+    def from_dict(cls, data: Mapping[str, object] | None) -> SmartHvac | None:
+        """Parse nullable flags strictly; null and missing flags remain unknown."""
+        if data is None:
             return None
+        if not isinstance(data, Mapping):
+            raise RequestException("Invalid userSmartHvac response: expected an object or null")
         return cls(
-            isActivated=data.get("isActivated"),
-            userCreatedAt=data.get("userCreatedAt"),
-            userId=data.get("userId"),
-            isAvailableInCountry=data.get("isAvailableInCountry"),
-            hasAcceptedTerms=data.get("hasAcceptedTerms"),
-            isAvailableOnSite=data.get("isAvailableOnSite"),
+            isActivated=_smart_hvac_boolean(data, "isActivated"),
+            userCreatedAt=_smart_hvac_text(data, "userCreatedAt"),
+            userId=_smart_hvac_text(data, "userId"),
+            isAvailableInCountry=_smart_hvac_boolean(data, "isAvailableInCountry"),
+            hasAcceptedTerms=_smart_hvac_boolean(data, "hasAcceptedTerms"),
+            isAvailableOnSite=_smart_hvac_boolean(data, "isAvailableOnSite"),
+        )
+
+
+@dataclass(slots=True)
+class SmartHvacDevice:
+    """A Smart HVAC device inventory record, without inferred operating state."""
+
+    id: str
+    brand: str | None = None
+    connection_ean: str | None = None
+    created_at: datetime | None = None
+    deleted_at: datetime | None = None
+    device_type: str | None = None
+    display_name: str | None = None
+    needs_reauthentication: bool | None = None
+    external_reference: str | None = None
+    model: str | None = None
+    provider: str | None = None
+    updated_at: datetime | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> SmartHvacDevice:
+        """Validate a device record using only observed GraphQL fields."""
+        if not isinstance(data, Mapping):
+            raise RequestException("Invalid Smart HVAC device record: expected an object")
+        return cls(
+            id=_smart_hvac_id(data),
+            brand=_smart_hvac_text(data, "brand"),
+            connection_ean=_smart_hvac_text(data, "connectionEAN"),
+            created_at=_smart_hvac_datetime(data, "createdAt"),
+            deleted_at=_smart_hvac_datetime(data, "deletedAt"),
+            device_type=_smart_hvac_text(data, "deviceType"),
+            display_name=_smart_hvac_text(data, "displayName"),
+            needs_reauthentication=_smart_hvac_boolean(data, "needsReauthentication"),
+            external_reference=_smart_hvac_text(data, "externalReference"),
+            model=_smart_hvac_text(data, "model"),
+            provider=_smart_hvac_text(data, "provider"),
+            updated_at=_smart_hvac_datetime(data, "updatedAt"),
+        )
+
+
+@dataclass(slots=True)
+class SmartHvacSummary:
+    """Per-device summary with raw provider statuses, not a running-state flag."""
+
+    first_session_date: date | None = None
+    last_session_date: date | None = None
+    operational_status: str | None = None
+    operational_status_timestamp: datetime | None = None
+    steering_status: str | None = None
+    total_result: float | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> SmartHvacSummary:
+        """Validate the observed summary fields without assuming status enums."""
+        if not isinstance(data, Mapping):
+            raise RequestException("Invalid Smart HVAC summary: expected an object")
+        total_result_raw = data.get("totalResult")
+        if total_result_raw is not None:
+            if isinstance(total_result_raw, bool) or not isinstance(total_result_raw, (int, float)):
+                raise RequestException("Invalid Smart HVAC field 'totalResult': expected a number or null")
+            total_result = float(total_result_raw)
+            if not math.isfinite(total_result):
+                raise RequestException("Invalid Smart HVAC field 'totalResult': expected a finite number")
+        else:
+            total_result = None
+        return cls(
+            first_session_date=_smart_hvac_date(data, "firstSessionDate"),
+            last_session_date=_smart_hvac_date(data, "lastSessionDate"),
+            operational_status=_smart_hvac_text(data, "operationalStatus"),
+            operational_status_timestamp=_smart_hvac_datetime(data, "operationalStatusTimestamp"),
+            steering_status=_smart_hvac_text(data, "steeringStatus"),
+            total_result=total_result,
+        )
+
+
+@dataclass(slots=True)
+class SmartHvacConnectRequest:
+    """Smart HVAC connect-request record with provider-reported status text."""
+
+    id: str
+    brand: str | None = None
+    error: str | None = None
+    status: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, object]) -> SmartHvacConnectRequest:
+        """Parse a connect request without guessing any status enum members."""
+        if not isinstance(data, Mapping):
+            raise RequestException("Invalid Smart HVAC connect request: expected an object")
+        return cls(
+            id=_smart_hvac_id(data),
+            brand=_smart_hvac_text(data, "brand"),
+            error=_smart_hvac_text(data, "error"),
+            status=_smart_hvac_text(data, "status"),
         )
 
 
