@@ -2471,6 +2471,10 @@ class FrankEnergie:
         )
         response = await self._query(query)
         raw = self._smart_hvac_response_field(response, "userSmartHvac")
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise RequestException("Invalid userSmartHvac response: expected an object or null")
         return SmartHvac.from_dict(raw)
 
     async def smart_hvacs(self, site_reference: str) -> list[SmartHvacDevice]:
@@ -2540,7 +2544,11 @@ class FrankEnergie:
         )
         response = await self._query(query)
         raw = self._smart_hvac_response_field(response, "smartHvac")
-        return None if raw is None else SmartHvacDevice.from_dict(raw)
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise RequestException("Invalid smartHvac response: expected an object or null")
+        return SmartHvacDevice.from_dict(raw)
 
     async def smart_hvac_summary(self, device_id: str) -> SmartHvacSummary | None:
         """Fetch provider-reported device statuses without inferring running state."""
@@ -2566,7 +2574,11 @@ class FrankEnergie:
         )
         response = await self._query(query)
         raw = self._smart_hvac_response_field(response, "smartHvacSummary")
-        return None if raw is None else SmartHvacSummary.from_dict(raw)
+        if raw is None:
+            return None
+        if not isinstance(raw, dict):
+            raise RequestException("Invalid smartHvacSummary response: expected an object or null")
+        return SmartHvacSummary.from_dict(raw)
 
     async def smart_hvac_connect_requests(self) -> list[SmartHvacConnectRequest]:
         """Fetch Smart HVAC connection requests independently from device inventory."""
