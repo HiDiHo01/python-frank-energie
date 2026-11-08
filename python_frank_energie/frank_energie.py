@@ -505,11 +505,19 @@ class FrankEnergie:
             self._session = ClientSession()
             self._close_session = True
 
-    async def _query(self, query: FrankEnergieQuery, extra_headers: dict[str, str] | None = None) -> dict[str, object]:
+    async def _query(
+        self,
+        query: FrankEnergieQuery,
+        extra_headers: dict[str, str] | None = None,
+        *,
+        recover_hvac_errors: bool = False,
+    ) -> dict[str, object]:
         """Send a query to the FrankEnergie API.
 
         Args:
             query: The GraphQL query as a dictionary.
+            extra_headers: Additional headers for the request.
+            recover_hvac_errors: Allow a usable Me result when only its optional HVAC field fails.
 
         Returns:
             The response from the API as a dictionary.
@@ -584,7 +592,12 @@ class FrankEnergie:
 
             # _LOGGER.debug("Response body: %s", response)
 
-            self._handle_errors(response, operation_name, retry_after_header=retry_after_header)
+            recovered_response = self._handle_errors(
+                response,
+                operation_name,
+                retry_after_header=retry_after_header,
+                recover_hvac_errors=recover_hvac_errors,
+            )
 
             # print(f"Response status code: {response.status}")
             # print(f"Response headers: {response.headers}")
@@ -597,7 +610,7 @@ class FrankEnergie:
                 duration,
             )
 
-            return response
+            return recovered_response or response
 
         except TimeoutError as err:
             _LOGGER.error(
@@ -703,13 +716,43 @@ class FrankEnergie:
 
         return {**response, "errors": redacted_errors} if needs_redaction else response
 
+    @staticmethod
+    def _me_without_failed_hvac(response: dict[str, object], errors: list[object]) -> dict[str, object] | None:
+        """Build a partial Me result when every error belongs to the optional HVAC field."""
+        data = response.get("data")
+        if not isinstance(data, dict):
+            return None
+        me_data = data.get("me")
+        if not isinstance(me_data, dict) or not me_data:
+            return None
+
+        for error in errors:
+            if not isinstance(error, dict):
+                return None
+            message = error.get("message")
+            path = error.get("path")
+            if (
+                not isinstance(message, str)
+                or not message.strip()
+                or not isinstance(path, list)
+                or path[:1] != ["userSmartHvac"]
+                or not all(isinstance(segment, str) and segment for segment in path)
+            ):
+                return None
+
+        recovered_response = response.copy()
+        recovered_response.pop("errors")
+        recovered_response["data"] = {**data, "userSmartHvac": None}
+        return recovered_response
+
     def _handle_errors(
         self,
         response: dict[str, object] | None,
         operation_name: str | None = None,
         *,
         retry_after_header: str | None = None,
-    ) -> None:
+        recover_hvac_errors: bool = False,
+    ) -> dict[str, object] | None:
         """
         Validate the GraphQL error list and process its entries in response order.
 
@@ -717,6 +760,10 @@ class FrankEnergie:
             response: The API response as a dictionary.
             operation_name: The operation associated with this response.
             retry_after_header: The raw server-provided retry hint, if available.
+            recover_hvac_errors: Allow recovery from errors in the optional Me HVAC field.
+
+        Returns:
+            A partial Me response when recovery applies, otherwise None.
 
         Raises:
             AuthException: For authentication-related errors.
@@ -727,11 +774,11 @@ class FrankEnergie:
         """
         if not response:
             _LOGGER.debug("No response data to handle errors.")
-            return
+            return None
 
         errors_obj: object | None = response.get("errors")
         if not errors_obj:
-            return
+            return None
 
         if not isinstance(errors_obj, list):
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
@@ -747,7 +794,8 @@ class FrankEnergie:
         if not isinstance(safe_errors, list):
             raise FrankEnergieException("Invalid GraphQL error structure")
 
-        has_backend_timeout = any(
+        recovered_response = self._me_without_failed_hvac(response, errors_obj) if recover_hvac_errors else None
+        suppress_response_details = recovered_response is not None or any(
             isinstance(error_obj, dict) and error_obj.get("message") == "timeout of 60000ms exceeded"
             for error_obj in safe_errors
         )
@@ -762,8 +810,12 @@ class FrankEnergie:
                 operation_name=active_query,
                 response=safe_response,
                 retry_after_header=retry_after_header,
-                suppress_unhandled_logging=has_backend_timeout,
+                suppress_unhandled_logging=suppress_response_details,
             )
+
+        if recovered_response is not None:
+            _LOGGER.debug("Using partial Me response without Smart HVAC status")
+        return recovered_response
 
     def _handle_graphql_error(
         self,
@@ -2018,7 +2070,11 @@ class FrankEnergie:
         return Me.from_dict(response)
 
     async def me(self, site_reference: str | None = None) -> Me:
-        """Fetch authenticated user data."""
+        """Fetch authenticated user data and optional site-specific HVAC status.
+
+        Field errors limited to Smart HVAC can leave ``user_smart_hvac`` unset
+        while usable user data is returned. Known request failures still propagate.
+        """
 
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -2193,9 +2249,8 @@ class FrankEnergie:
             {"siteReference": site_reference},
         )
 
-        response = await self._query(query)
+        response = await self._query(query, recover_hvac_errors=True)
 
-        # Minimal safeguard (optional but useful for debugging contract breaks)
         if not isinstance(response, dict):
             raise RequestException("Invalid response type for 'me' query")
 
