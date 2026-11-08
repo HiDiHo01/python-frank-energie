@@ -598,16 +598,16 @@ async def test_me(aresponses, snapshot: SnapshotAssertion):
 
 @pytest.mark.asyncio
 async def test_me_fetches_site_specific_user_smart_hvac() -> None:
-    """Query and parse the root-level userSmartHvac field for a site."""
+    """Preserve activated service status when the feature is unavailable on-site."""
     api = FrankEnergie(auth_token="test-token", refresh_token="test-token")  # noqa: S106
     response = {
         "data": {
             "me": {"id": "test-user"},
             "userSmartHvac": {
                 "hasAcceptedTerms": True,
-                "isActivated": False,
+                "isActivated": True,
                 "isAvailableInCountry": True,
-                "isAvailableOnSite": True,
+                "isAvailableOnSite": False,
                 "userCreatedAt": "2026-10-01T12:00:00Z",
                 "userId": "test-user",
             },
@@ -625,9 +625,9 @@ async def test_me_fetches_site_specific_user_smart_hvac() -> None:
     assert "isAvailableOnSite" in sent_query.query
     assert result.userSmartHvac is not None
     assert result.userSmartHvac.hasAcceptedTerms is True
-    assert result.userSmartHvac.isActivated is False
+    assert result.userSmartHvac.isActivated is True
     assert result.userSmartHvac.isAvailableInCountry is True
-    assert result.userSmartHvac.isAvailableOnSite is True
+    assert result.userSmartHvac.isAvailableOnSite is False
     assert result.userSmartHvac.userCreatedAt == "2026-10-01T12:00:00Z"
     assert result.userSmartHvac.userId == "test-user"
 
