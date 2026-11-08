@@ -1192,7 +1192,7 @@ class Me:
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> Me:
         """Parse the response from the me query."""
-        _LOGGER.debug("User payload received: %s", data)
+        _LOGGER.debug("Me response received")
 
         errors = data.get("errors")
         if isinstance(errors, list) and errors:
