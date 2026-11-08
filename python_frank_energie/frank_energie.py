@@ -715,6 +715,11 @@ class FrankEnergie:
         if not isinstance(safe_errors, list):
             raise FrankEnergieException("Invalid GraphQL error structure")
 
+        has_backend_timeout = any(
+            isinstance(error_obj, dict) and error_obj.get("message") == "timeout of 60000ms exceeded"
+            for error_obj in safe_errors
+        )
+
         for error_obj in safe_errors:
             if not isinstance(error_obj, dict):
                 _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
@@ -725,6 +730,7 @@ class FrankEnergie:
                 operation_name=active_query,
                 response=safe_response,
                 retry_after_header=retry_after_header,
+                suppress_unhandled_logging=has_backend_timeout,
             )
 
     def _handle_graphql_error(
@@ -734,6 +740,7 @@ class FrankEnergie:
         operation_name: str,
         response: dict[str, object],
         retry_after_header: str | None,
+        suppress_unhandled_logging: bool = False,
     ) -> None:
         """Classify one GraphQL error while preserving its diagnostic context."""
         message_obj = error_obj.get("message")
@@ -751,22 +758,27 @@ class FrankEnergie:
             )
             raise RateLimitException(operation_name, retry_after=retry_after)
 
+        # The backend can report its own timeout as a GraphQL error (issue #208).
+        # Keep this distinct from an aiohttp client-side TimeoutError.
+        if message == "timeout of 60000ms exceeded":
+            _LOGGER.debug(
+                "Frank Energie GraphQL timeout during operation [%s]",
+                operation_name,
+            )
+            raise NetworkError(f"Frank Energie GraphQL timeout during operation [{operation_name}]")
+
         exception_spec = _GRAPHQL_ERROR_EXCEPTIONS.get(message)
         if exception_spec is not None:
             exception_type, exception_message = exception_spec
             raise exception_type(exception_message)
 
         if message == "Graphql validation error":
-            log_level = logging.DEBUG if operation_name == "SmartHvacStatus" else logging.ERROR
-            _LOGGER.log(
-                log_level,
-                "GraphQL validation error - query %s: %s path=%s (response: %s)",
-                operation_name,
-                message,
-                path,
-                response,
+            self._raise_graphql_validation_error(
+                operation_name=operation_name,
+                path=path,
+                response=response,
+                suppress_response_logging=suppress_unhandled_logging,
             )
-            raise FrankEnergieException("Request failed: Graphql validation error")
 
         if message.startswith(("No marketprices found for segment", "No reading dates found for user")):
             return
@@ -782,11 +794,37 @@ class FrankEnergie:
             _LOGGER.error("Request not supported in user's country: %s", error_obj)
             raise FrankEnergieException("Request not supported in the user's country")
 
+        if suppress_unhandled_logging:
+            return
+
         _LOGGER.error("Unhandled GraphQL error message: %s", message)
         _LOGGER.error("Unhandled GraphQL error object: %s", error_obj)
         extensions = error_obj.get("extensions")
         if isinstance(extensions, dict) and extensions:
             _LOGGER.debug("GraphQL extensions: %s", extensions)
+
+    @staticmethod
+    def _raise_graphql_validation_error(
+        *,
+        operation_name: str,
+        path: object,
+        response: dict[str, object],
+        suppress_response_logging: bool,
+    ) -> None:
+        """Log a GraphQL validation failure without leaking suppressed response data."""
+        log_level = logging.DEBUG if operation_name == "SmartHvacStatus" else logging.ERROR
+        if suppress_response_logging:
+            _LOGGER.log(log_level, "GraphQL validation error - query %s", operation_name)
+        else:
+            _LOGGER.log(
+                log_level,
+                "GraphQL validation error - query %s: %s path=%s (response: %s)",
+                operation_name,
+                "Graphql validation error",
+                path,
+                response,
+            )
+        raise FrankEnergieException("Request failed: Graphql validation error")
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
@@ -982,7 +1020,7 @@ class FrankEnergie:
         except _MonthSummaryReadingsUnavailable:
             _LOGGER.debug("MonthSummary unavailable because meter readings are missing")
             return None
-        except (AuthException, AuthRequiredException, RateLimitException):
+        except (AuthException, AuthRequiredException, NetworkError, RateLimitException):
             raise
         except Exception as e:
             _LOGGER.exception(
