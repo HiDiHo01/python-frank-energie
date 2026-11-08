@@ -1859,6 +1859,14 @@ class FrankEnergie:
                     ...UserSmartFeatures
                     ...UserMisc
                 }
+                userSmartHvac(siteReference: $siteReference) {
+                    hasAcceptedTerms
+                    isActivated
+                    isAvailableInCountry
+                    isAvailableOnSite
+                    userCreatedAt
+                    userId
+                }
             }
             fragment UserCore on User {
                 id
