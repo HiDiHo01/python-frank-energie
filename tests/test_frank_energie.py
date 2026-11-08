@@ -20,7 +20,7 @@ from python_frank_energie.exceptions import (
     SmartTradingNotEnabledException,
 )
 from python_frank_energie.frank_energie import VERSION, FrankEnergieQuery, sanitize_query
-from python_frank_energie.models import EnodeChargers
+from python_frank_energie.models import EnodeChargers, Me
 
 from . import load_fixtures
 
@@ -595,6 +595,65 @@ async def test_me(aresponses, snapshot: SnapshotAssertion):
     assert me is not None
     assert me == snapshot
 
+
+
+@pytest.mark.asyncio
+async def test_me_fetches_site_specific_user_smart_hvac() -> None:
+    """Query and parse the root-level userSmartHvac field for a site."""
+    api = FrankEnergie(auth_token="test-token", refresh_token="test-token")  # noqa: S106
+    response = {
+        "data": {
+            "me": {"id": "test-user"},
+            "userSmartHvac": {
+                "hasAcceptedTerms": True,
+                "isActivated": False,
+                "isAvailableInCountry": True,
+                "isAvailableOnSite": True,
+                "userCreatedAt": "2026-10-01T12:00:00Z",
+                "userId": "test-user",
+            },
+        }
+    }
+
+    with patch.object(api, "_query", new=AsyncMock(return_value=response)) as query_mock:
+        result = await api.me("1234AB 10")
+
+    sent_query = query_mock.call_args.args[0]
+    assert sent_query.operation_name == "Me"
+    assert sent_query.variables == {"siteReference": "1234AB 10"}
+    assert "userSmartHvac(siteReference: $siteReference)" in sent_query.query
+    assert "hasAcceptedTerms" in sent_query.query
+    assert "isAvailableOnSite" in sent_query.query
+    assert result.userSmartHvac is not None
+    assert result.userSmartHvac.hasAcceptedTerms is True
+    assert result.userSmartHvac.isActivated is False
+    assert result.userSmartHvac.isAvailableInCountry is True
+    assert result.userSmartHvac.isAvailableOnSite is True
+    assert result.userSmartHvac.userCreatedAt == "2026-10-01T12:00:00Z"
+    assert result.userSmartHvac.userId == "test-user"
+
+
+@pytest.mark.parametrize(
+    "root_data",
+    [
+        {"me": {"id": "test-user"}},
+        {"me": {"id": "test-user"}, "userSmartHvac": None},
+    ],
+)
+def test_me_missing_user_smart_hvac_is_optional(root_data: dict[str, object]) -> None:
+    """Keep responses without a Smart HVAC service backwards compatible."""
+    result = Me.from_dict({"data": root_data})
+
+    assert result.userSmartHvac is None
+
+
+@pytest.mark.parametrize("invalid_data", [True, "activated", []])
+def test_me_rejects_invalid_user_smart_hvac(invalid_data: object) -> None:
+    """Reject malformed Smart HVAC responses rather than silently ignoring them."""
+    response = {"data": {"me": {"id": "test-user"}, "userSmartHvac": invalid_data}}
+
+    with pytest.raises(RequestException, match="Invalid 'userSmartHvac' data"):
+        Me.from_dict(response)
 
 @pytest.mark.asyncio
 async def test_me_without_authentication(aresponses):
