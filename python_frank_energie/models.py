@@ -1187,6 +1187,7 @@ class Me:
     meterReadingExportPeriods: list[MeterReadingExportPeriod]
     smartCharging: dict[str, object]
     PushNotificationPriceAlerts: list[PushNotificationPriceAlert] = field(default_factory=list)
+    userSmartHvac: SmartHvac | None = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> Me:
@@ -1205,6 +1206,10 @@ class Me:
         payload = raw_data.get("me")
         if not payload:
             raise RequestException("Unexpected response")
+
+        raw_user_smart_hvac = raw_data.get("userSmartHvac")
+        if raw_user_smart_hvac is not None and not isinstance(raw_user_smart_hvac, dict):
+            raise RequestException("Invalid 'userSmartHvac' data in response")
 
         invite_link_user = None
         if payload.get("InviteLinkUser"):
@@ -1237,6 +1242,7 @@ class Me:
             addressHasMultipleSites=payload.get("addressHasMultipleSites"),
             meterReadingExportPeriods=meter_periods,
             smartCharging=payload.get("smartCharging") or {},
+            userSmartHvac=SmartHvac.from_dict(raw_user_smart_hvac),
         )
 
 
@@ -1759,10 +1765,14 @@ class SmartTrading:
 
 @dataclass
 class SmartHvac:
+    """Activation and availability status of the Smart HVAC service."""
+
     isActivated: bool | None = None
     userCreatedAt: str | None = None
     userId: str | None = None
     isAvailableInCountry: bool | None = None
+    hasAcceptedTerms: bool | None = None
+    isAvailableOnSite: bool | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> SmartHvac | None:
@@ -1774,6 +1784,8 @@ class SmartHvac:
             userCreatedAt=data.get("userCreatedAt"),
             userId=data.get("userId"),
             isAvailableInCountry=data.get("isAvailableInCountry"),
+            hasAcceptedTerms=data.get("hasAcceptedTerms"),
+            isAvailableOnSite=data.get("isAvailableOnSite"),
         )
 
 
