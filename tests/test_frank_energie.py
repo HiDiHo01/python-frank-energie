@@ -1443,15 +1443,14 @@ class TestFrankEnergieAPIEndpointsAuth:
             await client.smart_battery_sessions("", date.today(), date.today())
 
     @pytest.mark.asyncio
-    async def test_frank_energie_enode_chargers_not_authenticated_returns_empty(self):
-        """Test enode chargers when not authenticated returns an empty EnodeChargers."""
+    async def test_frank_energie_enode_chargers_not_authenticated(self):
+        """Never report an empty inventory when authentication is absent."""
         from datetime import date
 
         client = FrankEnergie()
-
-        result = await client.enode_chargers("site_ref_123", date.today())
-
-        assert result == EnodeChargers(chargers=[])
+        start_date = date.today()
+        with pytest.raises(AuthRequiredException):
+            await client.enode_chargers("site_ref_123", start_date)
 
 
 #
@@ -1647,44 +1646,33 @@ async def test_month_summary_exception_handling(aresponses):
 
 @pytest.mark.asyncio
 async def test_enode_chargers_empty_response_handling():
-    """Test enode chargers with various empty response scenarios."""
+    """Treat missing charger inventory data as failure, not no devices."""
     client = FrankEnergie(auth_token="test_token")
+    start_date = datetime.now().date()
+    for response in (None, {"data": None}, {"data": {}}):
+        with (
+            patch.object(client, "_query", return_value=response),
+            pytest.raises(RequestException, match="inventory|GraphQL"),
+        ):
+            await client.enode_chargers("site_ref_123", start_date)
 
-    # Test with None response
-    with patch.object(client, "_query", return_value=None):
-        result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == EnodeChargers(chargers=[])
-
-    # Test with empty data
-    with patch.object(client, "_query", return_value={"data": None}):
-        result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == EnodeChargers(chargers=[])
-
-    # Test with missing enodeChargers key
-    with patch.object(client, "_query", return_value={"data": {}}):
-        result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == EnodeChargers(chargers=[])
+    with patch.object(client, "_query", return_value={"data": {"enodeChargers": []}}):
+        assert await client.enode_chargers("site_ref_123", start_date) == EnodeChargers(chargers=[])
 
 
 @pytest.mark.asyncio
 async def test_smart_batteries_error_handling():
-    """Test smart batteries comprehensive error handling."""
+    """Do not turn missing, failed or partial responses into empty batteries."""
     client = FrankEnergie(auth_token="test_token")
+    for response in (None, {"errors": [{"message": "Temporary failure"}]}, {"data": None}):
+        with (
+            patch.object(client, "_query", return_value=response),
+            pytest.raises(RequestException, match="inventory|GraphQL"),
+        ):
+            await client.smart_batteries()
 
-    # Test with empty response
-    with patch.object(client, "_query", return_value=None):
-        result = await client.smart_batteries()
-        assert len(result.batteries) == 0
-
-    # Test with error response
-    with patch.object(client, "_query", return_value={"errors": [{"message": "Some error"}]}):
-        result = await client.smart_batteries()
-        assert len(result.batteries) == 0
-
-    # Test with missing data
-    with patch.object(client, "_query", return_value={"data": None}):
-        result = await client.smart_batteries()
-        assert len(result.batteries) == 0
+    with patch.object(client, "_query", return_value={"data": {"smartBatteries": []}}):
+        assert (await client.smart_batteries()).batteries == []
 
 
 @pytest.mark.asyncio

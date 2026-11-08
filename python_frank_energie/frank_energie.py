@@ -173,6 +173,156 @@ def _dig(data: object, *keys: str) -> object:
     return current
 
 
+_REQUIRED_INVENTORY_FIELDS: Mapping[str, frozenset[str]] = {
+    "enodeChargers": frozenset(
+        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable", "lastSeen"}
+    ),
+    "enodeVehicles": frozenset(
+        {"canSmartCharge", "chargeSettings", "chargeState", "information", "interventions", "isReachable", "lastSeen"}
+    ),
+    "smartBatteries": frozenset(
+        {
+            "brand",
+            "capacity",
+            "createdAt",
+            "externalReference",
+            "maxChargePower",
+            "maxDischargePower",
+            "provider",
+            "updatedAt",
+        }
+    ),
+}
+
+
+def _validate_inventory_identifier(device: dict[str, Any], field_name: str, seen_ids: set[str]) -> None:
+    """Require a nonempty, unique device identifier."""
+    device_id = device.get("id")
+    if not isinstance(device_id, str) or not device_id.strip() or device_id in seen_ids:
+        raise RequestException(f"Missing or duplicate device ID in {field_name} inventory.")
+    seen_ids.add(device_id)
+
+
+def _validate_battery_inventory_numbers(device: dict[str, Any]) -> None:
+    """Reject malformed numeric values while keeping explicit nulls valid."""
+    for numeric_field in ("capacity", "maxChargePower", "maxDischargePower"):
+        value = device[numeric_field]
+        if value is None:
+            continue
+        try:
+            if isinstance(value, bool) or not math.isfinite(float(value)):
+                raise ValueError("Expected a finite number")
+        except (TypeError, ValueError, OverflowError) as err:
+            raise RequestException(f"Invalid smartBatteries inventory {numeric_field}.") from err
+
+
+def _validate_battery_inventory_metadata(device: dict[str, Any]) -> None:
+    """Reject malformed non-null battery metadata while preserving explicit nulls."""
+    for text_field in ("brand", "externalReference", "provider"):
+        value = device[text_field]
+        if value is not None and not isinstance(value, str):
+            raise RequestException(f"Invalid smartBatteries inventory {text_field}.")
+
+    for timestamp_field in ("createdAt", "updatedAt"):
+        value = device[timestamp_field]
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise RequestException(f"Invalid smartBatteries inventory {timestamp_field}.")
+        try:
+            parsed_timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as err:
+            raise RequestException(f"Invalid smartBatteries inventory {timestamp_field}.") from err
+        if parsed_timestamp.utcoffset() is None:
+            raise RequestException(f"Invalid smartBatteries inventory {timestamp_field}.")
+
+
+def _validate_inventory_interventions(device: dict[str, Any], field_name: str) -> None:
+    """Reject malformed intervention entries instead of silently dropping them."""
+    interventions = device["interventions"]
+    if not isinstance(interventions, list) or any(
+        not isinstance(intervention, dict)
+        or not isinstance(intervention.get("title"), str)
+        or not isinstance(intervention.get("description"), str)
+        for intervention in interventions
+    ):
+        raise RequestException(f"Invalid {field_name} inventory interventions.")
+
+
+def _validate_enode_inventory_fields(device: dict[str, Any], field_name: str) -> None:
+    """Validate nested Enode settings, state flags, and last-seen metadata."""
+    charge_settings = device.get("chargeSettings")
+    charge_state = device.get("chargeState")
+    if not isinstance(charge_settings, dict):
+        raise RequestException(f"Invalid {field_name} inventory charge settings.")
+    if not isinstance(charge_state, dict):
+        raise RequestException(f"Invalid {field_name} inventory charge state.")
+
+    if not isinstance(device["canSmartCharge"], bool) or not isinstance(device["isReachable"], bool):
+        raise RequestException(f"Invalid {field_name} inventory status.")
+    if not isinstance(charge_settings.get("isSmartChargingEnabled"), bool):
+        raise RequestException(f"Invalid {field_name} inventory smart-charging setting.")
+    if "isSolarChargingEnabled" in charge_settings and not isinstance(charge_settings["isSolarChargingEnabled"], bool):
+        raise RequestException(f"Invalid {field_name} inventory solar-charging setting.")
+    if any(not isinstance(charge_state.get(flag), bool) for flag in ("isCharging", "isPluggedIn")):
+        raise RequestException(f"Invalid {field_name} inventory charge state.")
+    fully_charged = charge_state.get("isFullyCharged")
+    if fully_charged is not None and not isinstance(fully_charged, bool):
+        raise RequestException(f"Invalid {field_name} inventory charge state.")
+
+    last_seen = device["lastSeen"]
+    if last_seen is None:
+        return
+    if not isinstance(last_seen, str):
+        raise RequestException(f"Invalid {field_name} inventory lastSeen.")
+    try:
+        parsed_last_seen = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+    except ValueError as err:
+        raise RequestException(f"Invalid {field_name} inventory lastSeen.") from err
+    if parsed_last_seen.utcoffset() is None:
+        raise RequestException(f"Invalid {field_name} inventory lastSeen.")
+
+
+def _validate_inventory_record(device: object, field_name: str, seen_ids: set[str]) -> None:
+    """Validate the required fields and schema-specific values of one device."""
+    if not isinstance(device, dict):
+        raise RequestException(f"Invalid entry in {field_name} inventory.")
+    _validate_inventory_identifier(device, field_name, seen_ids)
+    required_fields = _REQUIRED_INVENTORY_FIELDS.get(field_name, frozenset())
+    if not required_fields.issubset(device):
+        raise RequestException(f"Incomplete {field_name} inventory record.")
+    if field_name in ("enodeChargers", "enodeVehicles"):
+        _validate_enode_inventory_fields(device, field_name)
+    if field_name == "enodeChargers" and not isinstance(device["information"], dict):
+        raise RequestException("Invalid enodeChargers inventory information.")
+    if field_name == "smartBatteries":
+        _validate_battery_inventory_metadata(device)
+        _validate_battery_inventory_numbers(device)
+    if field_name in ("enodeChargers", "enodeVehicles"):
+        _validate_inventory_interventions(device, field_name)
+
+
+def _require_device_inventory(response: object, field_name: str) -> list[dict[str, Any]]:
+    """Validate an entire inventory, including stable, unique device IDs.
+
+    Only an explicitly returned empty list in an otherwise successful response
+    means the provider has no devices of this type.
+    """
+    if not isinstance(response, dict):
+        raise RequestException(f"Failed or invalid {field_name} GraphQL response.")
+    if "errors" in response and (not isinstance(response["errors"], list) or response["errors"]):
+        raise RequestException(f"Failed or invalid {field_name} GraphQL response.")
+    payload = response.get("data")
+    if not isinstance(payload, dict) or not isinstance(payload.get(field_name), list):
+        raise RequestException(f"Missing or invalid {field_name} inventory in GraphQL response.")
+
+    devices: list[dict[str, Any]] = payload[field_name]
+    seen_ids: set[str] = set()
+    for device in devices:
+        _validate_inventory_record(device, field_name, seen_ids)
+    return devices
+
+
 class _MonthSummaryReadingsUnavailable(FrankEnergieException):
     """Signal that the API cannot calculate a month summary without meter readings."""
 
@@ -597,6 +747,11 @@ class FrankEnergie:
         if not isinstance(safe_errors, list):
             raise FrankEnergieException("Invalid GraphQL error structure")
 
+        has_backend_timeout = any(
+            isinstance(error_obj, dict) and error_obj.get("message") == "timeout of 60000ms exceeded"
+            for error_obj in safe_errors
+        )
+
         for error_obj in safe_errors:
             if not isinstance(error_obj, dict):
                 _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
@@ -607,6 +762,7 @@ class FrankEnergie:
                 operation_name=active_query,
                 response=safe_response,
                 retry_after_header=retry_after_header,
+                suppress_unhandled_logging=has_backend_timeout,
             )
 
     def _handle_graphql_error(
@@ -616,6 +772,7 @@ class FrankEnergie:
         operation_name: str,
         response: dict[str, object],
         retry_after_header: str | None,
+        suppress_unhandled_logging: bool = False,
     ) -> None:
         """Classify one GraphQL error while preserving its diagnostic context."""
         message_obj = error_obj.get("message")
@@ -633,22 +790,27 @@ class FrankEnergie:
             )
             raise RateLimitException(operation_name, retry_after=retry_after)
 
+        # The backend can report its own timeout as a GraphQL error (issue #208).
+        # Keep this distinct from an aiohttp client-side TimeoutError.
+        if message == "timeout of 60000ms exceeded":
+            _LOGGER.debug(
+                "Frank Energie GraphQL timeout during operation [%s]",
+                operation_name,
+            )
+            raise NetworkError(f"Frank Energie GraphQL timeout during operation [{operation_name}]")
+
         exception_spec = _GRAPHQL_ERROR_EXCEPTIONS.get(message)
         if exception_spec is not None:
             exception_type, exception_message = exception_spec
             raise exception_type(exception_message)
 
         if message == "Graphql validation error":
-            log_level = logging.DEBUG if operation_name == "SmartHvacStatus" else logging.ERROR
-            _LOGGER.log(
-                log_level,
-                "GraphQL validation error - query %s: %s path=%s (response: %s)",
-                operation_name,
-                message,
-                path,
-                response,
+            self._raise_graphql_validation_error(
+                operation_name=operation_name,
+                path=path,
+                response=response,
+                suppress_response_logging=suppress_unhandled_logging,
             )
-            raise FrankEnergieException("Request failed: Graphql validation error")
 
         if message.startswith(("No marketprices found for segment", "No reading dates found for user")):
             return
@@ -664,11 +826,37 @@ class FrankEnergie:
             _LOGGER.error("Request not supported in user's country: %s", error_obj)
             raise FrankEnergieException("Request not supported in the user's country")
 
+        if suppress_unhandled_logging:
+            return
+
         _LOGGER.error("Unhandled GraphQL error message: %s", message)
         _LOGGER.error("Unhandled GraphQL error object: %s", error_obj)
         extensions = error_obj.get("extensions")
         if isinstance(extensions, dict) and extensions:
             _LOGGER.debug("GraphQL extensions: %s", extensions)
+
+    @staticmethod
+    def _raise_graphql_validation_error(
+        *,
+        operation_name: str,
+        path: object,
+        response: dict[str, object],
+        suppress_response_logging: bool,
+    ) -> None:
+        """Log a GraphQL validation failure without leaking suppressed response data."""
+        log_level = logging.DEBUG if operation_name == "SmartHvacStatus" else logging.ERROR
+        if suppress_response_logging:
+            _LOGGER.log(log_level, "GraphQL validation error - query %s", operation_name)
+        else:
+            _LOGGER.log(
+                log_level,
+                "GraphQL validation error - query %s: %s path=%s (response: %s)",
+                operation_name,
+                "Graphql validation error",
+                path,
+                response,
+            )
+        raise FrankEnergieException("Request failed: Graphql validation error")
 
     LOGIN_QUERY = """
         mutation Login($email: String!, $password: String!) {
@@ -864,7 +1052,7 @@ class FrankEnergie:
         except _MonthSummaryReadingsUnavailable:
             _LOGGER.debug("MonthSummary unavailable because meter readings are missing")
             return None
-        except (AuthException, AuthRequiredException, RateLimitException):
+        except (AuthException, AuthRequiredException, NetworkError, RateLimitException):
             raise
         except Exception as e:
             _LOGGER.exception(
@@ -971,14 +1159,13 @@ class FrankEnergie:
             start_date: The start date for filtering the enode charger information.
 
         Returns:
-            The enode charger information, or an EnodeChargers with an empty
-            charger list if not authenticated.
+            The enode charger information, only when the API explicitly supplies a complete inventory.
 
         Raises:
             FrankEnergieException: If the request fails.
         """
         if not self.is_authenticated:
-            return EnodeChargers(chargers=[])
+            raise AuthRequiredException("Authentication is required.")
 
         if not isinstance(site_reference, str) or not site_reference.strip():
             raise FrankEnergieException("A valid non-empty site_reference must be provided.")
@@ -1040,20 +1227,13 @@ class FrankEnergie:
         )
 
         try:
-            response: dict[str, Any] = await self._query(query)
-            chargers_data = _dig(response, "data", "enodeChargers")
-            if not isinstance(chargers_data, list):
-                _LOGGER.debug("No chargers found in response: %s", response)
-                return EnodeChargers(chargers=[])
-            _LOGGER.debug("%s Enode Chargers found", len(chargers_data))
+            response = await self._query(query)
+            chargers_data = _require_device_inventory(response, "enodeChargers")
             return EnodeChargers.from_dict(chargers_data)
-        except SmartChargingNotEnabledException as error:
-            _LOGGER.debug("Smart charging not enabled: %s", error)
-            return EnodeChargers(chargers=[])
-        except Exception as error:
-            _LOGGER.debug("Error in enode_chargers: %s", error)
-            _LOGGER.exception("Unexpected error during query: %s", error)
-            return EnodeChargers(chargers=[])
+        except FrankEnergieException:
+            raise
+        except Exception as err:
+            raise RequestException("Failed to parse enodeChargers inventory.") from err
 
     async def invoices(self, site_reference: str) -> Invoices:
         """Retrieve the invoices data.
@@ -2740,12 +2920,11 @@ class FrankEnergie:
             )
             raise FrankEnergieException("Could not retrieve usage and costs for the specified period.") from err
 
-    # async def smart_batteries(self) -> SmartBatteries: # < better for HA, but less explicit about possible None return
-    async def smart_batteries(self) -> SmartBatteries | None:
+    async def smart_batteries(self) -> SmartBatteries:
         """Get the users smart batteries.
         For this to work, the user must have a smart battery connected to their account and smart-trading must be enabled.
 
-        Returns a list of all smart batteries.
+        Return a complete inventory; raise on failed or malformed responses.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -2771,50 +2950,13 @@ class FrankEnergie:
         )
 
         try:
-            _LOGGER.debug("Querying smart batteries")
             response = await self._query(query)
-        except SmartTradingNotEnabledException as e:
-            _LOGGER.debug("Smart trading not enabled: %s", e)
-            return SmartBatteries([])
-        except Exception as e:
-            _LOGGER.error("Failed to query smart batteries: %s", e)
-            return SmartBatteries([])
-
-        # Handle empty or missing response data
-        if not response:
-            _LOGGER.error("Empty or missing response for 'smartBatteries'")
-            return SmartBatteries([])
-
-        if response.get("errors"):
-            _LOGGER.error("Error response for 'smartBatteries': %s", response)
-            return SmartBatteries([])
-
-        data = response.get("data")
-
-        if not isinstance(data, dict):
-            _LOGGER.warning("Missing 'data' field in smartBatteries response")
-            return SmartBatteries([])
-
-        _LOGGER.debug("Response data for 'smartBatteries': %s", response)
-        batteries_data = data.get("smartBatteries")
-
-        if not isinstance(batteries_data, list):
-            _LOGGER.debug("No smart batteries found")
-            return SmartBatteries([])
-
-        batteries: list[SmartBattery] = []
-
-        for entry in batteries_data:
-            if not isinstance(entry, dict):
-                _LOGGER.debug("Skipping invalid smart battery entry: %s", entry)
-                continue
-
-            try:
-                batteries.append(SmartBattery.from_dict(entry))
-            except Exception as err:
-                _LOGGER.debug("Failed to parse smart battery entry: %s", err)
-
-        return SmartBatteries(batteries)
+            batteries_data = _require_device_inventory(response, "smartBatteries")
+            return SmartBatteries([SmartBattery.from_dict(item) for item in batteries_data])
+        except FrankEnergieException:
+            raise
+        except Exception as err:
+            raise RequestException("Failed to parse smartBatteries inventory.") from err
 
     async def smart_battery_details(self, device_id: str) -> SmartBatteryDetails | None:
         """Retrieve smart battery details and summary."""
@@ -3270,11 +3412,11 @@ class FrankEnergie:
     ENODE_VEHICLES_OPERATIONNAME = "EnodeVehicles"
     ENODE_VEHICLES_VARIABLES: dict[str, object] = {}
 
-    async def enode_vehicles(self) -> EnodeVehicles | None:
+    async def enode_vehicles(self) -> EnodeVehicles:
         """Get the users enode vehicles.
         For this to work, the user must have a enode vehicle connected to their account and smart-trading must be enabled.
 
-        Returns a list of all enode vehicles.
+        Return a complete inventory; raise on failed or malformed responses.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -3286,28 +3428,13 @@ class FrankEnergie:
         )
 
         try:
-            _LOGGER.debug("Querying enode vehicles")
             response = await self._query(query)
-        except SmartChargingNotEnabledException as e:
-            _LOGGER.debug("Smart charging not enabled: %s", e)
-            return None
-        except Exception as e:
-            _LOGGER.error("Failed to query enode vehicles: %s", e)
-            return None
-
-        vehicles_data = _dig(response, "data", "enodeVehicles")
-
-        if not isinstance(vehicles_data, list) or not vehicles_data:
-            _LOGGER.debug("No enode vehicles found")
-            return EnodeVehicles([])
-
-        try:
-            enode_vehicles = [EnodeVehicle.from_dict(v) for v in vehicles_data]
-        except (KeyError, ValueError, TypeError) as err:
-            _LOGGER.error("Failed to parse enode vehicles: %s", err)
-            return EnodeVehicles([])
-
-        return EnodeVehicles(enode_vehicles)
+            vehicles_data = _require_device_inventory(response, "enodeVehicles")
+            return EnodeVehicles([EnodeVehicle.from_dict(item) for item in vehicles_data])
+        except FrankEnergieException:
+            raise
+        except Exception as err:
+            raise RequestException("Failed to parse enodeVehicles inventory.") from err
 
     def _validate_not_future_date(self, value: date) -> None:
         if value > datetime.now(UTC).date():
