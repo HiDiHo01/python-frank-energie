@@ -117,7 +117,7 @@ async def test_failed_or_incomplete_inventory_cannot_report_device_absence(
         "invalid_errors_string": {"data": {field_name: []}, "errors": "upstream error"},
         "invalid_record": {"data": {field_name: [None]}},
         "missing_identifier": {"data": {field_name: [{"id": ""}]}},
-        "duplicate_identifier": {"data": {field_name: [duplicate_record, {**duplicate_record}] }},
+        "duplicate_identifier": {"data": {field_name: [duplicate_record, {**duplicate_record}]}},
     }
     client = FrankEnergie(auth_token="test_token")
     expected_message = "duplicate device ID" if scenario == "duplicate_identifier" else None
@@ -295,15 +295,12 @@ async def test_nullable_last_seen_is_valid(method_name: str, field_name: str, at
     assert devices[0].last_seen is None
 
 
-
 @pytest.mark.parametrize(
     ("method_name", "field_name"),
     (("enode_chargers", "enodeChargers"), ("enode_vehicles", "enodeVehicles")),
 )
 @pytest.mark.parametrize("last_seen", (42, {}, "invalid", "2026-11-06T10:00:00"))
-async def test_malformed_last_seen_rejects_inventory(
-    method_name: str, field_name: str, last_seen: object
-) -> None:
+async def test_malformed_last_seen_rejects_inventory(method_name: str, field_name: str, last_seen: object) -> None:
     """Reject malformed or timezone-naive lastSeen values for Enode devices."""
     device = _fixture_inventory_record("enode_vehicles.json", "enodeVehicles")
     device["lastSeen"] = last_seen
