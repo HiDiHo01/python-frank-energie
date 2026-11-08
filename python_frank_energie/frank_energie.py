@@ -249,6 +249,40 @@ def _validate_inventory_interventions(device: dict[str, Any], field_name: str) -
         raise RequestException(f"Invalid {field_name} inventory interventions.")
 
 
+
+def _validate_enode_inventory_fields(device: dict[str, Any], field_name: str) -> None:
+    """Validate nested Enode settings, state flags, and last-seen metadata."""
+    charge_settings = device.get("chargeSettings")
+    charge_state = device.get("chargeState")
+    if not isinstance(charge_settings, dict):
+        raise RequestException(f"Invalid {field_name} inventory charge settings.")
+    if not isinstance(charge_state, dict):
+        raise RequestException(f"Invalid {field_name} inventory charge state.")
+
+    if not isinstance(device["canSmartCharge"], bool) or not isinstance(device["isReachable"], bool):
+        raise RequestException(f"Invalid {field_name} inventory status.")
+    if not isinstance(charge_settings.get("isSmartChargingEnabled"), bool):
+        raise RequestException(f"Invalid {field_name} inventory smart-charging setting.")
+    if "isSolarChargingEnabled" in charge_settings and not isinstance(charge_settings["isSolarChargingEnabled"], bool):
+        raise RequestException(f"Invalid {field_name} inventory solar-charging setting.")
+    if any(not isinstance(charge_state.get(flag), bool) for flag in ("isCharging", "isPluggedIn")):
+        raise RequestException(f"Invalid {field_name} inventory charge state.")
+    fully_charged = charge_state.get("isFullyCharged")
+    if fully_charged is not None and not isinstance(fully_charged, bool):
+        raise RequestException(f"Invalid {field_name} inventory charge state.")
+
+    last_seen = device["lastSeen"]
+    if last_seen is None:
+        return
+    if not isinstance(last_seen, str):
+        raise RequestException(f"Invalid {field_name} inventory lastSeen.")
+    try:
+        parsed_last_seen = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+    except ValueError as err:
+        raise RequestException(f"Invalid {field_name} inventory lastSeen.") from err
+    if parsed_last_seen.utcoffset() is None:
+        raise RequestException(f"Invalid {field_name} inventory lastSeen.")
+
 def _validate_inventory_record(device: object, field_name: str, seen_ids: set[str]) -> None:
     """Validate the required fields and schema-specific values of one device."""
     if not isinstance(device, dict):
@@ -257,10 +291,8 @@ def _validate_inventory_record(device: object, field_name: str, seen_ids: set[st
     required_fields = _REQUIRED_INVENTORY_FIELDS.get(field_name, frozenset())
     if not required_fields.issubset(device):
         raise RequestException(f"Incomplete {field_name} inventory record.")
-    if field_name in ("enodeChargers", "enodeVehicles") and (
-        not isinstance(device["canSmartCharge"], bool) or not isinstance(device["isReachable"], bool)
-    ):
-        raise RequestException(f"Invalid {field_name} inventory status.")
+    if field_name in ("enodeChargers", "enodeVehicles"):
+        _validate_enode_inventory_fields(device, field_name)
     if field_name == "enodeChargers" and not isinstance(device["information"], dict):
         raise RequestException("Invalid enodeChargers inventory information.")
     if field_name == "smartBatteries":
