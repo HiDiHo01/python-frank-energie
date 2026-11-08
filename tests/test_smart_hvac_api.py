@@ -128,9 +128,11 @@ async def test_site_status_rejects_incomplete_or_malformed_responses(
     api: FrankEnergie, payload: dict[str, object]
 ) -> None:
     """Do not convert upstream response corruption into feature absence."""
-    with patch.object(api, "_query", new=AsyncMock(return_value=payload)):
-        with pytest.raises(RequestException):
-            await api.smart_hvac_status("1234AB 10")
+    with (
+        patch.object(api, "_query", new=AsyncMock(return_value=payload)),
+        pytest.raises(RequestException),
+    ):
+        await api.smart_hvac_status("1234AB 10")
 
 
 @pytest.mark.asyncio
@@ -175,9 +177,11 @@ def test_smart_hvac_graphql_failures_are_private(
         ]
     }
 
-    with caplog.at_level(logging.DEBUG):
-        with pytest.raises(RequestException) as error_info:
-            api._handle_errors(errors, "UserSmartHvac")
+    with (
+        caplog.at_level(logging.DEBUG),
+        pytest.raises(RequestException) as error_info,
+    ):
+        api._handle_errors(errors, "UserSmartHvac")
 
     assert fake_private_id not in str(error_info.value)
     assert fake_private_id not in caplog.text
@@ -218,9 +222,11 @@ async def test_smart_hvac_identifiers_are_required(
 @pytest.mark.asyncio
 async def test_smart_hvac_methods_preserve_auth_errors(api: FrankEnergie) -> None:
     """Propagate typed reauthentication failures without hiding them as null."""
-    with patch.object(api, "_query", new=AsyncMock(side_effect=AuthRequiredException("Authentication required"))):
-        with pytest.raises(AuthRequiredException):
-            await api.smart_hvac_status("1234AB 10")
+    with (
+        patch.object(api, "_query", new=AsyncMock(side_effect=AuthRequiredException("Authentication required"))),
+        pytest.raises(AuthRequiredException),
+    ):
+        await api.smart_hvac_status("1234AB 10")
 
 
 @pytest.mark.asyncio
@@ -270,18 +276,22 @@ async def test_inventory_allows_explicit_empty_list_but_not_null(api: FrankEnerg
     """Distinguish an empty inventory from a missing or corrupt inventory."""
     with patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacs": []}})):
         assert await api.smart_hvacs("1234AB 10") == []
-    with patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacs": None}})):
-        with pytest.raises(RequestException, match="expected a list"):
-            await api.smart_hvacs("1234AB 10")
+    with (
+        patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacs": None}})),
+        pytest.raises(RequestException, match="expected a list"),
+    ):
+        await api.smart_hvacs("1234AB 10")
 
 
 @pytest.mark.asyncio
 async def test_inventory_rejects_invalid_or_duplicate_devices(api: FrankEnergie) -> None:
     """Fail atomically rather than silently dropping malformed device records."""
     for inventory in ([{"id": "synthetic"}, {"id": "synthetic"}], [{"id": ""}], ["invalid-record"]):
-        with patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacs": inventory}})):
-            with pytest.raises(RequestException):
-                await api.smart_hvacs("1234AB 10")
+        with (
+            patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacs": inventory}})),
+            pytest.raises(RequestException),
+        ):
+            await api.smart_hvacs("1234AB 10")
 
 
 @pytest.mark.asyncio
@@ -333,9 +343,11 @@ async def test_summary_preserves_raw_provider_status(api: FrankEnergie) -> None:
 @pytest.mark.asyncio
 async def test_summary_rejects_malformed_fields(api: FrankEnergie, payload: dict[str, object]) -> None:
     """Reject malformed timestamps and numeric result rather than inventing values."""
-    with patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacSummary": payload}})):
-        with pytest.raises(RequestException):
-            await api.smart_hvac_summary("synthetic-device")
+    with (
+        patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacSummary": payload}})),
+        pytest.raises(RequestException),
+    ):
+        await api.smart_hvac_summary("synthetic-device")
 
 
 @pytest.mark.asyncio
@@ -379,6 +391,8 @@ async def test_connect_requests_reject_missing_or_invalid_list(api: FrankEnergie
         {"data": {"smartHvacConnectRequests": None}},
         {"data": {"smartHvacConnectRequests": [None]}},
     ):
-        with patch.object(api, "_query", new=AsyncMock(return_value=payload)):
-            with pytest.raises(RequestException):
-                await api.smart_hvac_connect_requests()
+        with (
+            patch.object(api, "_query", new=AsyncMock(return_value=payload)),
+            pytest.raises(RequestException),
+        ):
+            await api.smart_hvac_connect_requests()
