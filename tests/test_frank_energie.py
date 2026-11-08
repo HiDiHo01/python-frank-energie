@@ -632,6 +632,33 @@ async def test_me_fetches_site_specific_user_smart_hvac() -> None:
     assert result.userSmartHvac.userId == "test-user"
 
 
+def test_me_parses_available_but_inactive_user_smart_hvac() -> None:
+    """Preserve an available site with inactive HVAC, unaccepted terms, and null registration."""
+    response = {
+        "data": {
+            "me": {"id": "test-user"},
+            "userSmartHvac": {
+                "hasAcceptedTerms": False,
+                "isActivated": False,
+                "isAvailableInCountry": True,
+                "isAvailableOnSite": True,
+                "userCreatedAt": None,
+                "userId": None,
+            },
+        }
+    }
+
+    result = Me.from_dict(response)
+
+    assert result.userSmartHvac is not None
+    assert result.userSmartHvac.hasAcceptedTerms is False
+    assert result.userSmartHvac.isActivated is False
+    assert result.userSmartHvac.isAvailableInCountry is True
+    assert result.userSmartHvac.isAvailableOnSite is True
+    assert result.userSmartHvac.userCreatedAt is None
+    assert result.userSmartHvac.userId is None
+
+
 @pytest.mark.parametrize(
     "root_data",
     [
