@@ -54,6 +54,8 @@ AI-assisted code in this repository should follow the repository's style and eng
 
 A pull request that includes AI-assisted work should state that AI was used and summarize which parts were AI-generated or AI-refactored. The author must explain any non-obvious design decisions, especially around authentication, caching, price calculations, and coordinator behavior.
 
+Follow the [review follow-up requirements](AGENTS.md#automated-code-review) when addressing pull request feedback with AI assistance.
+
 ## Safety and privacy
 
 This library communicates with a third-party energy service. Do not paste secrets, personal account data, or production tokens into AI prompts, issues, or pull requests. Any sample data used for testing must be sanitized.
