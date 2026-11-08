@@ -620,16 +620,29 @@ async def test_me_fetches_site_specific_user_smart_hvac() -> None:
     sent_query = query_mock.call_args.args[0]
     assert sent_query.operation_name == "Me"
     assert sent_query.variables == {"siteReference": "1234AB 10"}
-    assert "userSmartHvac(siteReference: $siteReference)" in sent_query.query
-    assert "hasAcceptedTerms" in sent_query.query
-    assert "isAvailableOnSite" in sent_query.query
-    assert result.userSmartHvac is not None
-    assert result.userSmartHvac.hasAcceptedTerms is True
-    assert result.userSmartHvac.isActivated is True
-    assert result.userSmartHvac.isAvailableInCountry is True
-    assert result.userSmartHvac.isAvailableOnSite is False
-    assert result.userSmartHvac.userCreatedAt == "2026-10-01T12:00:00Z"
-    assert result.userSmartHvac.userId == "test-user"
+    operation, _, _ = sent_query.query.partition("fragment ")
+    before_hvac, hvac_header, after_header = operation.partition("userSmartHvac(siteReference: $siteReference) {")
+    assert hvac_header, "Me must query userSmartHvac for the given site"
+    assert before_hvac.count("{") - before_hvac.count("}") == 1, "userSmartHvac must be selected at the root"
+    hvac_fields, closing_brace, _ = after_header.partition("}")
+    assert closing_brace
+    assert set(hvac_fields.split()) == {
+        "hasAcceptedTerms",
+        "isActivated",
+        "isAvailableInCountry",
+        "isAvailableOnSite",
+        "userCreatedAt",
+        "userId",
+    }
+
+    hvac = result.user_smart_hvac
+    assert hvac is not None
+    assert hvac.has_accepted_terms is True
+    assert hvac.isActivated is True
+    assert hvac.isAvailableInCountry is True
+    assert hvac.is_available_on_site is False
+    assert hvac.userCreatedAt == "2026-10-01T12:00:00Z"
+    assert hvac.userId == "test-user"
 
 
 def test_me_parses_available_but_inactive_user_smart_hvac() -> None:
@@ -650,13 +663,14 @@ def test_me_parses_available_but_inactive_user_smart_hvac() -> None:
 
     result = Me.from_dict(response)
 
-    assert result.userSmartHvac is not None
-    assert result.userSmartHvac.hasAcceptedTerms is False
-    assert result.userSmartHvac.isActivated is False
-    assert result.userSmartHvac.isAvailableInCountry is True
-    assert result.userSmartHvac.isAvailableOnSite is True
-    assert result.userSmartHvac.userCreatedAt is None
-    assert result.userSmartHvac.userId is None
+    hvac = result.user_smart_hvac
+    assert hvac is not None
+    assert hvac.has_accepted_terms is False
+    assert hvac.isActivated is False
+    assert hvac.isAvailableInCountry is True
+    assert hvac.is_available_on_site is True
+    assert hvac.userCreatedAt is None
+    assert hvac.userId is None
 
 
 @pytest.mark.parametrize(
@@ -670,7 +684,22 @@ def test_me_missing_user_smart_hvac_is_optional(root_data: dict[str, object]) ->
     """Keep responses without a Smart HVAC service backwards compatible."""
     result = Me.from_dict({"data": root_data})
 
-    assert result.userSmartHvac is None
+    assert result.user_smart_hvac is None
+
+
+@pytest.mark.parametrize("site_flags", ({}, {"hasAcceptedTerms": None, "isAvailableOnSite": None}))
+def test_me_accepts_absent_or_null_user_smart_hvac_flags(site_flags: dict[str, object]) -> None:
+    """Keep the two site-specific flags optional independently of activation."""
+    response = {
+        "data": {"me": {"id": "test-user"}, "userSmartHvac": {"isActivated": False, **site_flags}},
+    }
+
+    hvac = Me.from_dict(response).user_smart_hvac
+
+    assert hvac is not None
+    assert hvac.isActivated is False
+    assert hvac.has_accepted_terms is None
+    assert hvac.is_available_on_site is None
 
 
 @pytest.mark.parametrize("invalid_data", [True, "activated", []])
@@ -682,11 +711,26 @@ def test_me_rejects_invalid_user_smart_hvac(invalid_data: object) -> None:
         Me.from_dict(response)
 
 
+@pytest.mark.parametrize("field_name", ("hasAcceptedTerms", "isActivated", "isAvailableInCountry", "isAvailableOnSite"))
+@pytest.mark.parametrize("invalid_value", ("false", 1, []))
+def test_me_rejects_non_boolean_user_smart_hvac_flag(field_name: str, invalid_value: object) -> None:
+    """Reject non-boolean values for every optional HVAC flag."""
+    response = {"data": {"me": {"id": "test-user"}, "userSmartHvac": {field_name: invalid_value}}}
+
+    with pytest.raises(RequestException, match=field_name):
+        Me.from_dict(response)
+
+
 def test_me_does_not_log_private_user_data(caplog: pytest.LogCaptureFixture) -> None:
-    """Keep account and Smart HVAC identifiers out of diagnostic logs."""
+    """Keep account, HVAC, and invitation details out of diagnostic logs."""
+    invite_link_data = {
+        "id": "private-invite-id",
+        "fromName": "private-invite-name",
+        "slug": "private-invite-slug",
+    }
     response = {
         "data": {
-            "me": {"id": "private-account-id"},
+            "me": {"id": "private-account-id", "InviteLinkUser": invite_link_data},
             "userSmartHvac": {"userId": "private-hvac-user-id"},
         }
     }
@@ -694,9 +738,11 @@ def test_me_does_not_log_private_user_data(caplog: pytest.LogCaptureFixture) -> 
     with caplog.at_level(logging.DEBUG, logger="python_frank_energie.models"):
         result = Me.from_dict(response)
 
-    assert result.userSmartHvac is not None
-    assert "private-account-id" not in caplog.text
-    assert "private-hvac-user-id" not in caplog.text
+    assert result.user_smart_hvac is not None
+    assert result.InviteLinkUser is not None
+    assert result.InviteLinkUser.slug == invite_link_data["slug"]
+    for private_value in ("private-account-id", "private-hvac-user-id", *invite_link_data.values()):
+        assert private_value not in caplog.text
 
 
 @pytest.mark.asyncio
@@ -1397,15 +1443,14 @@ class TestFrankEnergieAPIEndpointsAuth:
             await client.smart_battery_sessions("", date.today(), date.today())
 
     @pytest.mark.asyncio
-    async def test_frank_energie_enode_chargers_not_authenticated_returns_empty(self):
-        """Test enode chargers when not authenticated returns an empty EnodeChargers."""
+    async def test_frank_energie_enode_chargers_not_authenticated(self):
+        """Never report an empty inventory when authentication is absent."""
         from datetime import date
 
         client = FrankEnergie()
-
-        result = await client.enode_chargers("site_ref_123", date.today())
-
-        assert result == EnodeChargers(chargers=[])
+        start_date = date.today()
+        with pytest.raises(AuthRequiredException):
+            await client.enode_chargers("site_ref_123", start_date)
 
 
 #
@@ -1601,44 +1646,33 @@ async def test_month_summary_exception_handling(aresponses):
 
 @pytest.mark.asyncio
 async def test_enode_chargers_empty_response_handling():
-    """Test enode chargers with various empty response scenarios."""
+    """Treat missing charger inventory data as failure, not no devices."""
     client = FrankEnergie(auth_token="test_token")
+    start_date = datetime.now().date()
+    for response in (None, {"data": None}, {"data": {}}):
+        with (
+            patch.object(client, "_query", return_value=response),
+            pytest.raises(RequestException, match="inventory|GraphQL"),
+        ):
+            await client.enode_chargers("site_ref_123", start_date)
 
-    # Test with None response
-    with patch.object(client, "_query", return_value=None):
-        result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == EnodeChargers(chargers=[])
-
-    # Test with empty data
-    with patch.object(client, "_query", return_value={"data": None}):
-        result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == EnodeChargers(chargers=[])
-
-    # Test with missing enodeChargers key
-    with patch.object(client, "_query", return_value={"data": {}}):
-        result = await client.enode_chargers("site_ref_123", datetime.now().date())
-        assert result == EnodeChargers(chargers=[])
+    with patch.object(client, "_query", return_value={"data": {"enodeChargers": []}}):
+        assert await client.enode_chargers("site_ref_123", start_date) == EnodeChargers(chargers=[])
 
 
 @pytest.mark.asyncio
 async def test_smart_batteries_error_handling():
-    """Test smart batteries comprehensive error handling."""
+    """Do not turn missing, failed or partial responses into empty batteries."""
     client = FrankEnergie(auth_token="test_token")
+    for response in (None, {"errors": [{"message": "Temporary failure"}]}, {"data": None}):
+        with (
+            patch.object(client, "_query", return_value=response),
+            pytest.raises(RequestException, match="inventory|GraphQL"),
+        ):
+            await client.smart_batteries()
 
-    # Test with empty response
-    with patch.object(client, "_query", return_value=None):
-        result = await client.smart_batteries()
-        assert len(result.batteries) == 0
-
-    # Test with error response
-    with patch.object(client, "_query", return_value={"errors": [{"message": "Some error"}]}):
-        result = await client.smart_batteries()
-        assert len(result.batteries) == 0
-
-    # Test with missing data
-    with patch.object(client, "_query", return_value={"data": None}):
-        result = await client.smart_batteries()
-        assert len(result.batteries) == 0
+    with patch.object(client, "_query", return_value={"data": {"smartBatteries": []}}):
+        assert (await client.smart_batteries()).batteries == []
 
 
 @pytest.mark.asyncio

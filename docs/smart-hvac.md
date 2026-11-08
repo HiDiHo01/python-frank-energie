@@ -15,7 +15,7 @@ a heat pump is currently heating, cooling or being actively steered.
 feature = await api.smart_hvac_status(site_reference)
 if feature is not None:
     activated = feature.isActivated
-    available_on_site = feature.isAvailableOnSite
+    available_on_site = feature.is_available_on_site
 ```
 
 `smart_hvac_status(site_reference: str)` calls the root-level
@@ -28,14 +28,14 @@ method took no argument; downstream callers, including Home Assistant's
 The library does not infer a site for multi-site accounts.
 
 The `SmartHvac` model preserves `True`, `False` and `None` independently for
-`isActivated`, `isAvailableInCountry`, `isAvailableOnSite` and
-`hasAcceptedTerms`. Missing or null flags mean unknown, not `False`.
+`isActivated`, `isAvailableInCountry`, `is_available_on_site` and
+`has_accepted_terms` (the corresponding GraphQL fields use camelCase). Missing or null flags mean unknown, not `False`.
 Unexpected types raise `RequestException`. An explicit null
 `userSmartHvac` field returns `None`; a missing/malformed GraphQL response
 raises an exception rather than reporting the feature as disabled.
 
 The pre-existing `me(site_reference)` method also includes the
-`userSmartHvac` root field in the companion [PR #226](https://github.com/HiDiHo01/python-frank-energie/pull/226).
+`userSmartHvac` root field in the merged [PR #226](https://github.com/HiDiHo01/python-frank-energie/pull/226).
 That is optional on its model. Callers that only need feature state can use the
 dedicated query and avoid requesting all personal account data.
 

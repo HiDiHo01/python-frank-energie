@@ -60,8 +60,8 @@ async def test_site_status_preserves_three_way_flags(
 
     assert result is not None
     assert result.isActivated is activated
-    assert result.isAvailableOnSite is available_on_site
-    assert result.hasAcceptedTerms is accepted_terms
+    assert result.is_available_on_site is available_on_site
+    assert result.has_accepted_terms is accepted_terms
     assert result.userCreatedAt is None
     assert result.userId is None
     operation = request.call_args.args[0]
@@ -96,8 +96,8 @@ def test_feature_missing_fields_are_nullable() -> None:
 
     assert feature is not None
     assert feature.isActivated is None
-    assert feature.isAvailableOnSite is None
-    assert feature.hasAcceptedTerms is None
+    assert feature.is_available_on_site is None
+    assert feature.has_accepted_terms is None
 
 
 @pytest.mark.parametrize("field_name", ["userCreatedAt", "userId"])
@@ -145,7 +145,7 @@ async def test_site_status_null_then_recovers(api: FrankEnergie) -> None:
         result = await api.smart_hvac_status("1234AB 10")
     assert result is not None
     assert result.isActivated is False
-    assert result.isAvailableOnSite is True
+    assert result.is_available_on_site is True
 
 
 @pytest.mark.asyncio
