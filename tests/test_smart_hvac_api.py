@@ -204,8 +204,9 @@ def test_smart_hvac_graphql_failures_are_private(
 async def test_smart_hvac_methods_require_authentication(method_name: str, args: tuple[object, ...]) -> None:
     """Require authentication uniformly across all Smart HVAC endpoints."""
     client = FrankEnergie()
+    method = getattr(client, method_name)
     with pytest.raises(AuthRequiredException):
-        await getattr(client, method_name)(*args)
+        await method(*args)
 
 
 @pytest.mark.parametrize(
@@ -216,8 +217,9 @@ async def test_smart_hvac_methods_require_authentication(method_name: str, args:
 @pytest.mark.asyncio
 async def test_smart_hvac_identifiers_are_required(api: FrankEnergie, method_name: str, identifier: object) -> None:
     """Reject blank or non-string IDs before issuing requests."""
+    method = getattr(api, method_name)
     with pytest.raises(ValueError, match="valid non-empty"):
-        await getattr(api, method_name)(identifier)
+        await method(identifier)
 
 
 @pytest.mark.asyncio
@@ -265,7 +267,8 @@ async def test_smart_hvac_inventory_and_single_device_are_distinct(api: FrankEne
     assert individual.id == "synthetic-device"
     assert individual.needs_reauthentication is False
     assert individual.created_at == datetime(2025, 10, 28, 17, 42, 7, 149000, tzinfo=UTC)
-    assert individual.updated_at is not None and individual.updated_at.tzinfo is not None
+    assert individual.updated_at is not None
+    assert individual.updated_at.tzinfo is not None
     assert query_mock.call_args_list[0].args[0].variables == {"siteReference": "1234AB 10"}
     assert query_mock.call_args_list[1].args[0].variables == {"deviceId": "synthetic-device"}
     assert query_mock.call_args_list[0].args[0].operation_name == "SmartHvacs"

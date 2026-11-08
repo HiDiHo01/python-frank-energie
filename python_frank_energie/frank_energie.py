@@ -75,6 +75,7 @@ if sys.platform == "win32":
 
 _DISTRIBUTION_NAME = "python-frank-energie"
 _SMART_BATTERY_NOT_FOUND_LOG = "Smart battery not found for device_id: %s"
+_GRAPHQL_VALIDATION_MESSAGE = "Graphql validation error"
 _SMART_HVAC_QUERY_OPERATIONS = frozenset(
     {"UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"}
 )
@@ -760,6 +761,16 @@ class FrankEnergie:
         recovered_response["data"] = {**data, "userSmartHvac": None}
         return recovered_response
 
+    @staticmethod
+    def _validated_graphql_error_entry(error_obj: object, operation_name: str) -> dict[str, object] | None:
+        """Validate an error entry, preserving legacy handling outside Smart HVAC."""
+        if isinstance(error_obj, dict):
+            return error_obj
+        if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+            raise FrankEnergieException("Invalid Smart HVAC GraphQL error entry")
+        _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
+        return None
+
     def _handle_errors(
         self,
         response: dict[str, object] | None,
@@ -818,14 +829,12 @@ class FrankEnergie:
         )
 
         for error_obj in safe_errors:
-            if not isinstance(error_obj, dict):
-                if active_query in _SMART_HVAC_QUERY_OPERATIONS:
-                    raise FrankEnergieException("Invalid Smart HVAC GraphQL error entry")
-                _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
+            validated_error = self._validated_graphql_error_entry(error_obj, active_query)
+            if validated_error is None:
                 continue
 
             self._handle_graphql_error(
-                error_obj,
+                validated_error,
                 operation_name=active_query,
                 response=safe_response,
                 retry_after_header=retry_after_header,
@@ -835,6 +844,16 @@ class FrankEnergie:
         if recovered_response is not None:
             _LOGGER.warning("Returning partial Me data after Smart HVAC field resolution failed")
         return recovered_response
+
+    @staticmethod
+    def _raise_smart_hvac_graphql_error(message: str, operation_name: str) -> Never:
+        """Raise a sanitized Smart HVAC error without exposing upstream details."""
+        if message == _GRAPHQL_VALIDATION_MESSAGE:
+            _LOGGER.debug("Smart HVAC GraphQL validation failed for operation [%s]", operation_name)
+            raise RequestException("Smart HVAC GraphQL query is not supported by this API")
+        if message == "request-error:request-not-supported-in-country":
+            raise RequestException("Smart HVAC query is not supported in this country")
+        raise RequestException("Smart HVAC GraphQL operation failed")
 
     def _handle_graphql_error(
         self,
@@ -876,14 +895,9 @@ class FrankEnergie:
             raise exception_type(exception_message)
 
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
-            if message == "Graphql validation error":
-                _LOGGER.debug("Smart HVAC GraphQL validation failed for operation [%s]", operation_name)
-                raise RequestException("Smart HVAC GraphQL query is not supported by this API")
-            if message == "request-error:request-not-supported-in-country":
-                raise RequestException("Smart HVAC query is not supported in this country")
-            raise RequestException("Smart HVAC GraphQL operation failed")
+            self._raise_smart_hvac_graphql_error(message, operation_name)
 
-        if message == "Graphql validation error":
+        if message == _GRAPHQL_VALIDATION_MESSAGE:
             self._raise_graphql_validation_error(
                 operation_name=operation_name,
                 path=path,
@@ -931,7 +945,7 @@ class FrankEnergie:
                 log_level,
                 "GraphQL validation error - query %s: %s path=%s (response: %s)",
                 operation_name,
-                "Graphql validation error",
+                _GRAPHQL_VALIDATION_MESSAGE,
                 path,
                 response,
             )
