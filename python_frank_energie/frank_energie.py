@@ -55,6 +55,9 @@ from .models import (
     SmartBatterySessions,
     SmartBatterySummary,
     SmartHvac,
+    SmartHvacConnectRequest,
+    SmartHvacDevice,
+    SmartHvacSummary,
     SmartPvSystems,
     SmartPvSystemSummary,
     User,
@@ -72,6 +75,9 @@ if sys.platform == "win32":
 
 _DISTRIBUTION_NAME = "python-frank-energie"
 _SMART_BATTERY_NOT_FOUND_LOG = "Smart battery not found for device_id: %s"
+_SMART_HVAC_QUERY_OPERATIONS = frozenset(
+    {"UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"}
+)
 
 try:
     VERSION = _pkg_version(_DISTRIBUTION_NAME)
@@ -584,6 +590,8 @@ class FrankEnergie:
             return
 
         if not isinstance(errors_obj, list):
+            if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+                raise FrankEnergieException("Invalid Smart HVAC GraphQL error structure")
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
             raise FrankEnergieException("Invalid GraphQL error structure")
 
@@ -599,6 +607,8 @@ class FrankEnergie:
 
         for error_obj in safe_errors:
             if not isinstance(error_obj, dict):
+                if active_query in _SMART_HVAC_QUERY_OPERATIONS:
+                    raise FrankEnergieException("Invalid Smart HVAC GraphQL error entry")
                 _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
                 continue
 
@@ -637,6 +647,14 @@ class FrankEnergie:
         if exception_spec is not None:
             exception_type, exception_message = exception_spec
             raise exception_type(exception_message)
+
+        if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+            if message == "Graphql validation error":
+                _LOGGER.debug("Smart HVAC GraphQL validation failed for operation [%s]", operation_name)
+                raise RequestException("Smart HVAC GraphQL query is not supported by this API")
+            if message == "request-error:request-not-supported-in-country":
+                raise RequestException("Smart HVAC query is not supported in this country")
+            raise RequestException("Smart HVAC GraphQL operation failed")
 
         if message == "Graphql validation error":
             log_level = logging.DEBUG if operation_name == "SmartHvacStatus" else logging.ERROR
@@ -2408,31 +2426,171 @@ class FrankEnergie:
             raise FrankEnergieException("Failed to parse authenticated user data")
         return user
 
-    async def smart_hvac_status(self) -> SmartHvac | None:
-        """Fetch smart HVAC status."""
+    @staticmethod
+    def _require_smart_hvac_argument(value: str, field_name: str) -> None:
+        """Validate an identifier without disclosing its value in error messages."""
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"A valid non-empty {field_name} must be provided")
+
+    @staticmethod
+    def _smart_hvac_response_field(response: dict[str, object], field_name: str) -> object:
+        """Extract a present GraphQL data field and reject incomplete responses."""
+        if not isinstance(response, dict) or response.get("errors"):
+            raise RequestException(f"Invalid Smart HVAC '{field_name}' response")
+        root = response.get("data")
+        if not isinstance(root, dict) or field_name not in root:
+            raise RequestException(f"Missing Smart HVAC '{field_name}' response field")
+        return root[field_name]
+
+    async def smart_hvac_status(self, site_reference: str) -> SmartHvac | None:
+        """Fetch a site's Smart HVAC activation status, not a device running state.
+
+        A site_reference is now required because the upstream root-level
+        userSmartHvac query cannot be called without it. A null response is
+        distinct from a missing or malformed response, which raises.
+        """
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+        self._require_smart_hvac_argument(site_reference, "site_reference")
+
+        query = FrankEnergieQuery(
+            """
+            query UserSmartHvac($siteReference: String!) {
+                userSmartHvac(siteReference: $siteReference) {
+                    hasAcceptedTerms
+                    isActivated
+                    isAvailableInCountry
+                    isAvailableOnSite
+                    userCreatedAt
+                    userId
+                }
+            }
+            """,
+            "UserSmartHvac",
+            {"siteReference": site_reference},
+        )
+        response = await self._query(query)
+        raw = self._smart_hvac_response_field(response, "userSmartHvac")
+        return SmartHvac.from_dict(raw)
+
+    async def smart_hvacs(self, site_reference: str) -> list[SmartHvacDevice]:
+        """Fetch a site-specific inventory of Smart HVAC devices."""
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+        self._require_smart_hvac_argument(site_reference, "site_reference")
+
+        query = FrankEnergieQuery(
+            """
+            query SmartHvacs($siteReference: String!) {
+                smartHvacs(siteReference: $siteReference) {
+                    brand
+                    connectionEAN
+                    createdAt
+                    deletedAt
+                    deviceType
+                    displayName
+                    needsReauthentication
+                    externalReference
+                    id
+                    model
+                    provider
+                    updatedAt
+                }
+            }
+            """,
+            "SmartHvacs",
+            {"siteReference": site_reference},
+        )
+        response = await self._query(query)
+        raw = self._smart_hvac_response_field(response, "smartHvacs")
+        if not isinstance(raw, list):
+            raise RequestException("Invalid Smart HVAC device inventory: expected a list")
+        devices = [SmartHvacDevice.from_dict(item) for item in raw]
+        if len({device.id for device in devices}) != len(devices):
+            raise RequestException("Smart HVAC device inventory contains duplicate IDs")
+        return devices
+
+    async def smart_hvac(self, device_id: str) -> SmartHvacDevice | None:
+        """Fetch one HVAC device by ID; a null API field means no device."""
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+        self._require_smart_hvac_argument(device_id, "device_id")
+
+        query = FrankEnergieQuery(
+            """
+            query SmartHvac($deviceId: String!) {
+                smartHvac(deviceId: $deviceId) {
+                    brand
+                    connectionEAN
+                    createdAt
+                    deletedAt
+                    deviceType
+                    displayName
+                    needsReauthentication
+                    externalReference
+                    id
+                    model
+                    provider
+                    updatedAt
+                }
+            }
+            """,
+            "SmartHvac",
+            {"deviceId": device_id},
+        )
+        response = await self._query(query)
+        raw = self._smart_hvac_response_field(response, "smartHvac")
+        return None if raw is None else SmartHvacDevice.from_dict(raw)
+
+    async def smart_hvac_summary(self, device_id: str) -> SmartHvacSummary | None:
+        """Fetch provider-reported device statuses without inferring running state."""
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+        self._require_smart_hvac_argument(device_id, "device_id")
+
+        query = FrankEnergieQuery(
+            """
+            query SmartHvacSummary($deviceId: String!) {
+                smartHvacSummary(deviceId: $deviceId) {
+                    firstSessionDate
+                    lastSessionDate
+                    operationalStatus
+                    operationalStatusTimestamp
+                    steeringStatus
+                    totalResult
+                }
+            }
+            """,
+            "SmartHvacSummary",
+            {"deviceId": device_id},
+        )
+        response = await self._query(query)
+        raw = self._smart_hvac_response_field(response, "smartHvacSummary")
+        return None if raw is None else SmartHvacSummary.from_dict(raw)
+
+    async def smart_hvac_connect_requests(self) -> list[SmartHvacConnectRequest]:
+        """Fetch Smart HVAC connection requests independently from device inventory."""
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
 
         query = FrankEnergieQuery(
             """
-            query SmartHvacStatus {
-                me {
-                    smartHvac {
-                        isActivated
-                        isAvailableInCountry
-                        userCreatedAt
-                        userId
-                    }
+            query SmartHvacGetConnectRequests {
+                smartHvacConnectRequests {
+                    brand
+                    error
+                    id
+                    status
                 }
             }
             """,
-            "SmartHvacStatus",
+            "SmartHvacGetConnectRequests",
         )
         response = await self._query(query)
-        if not isinstance(response, dict):
-            raise RequestException("Invalid response type for 'smart_hvac_status' query")
-        raw = _dig(response, "data", "me", "smartHvac")
-        return SmartHvac.from_dict(raw if isinstance(raw, dict) else None)
+        raw = self._smart_hvac_response_field(response, "smartHvacConnectRequests")
+        if not isinstance(raw, list):
+            raise RequestException("Invalid Smart HVAC connect requests: expected a list")
+        return [SmartHvacConnectRequest.from_dict(item) for item in raw]
 
     async def country_prices(
         self,
