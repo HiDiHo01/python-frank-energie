@@ -82,10 +82,11 @@ jobs:
               output.write(f"version={version}\n")
           PY
 
-      - name: Wait until this release is installable from PyPI
+      - name: Wait for a verified published wheel on PyPI
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           python - <<'PY'
           import json
           import os
@@ -94,27 +95,28 @@ jobs:
           from urllib.request import urlopen
 
           version = os.environ["PACKAGE_VERSION"]
-          url = f"https://pypi.org/pypi/python-frank-energie/{version}/json"
+          metadata_url = "https://pypi.org/pypi/python-frank-energie/json"
           for attempt in range(1, 41):
               try:
-                  with urlopen(url, timeout=15) as response:
+                  with urlopen(metadata_url, timeout=15) as response:
                       package = json.load(response)
-              except HTTPError as error:
-                  if error.code != 404:
-                      raise
-              except URLError as error:
-                  print(f"PyPI temporarily unavailable: {type(error.reason).__name__}")
+              except (HTTPError, URLError) as error:
+                  print(f"Waiting for PyPI metadata: {type(error).__name__}")
               else:
-                  if package.get("info", {}).get("version") == version and any(
+                  release_files = package.get("releases", {}).get(version, [])
+                  if any(
                       file.get("filename", "").endswith(".whl") and not file.get("yanked", False)
-                      for file in package.get("urls", [])
+                      for file in release_files
                   ):
-                      print(f"PyPI wheel verified for python-frank-energie=={version}")
+                      print(f"Verified non-yanked wheel for python-frank-energie=={version}")
                       break
               if attempt == 40:
-                  raise SystemExit(f"PyPI did not publish a usable wheel for {version}")
+                  raise SystemExit(f"PyPI did not publish a non-yanked wheel for {version}")
               time.sleep(15)
           PY
+          python -m pip download --disable-pip-version-check \
+            --index-url https://pypi.org/simple/ --only-binary=:all: --no-deps \
+            --dest "$RUNNER_TEMP" "python-frank-energie==$PACKAGE_VERSION"
 
       - name: Create narrowly scoped GitHub App token for the integration
         id: integration_token
