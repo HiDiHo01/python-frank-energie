@@ -52,3 +52,10 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - For sensitive operations such as Smart HVAC, provider-controlled HTTP reason phrases and client exception messages are untrusted and may include EANs or device IDs. Log only safe operation names and numeric status codes; raise sanitized exceptions without displaying upstream exception chains. Preserve typed authentication and rate-limit behavior. Cover status codes and transport errors with synthetic secrets in both logs and exception text.
 - Use fixed diagnostics and safe metadata such as operation names, durations, and counts. Signal degraded results without logging raw payloads or upstream error details.
 - Trace nested model parsers as well as the top-level method. Use synthetic account, invitation, site, and HVAC values in log assertions so successful parsing and privacy are both verified.
+
+## Preserve typed provider errors across public API wrappers
+
+- Distinguish confirmed resource absence from throttling. In `smart_battery_sessions()`, only `SmartBatteryNotFoundException` may produce a not-found `None`; `RateLimitException` must propagate unchanged so downstream consumers retain `operation_name` and `retry_after`.
+- The async GraphQL request also performs implicit token renewal when authentication has expired. Test both session-query throttling (GraphQL and HTTP 429) and renewal throttling (with preserved authentication and no subsequent sessions request) at the public method boundary.
+- Assert that cancellation is propagated and successful session parsing still uses the original model parser. Keep device identifiers, upstream response bodies, and provider exception details out of session request logs.
+- After a published release, verify downstream integrations against the released dependency rather than assuming that upstream `main` matches their pinned runtime version.
