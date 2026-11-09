@@ -66,7 +66,13 @@ The connect-request operation returns brand, error, ID and opaque status text.
 Only an explicitly empty list (`[]`) is an empty device inventory or empty
 connect-request list. Missing, null, malformed or partially invalid list
 responses raise `RequestException`. Duplicate device IDs are rejected.
-An explicitly null single device/summary response returns `None`.
+Each inventory device record must contain every field selected by the query;
+**explicit null** optional fields are valid, but missing selected fields are
+not. A present GraphQL `errors` field must be a list with no entries on
+success; malformed, non-object decoded responses are never accepted as empty
+inventories. An explicitly null single device/summary response returns `None`.
+Unrepresentable UTC timestamps and oversized numeric totals also raise
+`RequestException` rather than Python overflow errors.
 
 ## Error and privacy guarantees
 
