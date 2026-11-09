@@ -15,6 +15,10 @@ from .models import (
     PeriodUsageAndCosts,
     Price,
     PriceData,
+    SmartHvac,
+    SmartHvacConnectRequest,
+    SmartHvacDevice,
+    SmartHvacSummary,
 )
 
 try:
@@ -39,6 +43,10 @@ __all__ = [
     "Price",
     "PriceData",
     "PeriodUsageAndCosts",
+    "SmartHvac",
+    "SmartHvacConnectRequest",
+    "SmartHvacDevice",
+    "SmartHvacSummary",
     # Exceptions
     "AuthException",
     "ConnectionException",
