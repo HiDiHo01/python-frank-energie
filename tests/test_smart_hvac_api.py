@@ -582,6 +582,48 @@ def test_smart_hvac_http_status_redacts_provider_reason(
 
 
 @pytest.mark.parametrize(
+    ("operation_name", "error_type", "expected_message", "sanitized"),
+    [
+        ("SmartHvacs", aiohttp.ClientConnectionError, "Frank Energie Smart HVAC HTTP client error", True),
+        ("SmartHvacs", KeyError, "Invalid Smart HVAC API response", True),
+        ("MonthInsights", aiohttp.ClientConnectionError, "Frank Energie HTTP error", False),
+        ("MonthInsights", KeyError, "Invalid API response: missing", False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_query_error_mapping_preserves_privacy_and_exception_causes(
+    api: FrankEnergie,
+    caplog: pytest.LogCaptureFixture,
+    operation_name: str,
+    error_type: type[Exception],
+    expected_message: str,
+    sanitized: bool,
+) -> None:
+    """Keep error categories, exception chaining and HVAC redaction unchanged."""
+    secret = "synthetic-private-request-reference"
+    upstream_error = error_type(secret)
+    mocked_session = MagicMock()
+    mocked_session.post.side_effect = upstream_error
+    query = FrankEnergieQuery("query Example { __typename }", operation_name)
+
+    with (
+        patch.object(api, "_session", mocked_session),
+        patch.object(api, "_requires_token_refresh", return_value=False),
+        caplog.at_level(logging.DEBUG),
+        pytest.raises(NetworkError) as error_info,
+    ):
+        await api._query(query)
+
+    assert expected_message in str(error_info.value)
+    if sanitized:
+        assert secret not in str(error_info.value)
+        assert secret not in caplog.text
+        assert error_info.value.__cause__ is None
+    else:
+        assert error_info.value.__cause__ is upstream_error
+
+
+@pytest.mark.parametrize(
     ("transport_error", "expected_message"),
     [
         (aiohttp.ClientConnectionError, "Smart HVAC HTTP client error"),
