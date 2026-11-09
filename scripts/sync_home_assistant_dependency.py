@@ -3,17 +3,23 @@
 import argparse
 import json
 import re
+import shutil
+import stat
 import tomllib
 from datetime import date
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 PACKAGE_NAME = "python-frank-energie"
-VERSION_PATTERN = re.compile(r"\d{4}\.\d{1,2}\.\d{1,2}\Z")
+VERSION = r"\d{4}\.\d{1,2}\.\d{1,2}"
+VERSION_PATTERN = re.compile(VERSION, re.ASCII)
+MANIFEST_PIN = re.compile(rf"{PACKAGE_NAME}==(?P<version>{VERSION})", re.ASCII)
+DISTRIBUTION_NAME = re.compile(r"\s*([a-z0-9][a-z0-9._-]*)", re.IGNORECASE | re.ASCII)
 POETRY_PATTERN = re.compile(
-    r"""^(?P<prefix>[ \t]*python-frank-energie[ \t]*=[ \t]*)(?P<quote>['"])"""
-    r"""(?P<operator>\^|==)(?P<version>\d{4}\.\d{1,2}\.\d{1,2})(?P=quote)"""
-    r"""(?P<suffix>[ \t]*(?:#.*)?)$""",
-    re.MULTILINE,
+    r"""^[ \t]*(?P<key_quote>['"]?)python-frank-energie(?P=key_quote)[ \t]*=[ \t]*(?P<quote>['"])"""
+    rf"(?P<constraint>(?:\^|==)(?P<version>{VERSION}))"
+    r"(?P=quote)[ \t]*(?:#[^\r\n]*)?\r?$",
+    re.ASCII | re.MULTILINE,
 )
 
 
@@ -28,22 +34,25 @@ def _version_parts(version: str) -> tuple[int, int, int]:
     return year, month, day
 
 
+def _is_library_requirement(requirement: object) -> bool:
+    """Match the complete distribution name, including normalized aliases."""
+    if not isinstance(requirement, str):
+        return False
+    name = DISTRIBUTION_NAME.match(requirement)
+    return name is not None and re.sub(r"[-_.]+", "-", name[1].lower()) == PACKAGE_NAME
+
+
 def _current_version(manifest_text: str, pyproject_text: str) -> str:
     """Require exactly one matching manifest pin and Poetry dependency."""
     manifest = json.loads(manifest_text)
     if not isinstance(manifest, dict) or not isinstance(manifest.get("requirements"), list):
         raise ValueError("Expected an integration manifest object with a requirements list")
 
-    matching = [
-        requirement
-        for requirement in manifest["requirements"]
-        if isinstance(requirement, str)
-        and re.match(r"^python-frank-energie(?=$|[ \t]*(?:==|[!<>~=]))", requirement) is not None
-    ]
-    if len(matching) != 1 or re.fullmatch(r"python-frank-energie==([0-9]+\.[0-9]+\.[0-9]+)", matching[0]) is None:
+    matching = [requirement for requirement in manifest["requirements"] if _is_library_requirement(requirement)]
+    if len(matching) != 1 or (pin := MANIFEST_PIN.fullmatch(matching[0])) is None:
         raise ValueError("Expected exactly one pinned python-frank-energie manifest requirement")
 
-    version = matching[0].split("==", maxsplit=1)[1]
+    version = pin["version"]
     _version_parts(version)
     pyproject = tomllib.loads(pyproject_text)
     declared = pyproject.get("tool", {}).get("poetry", {}).get("dependencies", {}).get(PACKAGE_NAME)
@@ -57,41 +66,63 @@ def _current_version(manifest_text: str, pyproject_text: str) -> str:
     return version
 
 
-def update_dependency(root: Path, version: str) -> bool:
-    """Update dependency declarations atomically after validation; never downgrade."""
+def _locked_versions(root: Path) -> list[str]:
+    """Read the locked versions of the library, allowing a missing lockfile."""
+    try:
+        with (root / "poetry.lock").open("rb") as source:
+            lock = tomllib.load(source)
+    except FileNotFoundError:
+        return []
+    return [package["version"] for package in lock.get("package", []) if package["name"] == PACKAGE_NAME]
+
+
+def _replace_declarations(manifest: Path, manifest_text: str, project: Path, project_text: str) -> None:
+    """Stage both files before replacing them and roll back a failed second replacement."""
+    with TemporaryDirectory(dir=manifest.parent) as manifest_dir, TemporaryDirectory(dir=project.parent) as project_dir:
+        staged_manifest = Path(manifest_dir) / manifest.name
+        staged_project = Path(project_dir) / project.name
+        original_project = Path(project_dir) / "original.toml"
+        shutil.copy2(project, original_project)
+        staged_manifest.write_bytes(manifest_text.encode("utf-8"))
+        staged_manifest.chmod(stat.S_IMODE(manifest.stat().st_mode))
+        staged_project.write_bytes(project_text.encode("utf-8"))
+        staged_project.chmod(stat.S_IMODE(project.stat().st_mode))
+        staged_project.replace(project)
+        try:
+            staged_manifest.replace(manifest)
+        except OSError:
+            original_project.replace(project)
+            raise
+
+
+def update_dependency(root: Path, version: str, *, prepare_lock: bool = False) -> bool:
+    """Update the declarations without downgrading and optionally prepare a stale lock for repair."""
     target_parts = _version_parts(version)
     manifest_path = root / "custom_components" / "frank_energie" / "manifest.json"
     pyproject_path = root / "pyproject.toml"
-    manifest_text = manifest_path.read_text(encoding="utf-8")
-    pyproject_text = pyproject_path.read_text(encoding="utf-8")
+    manifest_text = manifest_path.read_bytes().decode("utf-8")
+    pyproject_text = pyproject_path.read_bytes().decode("utf-8")
     current_version = _current_version(manifest_text, pyproject_text)
-    if _version_parts(current_version) >= target_parts:
+    if _version_parts(current_version) > target_parts:
+        return False
+    if current_version == version and (not prepare_lock or _locked_versions(root) == [version]):
         return False
 
     old_pin = f'"{PACKAGE_NAME}=={current_version}"'
     existing_constraint = POETRY_PATTERN.search(pyproject_text)
     if existing_constraint is None:
         raise ValueError("Cannot locate the existing Poetry dependency")
-    old_poetry = existing_constraint.group(0)
-    if manifest_text.count(old_pin) != 1 or pyproject_text.count(old_poetry) != 1:
+    if manifest_text.count(old_pin) != 1:
         raise ValueError("Cannot identify a unique library dependency in both configuration files")
 
     updated_manifest = manifest_text.replace(old_pin, f'"{PACKAGE_NAME}=={version}"', 1)
-    quote = existing_constraint.group("quote")
-    updated_poetry_line = (
-        f'{existing_constraint.group("prefix")}{quote}=={version}{quote}{existing_constraint.group("suffix")}'
-    )
-    updated_pyproject = pyproject_text.replace(old_poetry, updated_poetry_line, 1)
+    start, end = existing_constraint.span("constraint")
+    updated_pyproject = f"{pyproject_text[:start]}=={version}{pyproject_text[end:]}"
     if _current_version(updated_manifest, updated_pyproject) != version:
         raise ValueError("Dependency declarations do not agree after the update")
 
-    try:
-        pyproject_path.write_text(updated_pyproject, encoding="utf-8")
-        manifest_path.write_text(updated_manifest, encoding="utf-8")
-    except OSError:
-        pyproject_path.write_text(pyproject_text, encoding="utf-8")
-        manifest_path.write_text(manifest_text, encoding="utf-8")
-        raise
+    if (updated_manifest, updated_pyproject) != (manifest_text, pyproject_text):
+        _replace_declarations(manifest_path, updated_manifest, pyproject_path, updated_pyproject)
     return True
 
 
@@ -100,11 +131,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", required=True, type=Path, help="Home Assistant integration repository checkout")
     parser.add_argument("--version", required=True, help="Published stable library version")
+    lock_action = parser.add_mutually_exclusive_group()
+    lock_action.add_argument("--prepare-lock", action="store_true", help="Prepare a dependency or lockfile update")
+    lock_action.add_argument("--verify-lock", action="store_true", help="Verify the exact locked library version")
     arguments = parser.parse_args(argv)
 
     try:
-        changed = update_dependency(arguments.root, arguments.version)
-    except (ValueError, OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as error:
+        if arguments.verify_lock:
+            versions = _locked_versions(arguments.root)
+            if versions != [arguments.version]:
+                raise ValueError(f"Unexpected library version in Poetry lockfile: {versions}")
+            return 0
+        changed = update_dependency(arguments.root, arguments.version, prepare_lock=arguments.prepare_lock)
+    except (ValueError, OSError) as error:
         parser.error(f"Cannot safely synchronize the Home Assistant dependency: {error}")
     print("updated" if changed else "up-to-date")
     return 0
