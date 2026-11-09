@@ -30,6 +30,8 @@ jobs:
             objects.githubusercontent.com:443
             pkg-containers.githubusercontent.com:443
             ghcr.io:443
+            github-releases.githubusercontent.com:443
+            raw.githubusercontent.com:443
             pypi.org:443
             files.pythonhosted.org:443
 
@@ -54,14 +56,15 @@ jobs:
           import os
           import re
           import tomllib
+          import subprocess
           from datetime import date
+          from pathlib import Path
+
           tag = os.environ["RELEASE_TAG"]
           if re.fullmatch(r"v\d{4}\.\d{1,2}\.\d{1,2}", tag) is None:
               raise SystemExit(f"Unsupported stable library release tag: {tag!r}")
           version = tag[1:]
           date(*(int(value) for value in version.split(".")))
-          import subprocess
-
           tag_commit = subprocess.run(
               ["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
               check=True,
@@ -100,8 +103,12 @@ jobs:
               try:
                   with urlopen(metadata_url, timeout=15) as response:
                       package = json.load(response)
-              except (HTTPError, URLError) as error:
-                  print(f"Waiting for PyPI metadata: {type(error).__name__}")
+              except HTTPError as error:
+                  if error.code not in (404, 408, 425, 429) and not 500 <= error.code < 600:
+                      raise
+                  print(f"Waiting for PyPI metadata (HTTP {error.code})")
+              except URLError as error:
+                  print(f"Waiting for PyPI connection: {type(error.reason).__name__}")
               else:
                   release_files = package.get("releases", {}).get(version, [])
                   if any(
@@ -146,6 +153,8 @@ jobs:
         run: |
           set -euo pipefail
           cd integration
+          git config --local core.hooksPath /dev/null
+          gh auth setup-git
           branch="automation/python-frank-energie-$PACKAGE_VERSION"
           echo "name=$branch" >> "$GITHUB_OUTPUT"
           existing="$(gh pr list --repo HiDiHo01/home-assistant-frank_energie \
@@ -173,8 +182,21 @@ jobs:
           python scripts/sync_home_assistant_dependency.py \
             --root integration --version "$PACKAGE_VERSION"
           git -C integration diff --check
+          locked_version="$(python - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          with Path("integration/poetry.lock").open("rb") as source:
+              lock = tomllib.load(source)
+          packages = [item["version"] for item in lock["package"] if item["name"] == "python-frank-energie"]
+          if len(packages) != 1:
+              raise SystemExit(f"Expected one locked python-frank-energie package, found {packages}")
+          print(packages[0])
+          PY
+          )"
           if git -C integration diff --quiet -- \
-            custom_components/frank_energie/manifest.json pyproject.toml; then
+            custom_components/frank_energie/manifest.json pyproject.toml \
+            && [[ "$locked_version" == "$PACKAGE_VERSION" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -223,8 +245,8 @@ jobs:
           git diff --cached --check
           gh auth setup-git
           if ! git diff --cached --quiet; then
-            git commit -m "chore(deps): update python-frank-energie to $PACKAGE_VERSION"
-            git push --set-upstream origin "$UPDATE_BRANCH"
+            git -c core.hooksPath=/dev/null commit -m "chore(deps): update python-frank-energie to $PACKAGE_VERSION"
+            git -c core.hooksPath=/dev/null push --set-upstream origin "$UPDATE_BRANCH"
           fi
           cat > "$RUNNER_TEMP/dependency-pr.md" <<EOF
           ## Published upstream library release
