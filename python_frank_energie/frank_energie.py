@@ -2900,6 +2900,9 @@ class FrankEnergie:
         raw = self._smart_hvac_response_field(response, "smartHvacConnectRequests")
         if not isinstance(raw, list):
             raise RequestException("Invalid Smart HVAC connect requests: expected a list")
+        required_fields = {"brand", "error", "id", "status"}
+        if any(not isinstance(item, dict) or not required_fields.issubset(item) for item in raw):
+            raise RequestException("Invalid Smart HVAC connect requests: missing selected fields")
         return [SmartHvacConnectRequest.from_dict(item) for item in raw]
 
     async def country_prices(
