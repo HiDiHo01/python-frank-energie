@@ -10,7 +10,9 @@ from pathlib import Path
 PACKAGE_NAME = "python-frank-energie"
 VERSION_PATTERN = re.compile(r"\d{4}\.\d{1,2}\.\d{1,2}\Z")
 POETRY_PATTERN = re.compile(
-    r"""^(?P<prefix>[ \t]*python-frank-energie[ \t]*=[ \t]*)(?P<quote>['"])(?P<operator>\^|==)(?P<version>\d{4}\.\d{1,2}\.\d{1,2})(?P=quote)(?P<suffix>[ \t]*(?:#.*)?)$""",
+    r"""^(?P<prefix>[ \t]*python-frank-energie[ \t]*=[ \t]*)(?P<quote>['"])"""
+    r"""(?P<operator>\^|==)(?P<version>\d{4}\.\d{1,2}\.\d{1,2})(?P=quote)"""
+    r"""(?P<suffix>[ \t]*(?:#.*)?)$""",
     re.MULTILINE,
 )
 
