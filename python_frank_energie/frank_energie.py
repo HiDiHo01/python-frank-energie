@@ -512,6 +512,35 @@ class FrankEnergie:
             self._session = ClientSession()
             self._close_session = True
 
+    async def _prepare_query_headers(
+        self,
+        query: FrankEnergieQuery,
+        extra_headers: dict[str, str] | None,
+    ) -> dict[str, str]:
+        """Build request headers and renew the access token when required."""
+        headers: dict[str, str] = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "x-graphql-client-version": "4.13.3",
+            "x-graphql-client-name": "frank-app",
+            "x-graphql-client-os": "ios/26.0.1",
+            "skip-graphcdn": "1",
+        }
+
+        if self._requires_token_refresh(query.operation_name):
+            async with self._renew_lock:
+                if self._requires_token_refresh(query.operation_name):
+                    _LOGGER.debug("Access token expired; attempting token renewal")
+                    await self.renew_token()
+
+        if self._auth is not None and query.operation_name not in self.AUTH_HEADER_EXEMPT_OPERATIONS:
+            headers["Authorization"] = f"Bearer {self._auth.authToken}"
+
+        if extra_headers:
+            headers.update(extra_headers)
+
+        return headers
+
     async def _query(
         self,
         query: FrankEnergieQuery,
@@ -544,27 +573,7 @@ class FrankEnergie:
 
         start = time.monotonic()
 
-        # "User-Agent": self.generate_system_user_agent(), # not working properly
-        headers: dict[str, str] = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "x-graphql-client-version": "4.13.3",
-            "x-graphql-client-name": "frank-app",
-            "x-graphql-client-os": "ios/26.0.1",
-            "skip-graphcdn": "1",
-        }
-
-        if self._requires_token_refresh(query.operation_name):
-            async with self._renew_lock:
-                if self._requires_token_refresh(query.operation_name):
-                    _LOGGER.debug("Access token expired; attempting token renewal")
-                    await self.renew_token()
-
-        if self._auth is not None and query.operation_name not in self.AUTH_HEADER_EXEMPT_OPERATIONS:
-            headers["Authorization"] = f"Bearer {self._auth.authToken}"
-
-        if extra_headers:
-            headers.update(extra_headers)
+        headers = await self._prepare_query_headers(query, extra_headers)
 
         self._last_query = query
         self._last_variables = query.variables
@@ -791,6 +800,24 @@ class FrankEnergie:
         _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
         return None
 
+    @staticmethod
+    def _validated_graphql_errors(response: dict[str, object], operation_name: str | None) -> list[object] | None:
+        """Validate the GraphQL error container without altering legacy empty-value behavior."""
+        errors_obj = response.get("errors")
+        is_smart_hvac = operation_name in _SMART_HVAC_QUERY_OPERATIONS
+        if is_smart_hvac and "errors" in response and not isinstance(errors_obj, list):
+            raise RequestException("Invalid Smart HVAC GraphQL error structure")
+        if not errors_obj:
+            return None
+
+        if not isinstance(errors_obj, list):
+            if is_smart_hvac:
+                raise RequestException("Invalid Smart HVAC GraphQL error structure")
+            _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
+            raise FrankEnergieException("Invalid GraphQL error structure")
+
+        return errors_obj
+
     def _handle_errors(
         self,
         response: dict[str, object] | None,
@@ -822,17 +849,9 @@ class FrankEnergie:
             _LOGGER.debug("No response data to handle errors.")
             return None
 
-        errors_obj: object | None = response.get("errors")
-        if operation_name in _SMART_HVAC_QUERY_OPERATIONS and "errors" in response and not isinstance(errors_obj, list):
-            raise RequestException("Invalid Smart HVAC GraphQL error structure")
-        if not errors_obj:
+        errors_obj = self._validated_graphql_errors(response, operation_name)
+        if errors_obj is None:
             return None
-
-        if not isinstance(errors_obj, list):
-            if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
-                raise RequestException("Invalid Smart HVAC GraphQL error structure")
-            _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
-            raise FrankEnergieException("Invalid GraphQL error structure")
 
         active_query = operation_name or "<unknown>"
 
