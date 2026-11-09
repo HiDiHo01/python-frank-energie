@@ -1788,7 +1788,10 @@ def _smart_hvac_datetime(data: Mapping[str, object], field_name: str) -> datetim
         raise RequestException(f"Invalid Smart HVAC timestamp field '{field_name}'") from None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise RequestException(f"Smart HVAC timestamp '{field_name}' must include a timezone")
-    return parsed.astimezone(UTC)
+    try:
+        return parsed.astimezone(UTC)
+    except (OverflowError, ValueError):
+        raise RequestException(f"Invalid Smart HVAC timestamp field '{field_name}'") from None
 
 
 def _smart_hvac_date(data: Mapping[str, object], field_name: str) -> date | None:
@@ -1905,7 +1908,10 @@ class SmartHvacSummary:
         if total_result_raw is not None:
             if isinstance(total_result_raw, bool) or not isinstance(total_result_raw, (int, float)):
                 raise RequestException("Invalid Smart HVAC field 'totalResult': expected a number or null")
-            total_result = float(total_result_raw)
+            try:
+                total_result = float(total_result_raw)
+            except OverflowError:
+                raise RequestException("Invalid Smart HVAC field 'totalResult': expected a finite number") from None
             if not math.isfinite(total_result):
                 raise RequestException("Invalid Smart HVAC field 'totalResult': expected a finite number")
         else:
