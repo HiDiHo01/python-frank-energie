@@ -557,14 +557,24 @@ def test_smart_hvac_http_status_redacts_provider_reason(
         assert error_info.value.retry_after == 9
 
 
+@pytest.mark.parametrize(
+    ("transport_error", "expected_message"),
+    [
+        (aiohttp.ClientConnectionError, "Smart HVAC HTTP client error"),
+        (TimeoutError, "Frank Energie API timeout"),
+    ],
+)
 @pytest.mark.asyncio
 async def test_smart_hvac_transport_client_error_is_redacted(
-    api: FrankEnergie, caplog: pytest.LogCaptureFixture
+    api: FrankEnergie,
+    caplog: pytest.LogCaptureFixture,
+    transport_error: type[Exception],
+    expected_message: str,
 ) -> None:
-    """Keep unexpected aiohttp client details out of Smart HVAC diagnostics."""
+    """Keep upstream client and timeout details out of HVAC diagnostics."""
     secret = "synthetic-private-device-ean-reference"
     mocked_session = MagicMock()
-    mocked_session.post.side_effect = aiohttp.ClientConnectionError(secret)
+    mocked_session.post.side_effect = transport_error(secret)
     query = FrankEnergieQuery("query SmartHvacs { smartHvacs { id } }", "SmartHvacs")
     with (
         patch.object(api, "_session", mocked_session),
@@ -573,6 +583,7 @@ async def test_smart_hvac_transport_client_error_is_redacted(
         pytest.raises(NetworkError) as error_info,
     ):
         await api._query(query)
+    assert expected_message in str(error_info.value)
     assert secret not in str(error_info.value)
     assert secret not in caplog.text
     assert error_info.value.__cause__ is None
