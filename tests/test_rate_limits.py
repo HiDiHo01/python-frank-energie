@@ -558,9 +558,7 @@ async def test_smart_battery_sessions_propagates_api_rate_limit(
         patch("python_frank_energie.frank_energie.SmartBatterySessions.from_dict") as parser,
         pytest.raises(RateLimitException) as raised,
     ):
-        await client.smart_battery_sessions(
-            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
-        )
+        await client.smart_battery_sessions("synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9))
 
     assert raised.value.operation_name == "SmartBatterySessions"
     assert raised.value.retry_after == 120.0
@@ -580,11 +578,8 @@ async def test_smart_battery_sessions_preserves_rate_limit_instance() -> None:
     expected = RateLimitException("SmartBatterySessions", retry_after=45.0)
     query = AsyncMock(side_effect=expected)
 
-    with patch.object(client, "_query", query):
-        with pytest.raises(RateLimitException) as raised:
-            await client.smart_battery_sessions(
-                "synthetic-battery", date(2026, 11, 1), date(2026, 11, 9)
-            )
+    with patch.object(client, "_query", query), pytest.raises(RateLimitException) as raised:
+        await client.smart_battery_sessions("synthetic-battery", date(2026, 11, 1), date(2026, 11, 9))
 
     assert raised.value is expected
     assert raised.value.retry_after == 45.0
@@ -605,9 +600,7 @@ async def test_smart_battery_sessions_propagates_automatic_renewal_throttle(
     caplog.set_level(logging.DEBUG, logger="python_frank_energie.frank_energie")
 
     with pytest.raises(RateLimitException) as raised:
-        await client.smart_battery_sessions(
-            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
-        )
+        await client.smart_battery_sessions("synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9))
 
     assert raised.value.operation_name == "RenewToken"
     assert raised.value.retry_after == 120.0
@@ -618,18 +611,14 @@ async def test_smart_battery_sessions_propagates_automatic_renewal_throttle(
 
 
 @pytest.mark.asyncio
-async def test_smart_battery_sessions_not_found_still_returns_none(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
+async def test_smart_battery_sessions_not_found_still_returns_none(caplog: pytest.LogCaptureFixture) -> None:
     """Keep a confirmed missing battery distinct from provider throttling."""
     client = FrankEnergie(auth_token="synthetic-token")  # noqa: S106
     query = AsyncMock(side_effect=SmartBatteryNotFoundException("missing synthetic battery"))
     caplog.set_level(logging.DEBUG, logger="python_frank_energie.frank_energie")
 
     with patch.object(client, "_query", query):
-        result = await client.smart_battery_sessions(
-            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
-        )
+        result = await client.smart_battery_sessions("synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9))
 
     assert result is None
     assert "synthetic-battery-private-id" not in caplog.text
@@ -642,11 +631,8 @@ async def test_smart_battery_sessions_does_not_swallow_cancellation() -> None:
     client = FrankEnergie(auth_token="synthetic-token")  # noqa: S106
     query = AsyncMock(side_effect=asyncio.CancelledError())
 
-    with patch.object(client, "_query", query):
-        with pytest.raises(asyncio.CancelledError):
-            await client.smart_battery_sessions(
-                "synthetic-battery", date(2026, 11, 1), date(2026, 11, 9)
-            )
+    with patch.object(client, "_query", query), pytest.raises(asyncio.CancelledError):
+        await client.smart_battery_sessions("synthetic-battery", date(2026, 11, 1), date(2026, 11, 9))
 
     query.assert_awaited_once()
 
@@ -663,9 +649,7 @@ async def test_smart_battery_sessions_success_uses_original_model_parser() -> No
         patch.object(client, "_query", query),
         patch("python_frank_energie.frank_energie.SmartBatterySessions.from_dict", return_value=expected) as parser,
     ):
-        result = await client.smart_battery_sessions(
-            "synthetic-battery", date(2026, 11, 1), date(2026, 11, 9)
-        )
+        result = await client.smart_battery_sessions("synthetic-battery", date(2026, 11, 1), date(2026, 11, 9))
 
     assert result is expected
     parser.assert_called_once_with(payload)
