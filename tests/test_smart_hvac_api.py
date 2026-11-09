@@ -285,6 +285,13 @@ async def test_smart_hvac_inventory_and_single_device_are_distinct(api: FrankEne
     assert query_mock.call_args_list[1].args[0].variables == {"deviceId": "synthetic-device"}
     assert query_mock.call_args_list[0].args[0].operation_name == "SmartHvacs"
     assert query_mock.call_args_list[1].args[0].operation_name == "SmartHvac"
+    inventory_query = query_mock.call_args_list[0].args[0].query
+    detail_query = query_mock.call_args_list[1].args[0].query
+    assert "smartHvacs(siteReference: $siteReference)" in inventory_query
+    assert "smartHvac(deviceId: $deviceId)" in detail_query
+    for field_name in device:
+        assert field_name in inventory_query
+        assert field_name in detail_query
 
 
 @pytest.mark.asyncio
@@ -344,6 +351,10 @@ async def test_summary_preserves_raw_provider_status(api: FrankEnergie) -> None:
     assert summary.total_result == 0.0
     assert request.call_args.args[0].operation_name == "SmartHvacSummary"
     assert request.call_args.args[0].variables == {"deviceId": "synthetic-device"}
+    query_text = request.call_args.args[0].query
+    assert "smartHvacSummary(deviceId: $deviceId)" in query_text
+    for field_name in response["data"]["smartHvacSummary"]:
+        assert field_name in query_text
 
 
 @pytest.mark.parametrize(
@@ -397,6 +408,10 @@ async def test_connect_requests_empty_and_typed(api: FrankEnergie) -> None:
     assert result[0].status == "opaque-provider-status"
     assert request.call_args.args[0].operation_name == "SmartHvacGetConnectRequests"
     assert request.call_args.args[0].variables == {}
+    query_text = request.call_args.args[0].query
+    assert "smartHvacConnectRequests {" in query_text
+    for field_name in ("brand", "error", "id", "status"):
+        assert field_name in query_text
 
 
 @pytest.mark.asyncio
