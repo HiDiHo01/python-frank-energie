@@ -9,7 +9,10 @@ from pathlib import Path
 
 PACKAGE_NAME = "python-frank-energie"
 VERSION_PATTERN = re.compile(r"\d{4}\.\d{1,2}\.\d{1,2}\Z")
-POETRY_PATTERN = re.compile(r'^python-frank-energie = "(\^|==)([0-9]+\.[0-9]+\.[0-9]+)"$', re.MULTILINE)
+POETRY_PATTERN = re.compile(
+    r"""^(?P<prefix>[ \t]*python-frank-energie[ \t]*=[ \t]*)(?P<quote>['"])(?P<operator>\^|==)(?P<version>\d{4}\.\d{1,2}\.\d{1,2})(?P=quote)(?P<suffix>[ \t]*(?:#.*)?)$""",
+    re.MULTILINE,
+)
 
 
 def _version_parts(version: str) -> tuple[int, int, int]:
@@ -18,6 +21,8 @@ def _version_parts(version: str) -> tuple[int, int, int]:
         raise ValueError(f"Invalid stable python-frank-energie version: {version!r}")
     year, month, day = (int(part) for part in version.split("."))
     date(year, month, day)
+    if version != f"{year}.{month}.{day}":
+        raise ValueError(f"Non-canonical calendar release version: {version!r}")
     return year, month, day
 
 
@@ -30,7 +35,8 @@ def _current_version(manifest_text: str, pyproject_text: str) -> str:
     matching = [
         requirement
         for requirement in manifest["requirements"]
-        if isinstance(requirement, str) and requirement.startswith(PACKAGE_NAME)
+        if isinstance(requirement, str)
+        and re.match(r"^python-frank-energie(?=$|[ \t]*(?:==|[!<>~=]))", requirement) is not None
     ]
     if len(matching) != 1 or re.fullmatch(r"python-frank-energie==([0-9]+\.[0-9]+\.[0-9]+)", matching[0]) is None:
         raise ValueError("Expected exactly one pinned python-frank-energie manifest requirement")
@@ -39,11 +45,12 @@ def _current_version(manifest_text: str, pyproject_text: str) -> str:
     _version_parts(version)
     pyproject = tomllib.loads(pyproject_text)
     declared = pyproject.get("tool", {}).get("poetry", {}).get("dependencies", {}).get(PACKAGE_NAME)
-    declarations = POETRY_PATTERN.findall(pyproject_text)
-    if declared not in (f"^{version}", f"=={version}") or declarations not in [
-        [("^", version)],
-        [("==", version)],
-    ]:
+    declarations = list(POETRY_PATTERN.finditer(pyproject_text))
+    if (
+        declared not in (f"^{version}", f"=={version}")
+        or len(declarations) != 1
+        or declarations[0].group("version") != version
+    ):
         raise ValueError("Poetry's python-frank-energie dependency must match the pinned manifest version")
     return version
 
@@ -68,12 +75,21 @@ def update_dependency(root: Path, version: str) -> bool:
         raise ValueError("Cannot identify a unique library dependency in both configuration files")
 
     updated_manifest = manifest_text.replace(old_pin, f'"{PACKAGE_NAME}=={version}"', 1)
-    updated_pyproject = pyproject_text.replace(old_poetry, f'{PACKAGE_NAME} = "=={version}"', 1)
+    quote = existing_constraint.group("quote")
+    updated_poetry_line = (
+        f'{existing_constraint.group("prefix")}{quote}=={version}{quote}{existing_constraint.group("suffix")}'
+    )
+    updated_pyproject = pyproject_text.replace(old_poetry, updated_poetry_line, 1)
     if _current_version(updated_manifest, updated_pyproject) != version:
         raise ValueError("Dependency declarations do not agree after the update")
 
-    manifest_path.write_text(updated_manifest, encoding="utf-8")
-    pyproject_path.write_text(updated_pyproject, encoding="utf-8")
+    try:
+        pyproject_path.write_text(updated_pyproject, encoding="utf-8")
+        manifest_path.write_text(updated_manifest, encoding="utf-8")
+    except OSError:
+        pyproject_path.write_text(pyproject_text, encoding="utf-8")
+        manifest_path.write_text(manifest_text, encoding="utf-8")
+        raise
     return True
 
 
