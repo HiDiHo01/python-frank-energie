@@ -41,7 +41,7 @@ def test_updates_only_library_dependency_and_keeps_integration_version(tmp_path:
     assert manifest["requirements"] == ["python-frank-energie==2026.11.9"]
     assert manifest["version"] == "2026.9.20"
     assert 'version = "2026.9.20"' in pyproject_path.read_text(encoding="utf-8")
-    assert 'python-frank-energie = "^2026.11.9"' in pyproject_path.read_text(encoding="utf-8")
+    assert 'python-frank-energie = "==2026.11.9"' in pyproject_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(("current", "target"), [("2026.11.9", "2026.11.9"), ("2026.12.1", "2026.11.9")])
@@ -60,6 +60,28 @@ def test_rejects_invalid_target_versions_without_writing(tmp_path: Path, version
     before = (manifest_path.read_bytes(), pyproject_path.read_bytes())
     with pytest.raises(ValueError):
         update_dependency(tmp_path, version)
+    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == before
+
+
+
+def test_updates_an_existing_exact_poetry_constraint(tmp_path: Path) -> None:
+    """A later release can replace an exact pin from an earlier automated PR."""
+    _, pyproject_path = _make_checkout(tmp_path, "2026.11.9")
+    source = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(source.replace("^2026.11.9", "==2026.11.9"), encoding="utf-8")
+
+    assert update_dependency(tmp_path, "2026.11.10") is True
+    assert 'python-frank-energie = "==2026.11.10"' in pyproject_path.read_text(encoding="utf-8")
+
+
+def test_exact_constraint_is_idempotent(tmp_path: Path) -> None:
+    """A repeated release event must not modify an already-pinned dependency."""
+    manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.9")
+    source = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(source.replace("^2026.11.9", "==2026.11.9"), encoding="utf-8")
+    before = manifest_path.read_bytes(), pyproject_path.read_bytes()
+
+    assert update_dependency(tmp_path, "2026.11.9") is False
     assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == before
 
 
