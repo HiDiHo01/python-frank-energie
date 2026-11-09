@@ -822,6 +822,12 @@ class FrankEnergie:
             return None
 
         errors_obj: object | None = response.get("errors")
+        if (
+            operation_name in _SMART_HVAC_QUERY_OPERATIONS
+            and "errors" in response
+            and not isinstance(errors_obj, list)
+        ):
+            raise RequestException("Invalid Smart HVAC GraphQL error structure")
         if not errors_obj:
             return None
 
