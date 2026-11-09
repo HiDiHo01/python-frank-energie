@@ -9,6 +9,7 @@ permissions:
 
 concurrency:
   group: home-assistant-dependency-releases
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -17,10 +18,12 @@ jobs:
     if: ${{ !github.event.release.draft && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      GH_REPO: HiDiHo01/home-assistant-frank_energie
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # @v2.22.3
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # @v2.22.4
         with:
           egress-policy: block
           allowed-endpoints: >-
@@ -31,6 +34,7 @@ jobs:
             pkg-containers.githubusercontent.com:443
             ghcr.io:443
             github-releases.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
             raw.githubusercontent.com:443
             pypi.org:443
             files.pythonhosted.org:443
@@ -55,13 +59,13 @@ jobs:
           python - <<'PY'
           import os
           import re
-          import tomllib
           import subprocess
+          import tomllib
           from datetime import date
           from pathlib import Path
 
           tag = os.environ["RELEASE_TAG"]
-          if re.fullmatch(r"v\d{4}\.\d{1,2}\.\d{1,2}", tag) is None:
+          if re.fullmatch(r"v\d{4}\.\d{1,2}\.\d{1,2}", tag, flags=re.ASCII) is None:
               raise SystemExit(f"Unsupported stable library release tag: {tag!r}")
           raw_version = tag[1:]
           release_parts = tuple(int(value) for value in raw_version.split("."))
@@ -73,6 +77,8 @@ jobs:
               capture_output=True,
               text=True,
           ).stdout.strip()
+          if tag_commit != os.environ["GITHUB_SHA"]:
+              raise SystemExit("The release tag no longer points to the published commit")
           subprocess.run(["git", "merge-base", "--is-ancestor", tag_commit, "HEAD"], check=True)
           project_text = subprocess.run(
               ["git", "show", f"{tag_commit}:pyproject.toml"],
@@ -110,8 +116,8 @@ jobs:
                   if error.code not in (404, 408, 425, 429) and not 500 <= error.code < 600:
                       raise
                   print(f"Waiting for PyPI metadata (HTTP {error.code})")
-              except URLError as error:
-                  print(f"Waiting for PyPI connection: {type(error.reason).__name__}")
+              except (URLError, TimeoutError) as error:
+                  print(f"Waiting for PyPI connection: {type(error).__name__}")
               else:
                   release_files = package.get("releases", {}).get(version, [])
                   if any(
@@ -144,157 +150,177 @@ jobs:
         with:
           repository: HiDiHo01/home-assistant-frank_energie
           ref: main
+          fetch-depth: 0
           path: integration
           token: ${{ steps.integration_token.outputs.token }}
           persist-credentials: false
 
-      - name: Prepare a release-specific PR branch
+      - name: Inspect pending PRs and any previously pushed release branch
         id: branch
+        working-directory: integration
         env:
           GH_TOKEN: ${{ steps.integration_token.outputs.token }}
+          APP_SLUG: ${{ steps.integration_token.outputs.app-slug }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          cd integration
-          git config --local core.hooksPath /dev/null
-          gh auth setup-git
           branch="automation/python-frank-energie-$PACKAGE_VERSION"
-          echo "name=$branch" >> "$GITHUB_OUTPUT"
-          pending="$(gh pr list --repo HiDiHo01/home-assistant-frank_energie \
-            --state open --limit 100 --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')"
+          printf 'name=%s\n' "$branch" >> "$GITHUB_OUTPUT"
+          pending="$(gh api --paginate "repos/$GH_REPO/pulls?state=open&base=main&per_page=100" \
+            | jq -r --arg repo "$GH_REPO" \
+              '.[] | select(.head.repo.full_name == $repo) | [.number, .head.ref, .user.login] | @tsv')"
+          existing_pr=
           superseded=()
-          while IFS=$'\t' read -r pr_number pr_branch; do
-            if [[ "$pr_branch" =~ ^automation/python-frank-energie-([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2})$ ]]; then
-              open_version="${BASH_REMATCH[1]}"
-              if [[ "$open_version" == "$PACKAGE_VERSION" ]]; then
-                echo "A dependency PR already exists: #$pr_number"
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              latest="$(printf '%s\n%s\n' "$open_version" "$PACKAGE_VERSION" | sort -V | tail -n 1)"
-              if [[ "$latest" == "$open_version" ]]; then
-                echo "Newer dependency PR #$pr_number for $open_version already exists; skipping older release."
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              superseded+=("$pr_number")
+          while IFS=$'\t' read -r pr_number pr_branch pr_author; do
+            if [[ "$pr_branch" == "$branch" && "$pr_author" != "${APP_SLUG}[bot]" ]]; then
+              echo "Release branch is already in use by PR #$pr_number."
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
+              exit 0
             fi
+            if [[ "$pr_author" != "${APP_SLUG}[bot]" ||
+              ! "$pr_branch" =~ ^automation/python-frank-energie-([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2})$ ]]; then
+              continue
+            fi
+            open_version="${BASH_REMATCH[1]}"
+            if [[ "$open_version" == "$PACKAGE_VERSION" ]]; then
+              existing_pr="$pr_number"
+              continue
+            fi
+            latest="$(printf '%s\n%s\n' "$open_version" "$PACKAGE_VERSION" | sort -V | tail -n 1)"
+            if [[ "$latest" == "$open_version" ]]; then
+              echo "Newer dependency PR #$pr_number for $open_version already exists."
+              echo 'skip=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            superseded+=("$pr_number")
           done <<< "$pending"
           printf 'superseded=%s\n' "$(IFS=,; echo "${superseded[*]}")" >> "$GITHUB_OUTPUT"
+          if [[ -n "$existing_pr" ]]; then
+            printf 'existing_pr=%s\n' "$existing_pr" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
-          set +e
-          git ls-remote --exit-code --heads origin "refs/heads/$branch" > /dev/null
-          remote_status=$?
-          set -e
-          if [[ "$remote_status" -eq 0 ]]; then
-            git fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
-            git switch --track -c "$branch" "origin/$branch"
-            echo "recovered=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$remote_status" -eq 2 ]]; then
-            git switch -c "$branch"
-          else
-            echo "Unable to query the authenticated downstream branch (git status $remote_status)" >&2
+          git_with_auth=(git -c core.hooksPath=/dev/null -c credential.helper= \
+            -c 'credential.helper=!gh auth git-credential')
+          if "${git_with_auth[@]}" ls-remote --exit-code origin "refs/heads/$branch" > /dev/null; then
+            "${git_with_auth[@]}" fetch --no-tags origin "refs/heads/$branch"
+            printf 'recovered_commit=%s\n' "$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
+          elif [[ $? -ne 2 ]]; then
+            echo 'Unable to query the authenticated downstream branch.' >&2
             exit 1
           fi
 
-      - name: Update only matching dependency declarations
+      - name: Prepare the dependency update from downstream main
         id: update
-        if: steps.branch.outputs.skip != 'true'
+        if: steps.branch.outputs.skip != 'true' && steps.branch.outputs.existing_pr == ''
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          python scripts/sync_home_assistant_dependency.py \
-            --root integration --version "$PACKAGE_VERSION"
-          git -C integration diff --check
-          locked_version="$(python - <<'PY'
-          import tomllib
-          from pathlib import Path
+          result="$(python scripts/sync_home_assistant_dependency.py \
+            --root integration --version "$PACKAGE_VERSION" --prepare-lock)"
+          printf 'result=%s\n' "$result" >> "$GITHUB_OUTPUT"
 
-          with Path("integration/poetry.lock").open("rb") as source:
-              lock = tomllib.load(source)
-          packages = [item["version"] for item in lock["package"] if item["name"] == "python-frank-energie"]
-          if len(packages) != 1:
-              raise SystemExit(f"Expected one locked python-frank-energie package, found {packages}")
-          print(packages[0])
-          PY
-          )"
-          if git -C integration diff --quiet -- \
-            custom_components/frank_energie/manifest.json pyproject.toml \
-            && [[ "$locked_version" == "$PACKAGE_VERSION" ]]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Update and validate the Poetry lockfile
-        if: steps.update.outputs.changed == 'true' || steps.branch.outputs.recovered == 'true'
+      - name: Refresh and verify the Poetry lockfile
+        if: steps.update.outputs.result == 'updated'
         working-directory: integration
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           python -m pip install --only-binary=:all: 'poetry==2.5.1'
-          poetry update python-frank-energie --lock
+          poetry lock --no-interaction
           poetry check --lock
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
+          python ../scripts/sync_home_assistant_dependency.py \
+            --root . --version "$PACKAGE_VERSION" --verify-lock
 
-          with Path("poetry.lock").open("rb") as source:
-              lock = tomllib.load(source)
-          versions = [
-              item["version"]
-              for item in lock["package"]
-              if item["name"] == "python-frank-energie"
-          ]
-          if versions != [os.environ["PACKAGE_VERSION"]]:
-              raise SystemExit(f"Unexpected library version in Poetry lockfile: {versions}")
-          PY
-          git diff --check
+      - name: Prepare a commit without downstream credentials
+        id: commit
+        if: steps.update.outputs.result == 'updated'
+        working-directory: integration
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+          RECOVERED_COMMIT: ${{ steps.branch.outputs.recovered_commit }}
+        run: |
+          set -euo pipefail
+          paths=(custom_components/frank_energie/manifest.json pyproject.toml poetry.lock)
+          git add -- "${paths[@]}"
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            exit 0
+          fi
 
-      - name: Commit and open dependency pull request
-        if: steps.update.outputs.changed == 'true' || steps.branch.outputs.recovered == 'true'
+          base_commit="$(git rev-parse HEAD)"
+          bot_email='41898282+github-actions[bot]@users.noreply.github.com'
+          parents=(-p "$base_commit")
+          if [[ -n "$RECOVERED_COMMIT" ]] && ! git merge-base --is-ancestor "$RECOVERED_COMMIT" "$base_commit"; then
+            fork_point="$(git merge-base "$base_commit" "$RECOVERED_COMMIT")"
+            committers="$(git log --format=%ce "$base_commit..$RECOVERED_COMMIT" | sort -u)"
+            if [[ "$committers" != "$bot_email" ]] || ! git diff --quiet "$fork_point" "$RECOVERED_COMMIT" -- . \
+              ":(exclude)${paths[0]}" ":(exclude)${paths[1]}" ":(exclude)${paths[2]}"; then
+              echo 'The release branch contains changes outside the dependency automation.' >&2
+              exit 1
+            fi
+            parents+=(-p "$RECOVERED_COMMIT")
+          fi
+
+          if [[ -n "$RECOVERED_COMMIT" ]] && git merge-base --is-ancestor "$base_commit" "$RECOVERED_COMMIT" \
+            && git diff --cached --quiet "$RECOVERED_COMMIT"; then
+            commit="$RECOVERED_COMMIT"
+          else
+            git config --local user.name 'github-actions[bot]'
+            git config --local user.email "$bot_email"
+            # Keep a recovered branch's history so a retry can push without rewriting it.
+            commit="$(git -c core.hooksPath=/dev/null commit-tree "$(git write-tree)" "${parents[@]}" \
+              -m "chore(deps): update python-frank-energie to $PACKAGE_VERSION")"
+          fi
+          printf 'base=%s\nsha=%s\n' "$base_commit" "$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Publish dependency PR and close superseded automation PRs
+        if: steps.commit.outputs.sha != '' || steps.branch.outputs.existing_pr != ''
         working-directory: integration
         env:
           GH_TOKEN: ${{ steps.integration_token.outputs.token }}
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
           RELEASE_URL: ${{ github.event.release.html_url }}
+          BASE_COMMIT: ${{ steps.commit.outputs.base }}
+          UPDATE_COMMIT: ${{ steps.commit.outputs.sha }}
           UPDATE_BRANCH: ${{ steps.branch.outputs.name }}
+          EXISTING_PR: ${{ steps.branch.outputs.existing_pr }}
           SUPERSEDED_PRS: ${{ steps.branch.outputs.superseded }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- custom_components/frank_energie/manifest.json pyproject.toml poetry.lock
-          git diff --cached --check
-          gh auth setup-git
-          if ! git diff --cached --quiet; then
-            git -c core.hooksPath=/dev/null commit -m "chore(deps): update python-frank-energie to $PACKAGE_VERSION"
-            git -c core.hooksPath=/dev/null push --set-upstream origin "$UPDATE_BRANCH"
-          fi
-          cat > "$RUNNER_TEMP/dependency-pr.md" <<EOF
+          if [[ -n "$EXISTING_PR" ]]; then
+            new_pr="https://github.com/$GH_REPO/pull/$EXISTING_PR"
+          else
+            current_main="$(gh api "repos/$GH_REPO/git/ref/heads/main" --jq '.object.sha')"
+            if [[ "$current_main" != "$BASE_COMMIT" ]]; then
+              echo 'Downstream main changed while preparing the update. Rerun the workflow.' >&2
+              exit 1
+            fi
+            git -c core.hooksPath=/dev/null -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+              push origin "$UPDATE_COMMIT:refs/heads/$UPDATE_BRANCH"
+            cat > "$RUNNER_TEMP/dependency-pr.md" <<EOF
           ## Published upstream library release
 
           Update \`python-frank-energie\` to **$PACKAGE_VERSION** following [$RELEASE_URL]($RELEASE_URL).
 
           - Update the Home Assistant runtime pin in \`manifest.json\`.
           - Update the Poetry constraint in \`pyproject.toml\`.
-          - Regenerate \`poetry.lock\` with Poetry 2.5.1, targeting only this dependency.
+          - Refresh \`poetry.lock\` with Poetry 2.5.1, retaining existing resolutions where compatible.
           - Preserve the integration's separate release \`version\`.
 
           The workflow verified that PyPI serves a non-yanked wheel for the new version and that the lockfile resolves that exact version.
 
           **Review required:** Verify client API compatibility (especially Smart HVAC/site references), Python 3.14 and Home Assistant tests, Ruff/Flake8, HACS and hassfest. Do not merge automatically. AI-assisted workflow implementation; maintainer approval is required.
           EOF
-          new_pr="$(gh pr create \
-            --repo HiDiHo01/home-assistant-frank_energie \
-            --base main \
-            --head "$UPDATE_BRANCH" \
-            --title "chore(deps): update python-frank-energie to $PACKAGE_VERSION" \
-            --body-file "$RUNNER_TEMP/dependency-pr.md")"
-          echo "Created dependency pull request: $new_pr"
+            new_pr="$(gh pr create \
+              --base main \
+              --head "$UPDATE_BRANCH" \
+              --title "chore(deps): update python-frank-energie to $PACKAGE_VERSION" \
+              --body-file "$RUNNER_TEMP/dependency-pr.md")"
+            echo "Created dependency pull request: $new_pr"
+          fi
 
           if [[ -n "$SUPERSEDED_PRS" ]]; then
             IFS=, read -r -a old_pr_numbers <<< "$SUPERSEDED_PRS"
@@ -304,8 +330,6 @@ jobs:
                 exit 1
               fi
               gh pr close "$old_pr_number" \
-                --repo HiDiHo01/home-assistant-frank_energie \
                 --comment "Superseded by $new_pr (python-frank-energie==$PACKAGE_VERSION)."
             done
           fi
-
