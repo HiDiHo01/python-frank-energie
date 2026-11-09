@@ -608,6 +608,9 @@ class FrankEnergie:
         except aiohttp.ClientResponseError as error:
             self._raise_http_response_error(error, operation_name)
         except ClientError as err:
+            if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+                _LOGGER.error("Frank Energie Smart HVAC HTTP client error during [%s]", operation_name)
+                raise NetworkError("Frank Energie Smart HVAC HTTP client error") from None
             _LOGGER.error(
                 "Frank Energie HTTP client error during [%s]: %s",
                 operation_name,
@@ -615,6 +618,9 @@ class FrankEnergie:
             )
             raise NetworkError(f"Frank Energie HTTP error: {err}") from err
         except KeyError as err:
+            if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+                _LOGGER.error("Invalid Smart HVAC API response during [%s]", operation_name)
+                raise NetworkError("Invalid Smart HVAC API response") from None
             _LOGGER.error(
                 "Unexpected API response structure during [%s]: missing key %s",
                 operation_name,
@@ -632,6 +638,8 @@ class FrankEnergie:
         recover_hvac_errors: bool,
     ) -> dict[str, object]:
         """Classify GraphQL errors and return the usable response."""
+        if operation_name in _SMART_HVAC_QUERY_OPERATIONS and not isinstance(response, dict):
+            raise RequestException("Invalid Smart HVAC GraphQL response: expected an object")
         if not response:
             _LOGGER.debug("Empty API response received for operation [%s]", operation_name)
             return {}
@@ -651,7 +659,9 @@ class FrankEnergie:
 
     @staticmethod
     def _raise_http_response_error(error: aiohttp.ClientResponseError, operation_name: str) -> Never:
-        """Map an HTTP failure to the corresponding Frank Energie exception."""
+        """Map HTTP failures while redacting Smart HVAC upstream reason text."""
+        is_smart_hvac = operation_name in _SMART_HVAC_QUERY_OPERATIONS
+        cause = None if is_smart_hvac else error
         if error.status == HTTPStatus.TOO_MANY_REQUESTS:
             retry_after_header = error.headers.get("Retry-After") if error.headers else None
             retry_after = _parse_retry_after(retry_after_header)
@@ -660,17 +670,26 @@ class FrankEnergie:
                 operation_name,
                 retry_after,
             )
-            raise RateLimitException(operation_name, retry_after=retry_after) from error
+            raise RateLimitException(operation_name, retry_after=retry_after) from cause
 
-        _LOGGER.error("Frank Energie API error during operation [%s]: %s", operation_name, error)
+        if is_smart_hvac:
+            _LOGGER.error(
+                "Frank Energie Smart HVAC HTTP error during [%s]: status=%s",
+                operation_name,
+                error.status,
+            )
+        else:
+            _LOGGER.error("Frank Energie API error during operation [%s]: %s", operation_name, error)
         if error.status == HTTPStatus.UNAUTHORIZED:
-            raise AuthRequiredException("Authentication required.") from error
+            raise AuthRequiredException("Authentication required.") from cause
         if error.status == HTTPStatus.FORBIDDEN:
-            raise AuthException("Forbidden: Invalid credentials.") from error
+            raise AuthException("Forbidden: Invalid credentials.") from cause
         if error.status == HTTPStatus.BAD_REQUEST:
-            raise RequestException("Bad request: Invalid query.") from error
+            raise RequestException("Bad request: Invalid query.") from cause
         if error.status == HTTPStatus.INTERNAL_SERVER_ERROR:
-            raise FrankEnergieException("Internal server error.") from error
+            raise FrankEnergieException("Internal server error.") from cause
+        if is_smart_hvac:
+            raise FrankEnergieException(f"Smart HVAC HTTP request failed (status {error.status})") from None
         raise FrankEnergieException(f"Unexpected response: {error}") from error
 
     @staticmethod
@@ -767,7 +786,7 @@ class FrankEnergie:
         if isinstance(error_obj, dict):
             return error_obj
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
-            raise FrankEnergieException("Invalid Smart HVAC GraphQL error entry")
+            raise RequestException("Invalid Smart HVAC GraphQL error entry")
         _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
         return None
 
@@ -808,7 +827,7 @@ class FrankEnergie:
 
         if not isinstance(errors_obj, list):
             if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
-                raise FrankEnergieException("Invalid Smart HVAC GraphQL error structure")
+                raise RequestException("Invalid Smart HVAC GraphQL error structure")
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
             raise FrankEnergieException("Invalid GraphQL error structure")
 
@@ -2693,7 +2712,11 @@ class FrankEnergie:
     @staticmethod
     def _smart_hvac_response_field(response: dict[str, object], field_name: str) -> object:
         """Extract a present GraphQL data field and reject incomplete responses."""
-        if not isinstance(response, dict) or response.get("errors"):
+        if not isinstance(response, dict):
+            raise RequestException(f"Invalid Smart HVAC '{field_name}' response")
+        if "errors" in response and (
+            not isinstance(response["errors"], list) or response["errors"]
+        ):
             raise RequestException(f"Invalid Smart HVAC '{field_name}' response")
         root = response.get("data")
         if not isinstance(root, dict) or field_name not in root:
@@ -2767,6 +2790,13 @@ class FrankEnergie:
         raw = self._smart_hvac_response_field(response, "smartHvacs")
         if not isinstance(raw, list):
             raise RequestException("Invalid Smart HVAC device inventory: expected a list")
+        required_fields = {
+            "brand", "connectionEAN", "createdAt", "deletedAt", "deviceType",
+            "displayName", "needsReauthentication", "externalReference", "id",
+            "model", "provider", "updatedAt",
+        }
+        if any(not isinstance(item, dict) or not required_fields.issubset(item) for item in raw):
+            raise RequestException("Invalid Smart HVAC device inventory: missing selected fields")
         devices = [SmartHvacDevice.from_dict(item) for item in raw]
         if len({device.id for device in devices}) != len(devices):
             raise RequestException("Smart HVAC device inventory contains duplicate IDs")
