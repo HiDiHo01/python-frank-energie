@@ -13,7 +13,7 @@ repos:
         name: Format Python using Ruff
         language: system
         types: [python]
-        entry: poetry run ruff format --check --diff
+        entry: poetry run ruff format
         require_serial: true
       - id: blacken-docs
         name: Format documentation examples using black
