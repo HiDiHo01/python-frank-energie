@@ -3569,8 +3569,17 @@ class FrankEnergie:
         except RateLimitException:
             # Preserve retry metadata from the request or automatic token renewal.
             raise
+        except TimeoutError:
+            _LOGGER.error("Failed to query smart battery sessions: timeout")
+            return None
+        except NetworkError:
+            _LOGGER.error("Failed to query smart battery sessions: network")
+            return None
+        except (AuthException, AuthRequiredException):
+            _LOGGER.error("Failed to query smart battery sessions: authentication")
+            return None
         except Exception:
-            _LOGGER.error("Failed to query smart battery sessions")
+            _LOGGER.error("Failed to query smart battery sessions: other")
             return None
 
         return SmartBatterySessions.from_dict(response)
