@@ -9,7 +9,7 @@ from pathlib import Path
 
 PACKAGE_NAME = "python-frank-energie"
 VERSION_PATTERN = re.compile(r"\d{4}\.\d{1,2}\.\d{1,2}\Z")
-POETRY_PATTERN = re.compile(r'^python-frank-energie = "\^([0-9]+\.[0-9]+\.[0-9]+)"$', re.MULTILINE)
+POETRY_PATTERN = re.compile(r'^python-frank-energie = "(\^|==)([0-9]+\.[0-9]+\.[0-9]+)"$', re.MULTILINE)
 
 
 def _version_parts(version: str) -> tuple[int, int, int]:
@@ -39,7 +39,11 @@ def _current_version(manifest_text: str, pyproject_text: str) -> str:
     _version_parts(version)
     pyproject = tomllib.loads(pyproject_text)
     declared = pyproject.get("tool", {}).get("poetry", {}).get("dependencies", {}).get(PACKAGE_NAME)
-    if declared != f"^{version}" or POETRY_PATTERN.findall(pyproject_text) != [version]:
+    declarations = POETRY_PATTERN.findall(pyproject_text)
+    if declared not in (f"^{version}", f"=={version}") or declarations not in [
+        [("^", version)],
+        [("==", version)],
+    ]:
         raise ValueError("Poetry's python-frank-energie dependency must match the pinned manifest version")
     return version
 
@@ -56,12 +60,15 @@ def update_dependency(root: Path, version: str) -> bool:
         return False
 
     old_pin = f'"{PACKAGE_NAME}=={current_version}"'
-    old_poetry = f'{PACKAGE_NAME} = "^{current_version}"'
+    existing_constraint = POETRY_PATTERN.search(pyproject_text)
+    if existing_constraint is None:
+        raise ValueError("Cannot locate the existing Poetry dependency")
+    old_poetry = existing_constraint.group(0)
     if manifest_text.count(old_pin) != 1 or pyproject_text.count(old_poetry) != 1:
         raise ValueError("Cannot identify a unique library dependency in both configuration files")
 
     updated_manifest = manifest_text.replace(old_pin, f'"{PACKAGE_NAME}=={version}"', 1)
-    updated_pyproject = pyproject_text.replace(old_poetry, f'{PACKAGE_NAME} = "^{version}"', 1)
+    updated_pyproject = pyproject_text.replace(old_poetry, f'{PACKAGE_NAME} = "=={version}"', 1)
     if _current_version(updated_manifest, updated_pyproject) != version:
         raise ValueError("Dependency declarations do not agree after the update")
 
