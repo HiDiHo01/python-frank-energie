@@ -163,7 +163,39 @@ jobs:
           pending="$(gh pr list --repo HiDiHo01/home-assistant-frank_energie \
             --state open --limit 100 --json number,headRefName --jq '.[] | [.number, .headRefName] | @tsv')"
           superseded=()
-          while IFS=
+          while IFS=$'\t' read -r pr_number pr_branch; do
+            if [[ "$pr_branch" =~ ^automation/python-frank-energie-([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2})$ ]]; then
+              open_version="${BASH_REMATCH[1]}"
+              if [[ "$open_version" == "$PACKAGE_VERSION" ]]; then
+                echo "A dependency PR already exists: #$pr_number"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              latest="$(printf '%s\n%s\n' "$open_version" "$PACKAGE_VERSION" | sort -V | tail -n 1)"
+              if [[ "$latest" == "$open_version" ]]; then
+                echo "Newer dependency PR #$pr_number for $open_version already exists; skipping older release."
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              superseded+=("$pr_number")
+            fi
+          done <<< "$pending"
+          printf 'superseded=%s\n' "$(IFS=,; echo "${superseded[*]}")" >> "$GITHUB_OUTPUT"
+
+          set +e
+          git ls-remote --exit-code --heads origin "refs/heads/$branch" > /dev/null
+          remote_status=$?
+          set -e
+          if [[ "$remote_status" -eq 0 ]]; then
+            git fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            git switch --track -c "$branch" "origin/$branch"
+            echo "recovered=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$remote_status" -eq 2 ]]; then
+            git switch -c "$branch"
+          else
+            echo "Unable to query the authenticated downstream branch (git status $remote_status)" >&2
+            exit 1
+          fi
 
       - name: Update only matching dependency declarations
         id: update
@@ -276,133 +308,4 @@ jobs:
                 --comment "Superseded by $new_pr (python-frank-energie==$PACKAGE_VERSION)."
             done
           fi
-\t' read -r pr_number pr_branch; do
-            if [[ "$pr_branch" =~ ^automation/python-frank-energie-([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2})$ ]]; then
-              open_version="${BASH_REMATCH[1]}"
-              if [[ "$open_version" == "$PACKAGE_VERSION" ]]; then
-                echo "A dependency PR already exists: #$pr_number"
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              latest="$(printf '%s\n%s\n' "$open_version" "$PACKAGE_VERSION" | sort -V | tail -n 1)"
-              if [[ "$latest" == "$open_version" ]]; then
-                echo "Newer dependency PR #$pr_number for $open_version already exists; skipping older release."
-                echo "skip=true" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-              superseded+=("$pr_number")
-            fi
-          done <<< "$pending"
-          printf 'superseded=%s\n' "$(IFS=,; echo "${superseded[*]}")" >> "$GITHUB_OUTPUT"
 
-          set +e
-          git ls-remote --exit-code --heads origin "refs/heads/$branch" > /dev/null
-          remote_status=$?
-          set -e
-          if [[ "$remote_status" -eq 0 ]]; then
-            git fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
-            git switch --track -c "$branch" "origin/$branch"
-            echo "recovered=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$remote_status" -eq 2 ]]; then
-            git switch -c "$branch"
-          else
-            echo "Unable to query the authenticated downstream branch (git status $remote_status)" >&2
-            exit 1
-          fi
-
-      - name: Update only matching dependency declarations
-        id: update
-        if: steps.branch.outputs.skip != 'true'
-        env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          python scripts/sync_home_assistant_dependency.py \
-            --root integration --version "$PACKAGE_VERSION"
-          git -C integration diff --check
-          locked_version="$(python - <<'PY'
-          import tomllib
-          from pathlib import Path
-
-          with Path("integration/poetry.lock").open("rb") as source:
-              lock = tomllib.load(source)
-          packages = [item["version"] for item in lock["package"] if item["name"] == "python-frank-energie"]
-          if len(packages) != 1:
-              raise SystemExit(f"Expected one locked python-frank-energie package, found {packages}")
-          print(packages[0])
-          PY
-          )"
-          if git -C integration diff --quiet -- \
-            custom_components/frank_energie/manifest.json pyproject.toml \
-            && [[ "$locked_version" == "$PACKAGE_VERSION" ]]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Update and validate the Poetry lockfile
-        if: steps.update.outputs.changed == 'true' || steps.branch.outputs.recovered == 'true'
-        working-directory: integration
-        env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          python -m pip install --only-binary=:all: 'poetry==2.5.1'
-          poetry update python-frank-energie --lock
-          poetry check --lock
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
-
-          with Path("poetry.lock").open("rb") as source:
-              lock = tomllib.load(source)
-          versions = [
-              item["version"]
-              for item in lock["package"]
-              if item["name"] == "python-frank-energie"
-          ]
-          if versions != [os.environ["PACKAGE_VERSION"]]:
-              raise SystemExit(f"Unexpected library version in Poetry lockfile: {versions}")
-          PY
-          git diff --check
-
-      - name: Commit and open dependency pull request
-        if: steps.update.outputs.changed == 'true' || steps.branch.outputs.recovered == 'true'
-        working-directory: integration
-        env:
-          GH_TOKEN: ${{ steps.integration_token.outputs.token }}
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
-          RELEASE_URL: ${{ github.event.release.html_url }}
-          UPDATE_BRANCH: ${{ steps.branch.outputs.name }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- custom_components/frank_energie/manifest.json pyproject.toml poetry.lock
-          git diff --cached --check
-          gh auth setup-git
-          if ! git diff --cached --quiet; then
-            git -c core.hooksPath=/dev/null commit -m "chore(deps): update python-frank-energie to $PACKAGE_VERSION"
-            git -c core.hooksPath=/dev/null push --set-upstream origin "$UPDATE_BRANCH"
-          fi
-          cat > "$RUNNER_TEMP/dependency-pr.md" <<EOF
-          ## Published upstream library release
-
-          Update \`python-frank-energie\` to **$PACKAGE_VERSION** following [$RELEASE_URL]($RELEASE_URL).
-
-          - Update the Home Assistant runtime pin in \`manifest.json\`.
-          - Update the Poetry constraint in \`pyproject.toml\`.
-          - Regenerate \`poetry.lock\` with Poetry 2.5.1, targeting only this dependency.
-          - Preserve the integration's separate release \`version\`.
-
-          The workflow verified that PyPI serves a non-yanked wheel for the new version and that the lockfile resolves that exact version.
-
-          **Review required:** Verify client API compatibility (especially Smart HVAC/site references), Python 3.14 and Home Assistant tests, Ruff/Flake8, HACS and hassfest. Do not merge automatically. AI-assisted workflow implementation; maintainer approval is required.
-          EOF
-          gh pr create \
-            --repo HiDiHo01/home-assistant-frank_energie \
-            --base main \
-            --head "$UPDATE_BRANCH" \
-            --title "chore(deps): update python-frank-energie to $PACKAGE_VERSION" \
-            --body-file "$RUNNER_TEMP/dependency-pr.md"
