@@ -52,7 +52,8 @@ def test_noop_for_equal_or_older_release(tmp_path: Path, current: str, target: s
     manifest_path, pyproject_path = _make_checkout(tmp_path, current)
     before = (manifest_path.read_bytes(), pyproject_path.read_bytes())
     assert update_dependency(tmp_path, target) is False
-    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == before
+    after = (manifest_path.read_bytes(), pyproject_path.read_bytes())
+    assert after == before
 
 
 @pytest.mark.parametrize("version", ["v2026.11.9", "2026.11.9rc1", "2026.2.30", "2026.11.9; bad", "../2026.11.9"])
@@ -62,7 +63,8 @@ def test_rejects_invalid_target_versions_without_writing(tmp_path: Path, version
     before = (manifest_path.read_bytes(), pyproject_path.read_bytes())
     with pytest.raises(ValueError):
         update_dependency(tmp_path, version)
-    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == before
+    after = (manifest_path.read_bytes(), pyproject_path.read_bytes())
+    assert after == before
 
 
 def test_updates_an_existing_exact_poetry_constraint(tmp_path: Path) -> None:
@@ -83,7 +85,8 @@ def test_exact_constraint_is_idempotent(tmp_path: Path) -> None:
     before = manifest_path.read_bytes(), pyproject_path.read_bytes()
 
     assert update_dependency(tmp_path, "2026.11.9") is False
-    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == before
+    after = manifest_path.read_bytes(), pyproject_path.read_bytes()
+    assert after == before
 
 
 def test_mismatched_version_contract_does_not_modify_files(tmp_path: Path) -> None:
