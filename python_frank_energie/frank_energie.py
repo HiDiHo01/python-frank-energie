@@ -2721,9 +2721,7 @@ class FrankEnergie:
         """Extract a present GraphQL data field and reject incomplete responses."""
         if not isinstance(response, dict):
             raise RequestException(f"Invalid Smart HVAC '{field_name}' response")
-        if "errors" in response and (
-            not isinstance(response["errors"], list) or response["errors"]
-        ):
+        if "errors" in response and (not isinstance(response["errors"], list) or response["errors"]):
             raise RequestException(f"Invalid Smart HVAC '{field_name}' response")
         root = response.get("data")
         if not isinstance(root, dict) or field_name not in root:
@@ -2798,9 +2796,18 @@ class FrankEnergie:
         if not isinstance(raw, list):
             raise RequestException("Invalid Smart HVAC device inventory: expected a list")
         required_fields = {
-            "brand", "connectionEAN", "createdAt", "deletedAt", "deviceType",
-            "displayName", "needsReauthentication", "externalReference", "id",
-            "model", "provider", "updatedAt",
+            "brand",
+            "connectionEAN",
+            "createdAt",
+            "deletedAt",
+            "deviceType",
+            "displayName",
+            "needsReauthentication",
+            "externalReference",
+            "id",
+            "model",
+            "provider",
+            "updatedAt",
         }
         if any(not isinstance(item, dict) or not required_fields.issubset(item) for item in raw):
             raise RequestException("Invalid Smart HVAC device inventory: missing selected fields")
