@@ -618,25 +618,35 @@ class FrankEnergie:
         except aiohttp.ClientResponseError as error:
             self._raise_http_response_error(error, operation_name)
         except ClientError as err:
-            if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
-                _LOGGER.error("Frank Energie Smart HVAC HTTP client error during [%s]", operation_name)
-                raise NetworkError("Frank Energie Smart HVAC HTTP client error") from None
-            _LOGGER.error(
-                "Frank Energie HTTP client error during [%s]: %s",
-                operation_name,
-                err,
-            )
-            raise NetworkError(f"Frank Energie HTTP error: {err}") from err
+            self._raise_query_client_error(err, operation_name)
         except KeyError as err:
-            if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
-                _LOGGER.error("Invalid Smart HVAC API response during [%s]", operation_name)
-                raise NetworkError("Invalid Smart HVAC API response") from None
-            _LOGGER.error(
-                "Unexpected API response structure during [%s]: missing key %s",
-                operation_name,
-                err,
-            )
-            raise NetworkError(f"Invalid API response: missing {err}") from err
+            self._raise_query_key_error(err, operation_name)
+
+    @staticmethod
+    def _raise_query_client_error(error: ClientError, operation_name: str) -> Never:
+        """Preserve legacy HTTP errors while redacting Smart HVAC diagnostics."""
+        if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+            _LOGGER.error("Frank Energie Smart HVAC HTTP client error during [%s]", operation_name)
+            raise NetworkError("Frank Energie Smart HVAC HTTP client error") from None
+        _LOGGER.error(
+            "Frank Energie HTTP client error during [%s]: %s",
+            operation_name,
+            error,
+        )
+        raise NetworkError(f"Frank Energie HTTP error: {error}") from error
+
+    @staticmethod
+    def _raise_query_key_error(error: KeyError, operation_name: str) -> Never:
+        """Preserve legacy missing-key errors while redacting Smart HVAC diagnostics."""
+        if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+            _LOGGER.error("Invalid Smart HVAC API response during [%s]", operation_name)
+            raise NetworkError("Invalid Smart HVAC API response") from None
+        _LOGGER.error(
+            "Unexpected API response structure during [%s]: missing key %s",
+            operation_name,
+            error,
+        )
+        raise NetworkError(f"Invalid API response: missing {error}") from error
 
     def _process_graphql_response(
         self,
