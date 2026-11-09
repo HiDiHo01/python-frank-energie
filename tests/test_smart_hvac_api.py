@@ -429,6 +429,35 @@ async def test_connect_requests_reject_missing_or_invalid_list(api: FrankEnergie
             await api.smart_hvac_connect_requests()
 
 
+@pytest.mark.parametrize("missing_field", ("brand", "error", "id", "status"))
+@pytest.mark.asyncio
+async def test_connect_requests_reject_missing_selected_fields(api: FrankEnergie, missing_field: str) -> None:
+    """Reject omitted GraphQL selections rather than assuming null values."""
+    record = {"brand": None, "error": None, "id": "synthetic-request", "status": None}
+    del record[missing_field]
+    response = {"data": {"smartHvacConnectRequests": [record]}}
+    with (
+        patch.object(api, "_query", new=AsyncMock(return_value=response)),
+        pytest.raises(RequestException, match="missing selected fields"),
+    ):
+        await api.smart_hvac_connect_requests()
+
+
+@pytest.mark.asyncio
+async def test_connect_requests_accept_explicit_null_fields(api: FrankEnergie) -> None:
+    """Keep null connect-request properties distinct from omitted fields."""
+    record = {"brand": None, "error": None, "id": "synthetic-request", "status": None}
+    response = {"data": {"smartHvacConnectRequests": [record]}}
+    with patch.object(api, "_query", new=AsyncMock(return_value=response)):
+        result = await api.smart_hvac_connect_requests()
+
+    assert len(result) == 1
+    assert result[0].id == "synthetic-request"
+    assert result[0].brand is None
+    assert result[0].error is None
+    assert result[0].status is None
+
+
 def _complete_device_record() -> dict[str, object]:
     """Return a synthetic inventory record with every queried GraphQL field."""
     return {
