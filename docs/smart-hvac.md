@@ -47,8 +47,8 @@ implicitly called by `smart_hvac_status()` or `me()`:
 | Client method | GraphQL root field | Result |
 | --- | --- | --- |
 | `smart_hvacs(site_reference)` | `smartHvacs(siteReference:)` | `list[SmartHvacDevice]` |
-| `smart_hvac(device_id)` | `smartHvac(deviceId:)` | `SmartHvacDevice | None` |
-| `smart_hvac_summary(device_id)` | `smartHvacSummary(deviceId:)` | `SmartHvacSummary | None` |
+| `smart_hvac(device_id)` | `smartHvac(deviceId:)` | `SmartHvacDevice \| None` |
+| `smart_hvac_summary(device_id)` | `smartHvacSummary(deviceId:)` | `SmartHvacSummary \| None` |
 | `smart_hvac_connect_requests()` | `smartHvacConnectRequests` | `list[SmartHvacConnectRequest]` |
 
 The device inventory and detail include only the captured fields: brand,
