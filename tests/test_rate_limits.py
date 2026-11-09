@@ -17,6 +17,7 @@ from python_frank_energie.exceptions import (
     AuthException,
     AuthRequiredException,
     FrankEnergieException,
+    NetworkError,
     RefreshTokenInvalidException,
     SmartBatteryNotFoundException,
 )
@@ -655,4 +656,37 @@ async def test_smart_battery_sessions_success_uses_original_model_parser() -> No
 
     assert result is expected
     parser.assert_called_once_with(payload)
+    query.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("error", "category"),
+    [
+        (TimeoutError("synthetic-private-timeout"), "timeout"),
+        (NetworkError("synthetic-private-network"), "network"),
+        (AuthException("synthetic-private-auth"), "authentication"),
+        (AuthRequiredException("synthetic-private-authorization"), "authentication"),
+        (RequestException("synthetic-private-other"), "other"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_logs_safe_failure_category(
+    error: Exception,
+    category: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Keep established missing-session fallback and log only known safe categories."""
+    client = FrankEnergie(auth_token="synthetic-token")  # noqa: S106
+    query = AsyncMock(side_effect=error)
+    caplog.set_level(logging.ERROR, logger="python_frank_energie.frank_energie")
+
+    with patch.object(client, "_query", query):
+        result = await client.smart_battery_sessions(
+            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
+        )
+
+    assert result is None
+    assert f"Failed to query smart battery sessions: {category}" in caplog.text
+    assert "synthetic-private" not in caplog.text
+    assert "synthetic-battery-private-id" not in caplog.text
     query.assert_awaited_once()
