@@ -63,7 +63,6 @@ def test_rejects_invalid_target_versions_without_writing(tmp_path: Path, version
     assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == before
 
 
-
 def test_updates_an_existing_exact_poetry_constraint(tmp_path: Path) -> None:
     """A later release can replace an exact pin from an earlier automated PR."""
     _, pyproject_path = _make_checkout(tmp_path, "2026.11.9")
@@ -115,6 +114,66 @@ def test_ignores_unrelated_manifest_dependencies(tmp_path: Path) -> None:
     assert update_dependency(tmp_path, "2026.11.9") is True
     updated = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert updated["requirements"] == ["python-frank-energie==2026.11.9", "some-other-package==1.2.3"]
+
+
+
+def test_similarly_prefixed_packages_do_not_block_the_library_pin(tmp_path: Path) -> None:
+    """Ignore unrelated distributions whose names share the library prefix."""
+    manifest_path, _ = _make_checkout(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["requirements"].append("python-frank-energie-extras==1.0")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+    assert update_dependency(tmp_path, "2026.11.9") is True
+    updated = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert "python-frank-energie-extras==1.0" in updated["requirements"]
+
+
+def test_preserves_alternative_toml_whitespace_and_inline_comments(tmp_path: Path) -> None:
+    """Update a parsed dependency while keeping its existing TOML layout."""
+    _, pyproject_path = _make_checkout(tmp_path)
+    original = pyproject_path.read_text(encoding="utf-8")
+    spaced = original.replace(
+        'python-frank-energie = "^2026.9.20"',
+        "python-frank-energie  =  '^2026.9.20' # preserve this comment",
+    )
+    pyproject_path.write_text(spaced, encoding="utf-8")
+
+    assert update_dependency(tmp_path, "2026.11.9") is True
+    assert "python-frank-energie  =  '==2026.11.9' # preserve this comment" in pyproject_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_failed_manifest_write_restores_the_original_poetry_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restore the previously updated Poetry file when the manifest write fails."""
+    manifest_path, pyproject_path = _make_checkout(tmp_path)
+    previous_manifest = manifest_path.read_text(encoding="utf-8")
+    previous_poetry = pyproject_path.read_text(encoding="utf-8")
+    original_writer = Path.write_text
+
+    def write_or_fail(self: Path, content: str, **kwargs: object) -> int:
+        """Fail only the new manifest content, allowing rollback writes."""
+        if self == manifest_path and content != previous_manifest:
+            raise OSError("Synthetic manifest write failure")
+        return original_writer(self, content, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", write_or_fail)
+    with pytest.raises(OSError, match="Synthetic manifest write failure"):
+        update_dependency(tmp_path, "2026.11.9")
+
+    assert manifest_path.read_text(encoding="utf-8") == previous_manifest
+    assert pyproject_path.read_text(encoding="utf-8") == previous_poetry
+
+
+def test_rejects_noncanonical_target_version(tmp_path: Path) -> None:
+    """Require a normalized release version in the synchronization script."""
+    _make_checkout(tmp_path)
+    with pytest.raises(ValueError, match="Non-canonical"):
+        update_dependency(tmp_path, "2026.09.09")
 
 
 def test_cli_handles_validation_errors(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
