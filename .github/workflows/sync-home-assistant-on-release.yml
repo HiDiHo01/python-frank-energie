@@ -142,6 +142,7 @@ jobs:
           if git ls-remote --exit-code --heads origin "refs/heads/$branch" > /dev/null 2>&1; then
             git fetch --no-tags origin "refs/heads/$branch:refs/remotes/origin/$branch"
             git switch --track -c "$branch" "origin/$branch"
+            echo "recovered=true" >> "$GITHUB_OUTPUT"
           else
             git switch -c "$branch"
           fi
@@ -164,7 +165,7 @@ jobs:
           fi
 
       - name: Update and validate the Poetry lockfile
-        if: steps.update.outputs.changed == 'true'
+        if: steps.update.outputs.changed == 'true' || steps.branch.outputs.recovered == 'true'
         working-directory: integration
         env:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
@@ -191,7 +192,7 @@ jobs:
           git diff --check
 
       - name: Commit and open dependency pull request
-        if: steps.update.outputs.changed == 'true'
+        if: steps.update.outputs.changed == 'true' || steps.branch.outputs.recovered == 'true'
         working-directory: integration
         env:
           GH_TOKEN: ${{ steps.integration_token.outputs.token }}
@@ -204,9 +205,11 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -- custom_components/frank_energie/manifest.json pyproject.toml poetry.lock
           git diff --cached --check
-          git commit -m "chore(deps): update python-frank-energie to $PACKAGE_VERSION"
           gh auth setup-git
-          git push --set-upstream origin "$UPDATE_BRANCH"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(deps): update python-frank-energie to $PACKAGE_VERSION"
+            git push --set-upstream origin "$UPDATE_BRANCH"
+          fi
           cat > "$RUNNER_TEMP/dependency-pr.md" <<EOF
           ## Published upstream library release
 
