@@ -16,9 +16,9 @@ def _version_parts(version: str) -> tuple[int, int, int]:
     """Validate a stable calendar version before comparing release ordering."""
     if VERSION_PATTERN.fullmatch(version) is None:
         raise ValueError(f"Invalid stable python-frank-energie version: {version!r}")
-    parts = tuple(int(part) for part in version.split("."))
-    date(*parts)
-    return parts
+    year, month, day = (int(part) for part in version.split("."))
+    date(year, month, day)
+    return year, month, day
 
 
 def _current_version(manifest_text: str, pyproject_text: str) -> str:
