@@ -467,9 +467,7 @@ def test_smart_hvac_rejects_non_object_decoded_http_response(
 
 
 @pytest.mark.parametrize("errors", [{}, None, False, "", "invalid", {"message": "private"}, [None], [42]])
-def test_smart_hvac_graphql_error_container_is_strict(
-    api: FrankEnergie, errors: object
-) -> None:
+def test_smart_hvac_graphql_error_container_is_strict(api: FrankEnergie, errors: object) -> None:
     """Malformed errors and entries must raise the public request exception."""
     with pytest.raises(RequestException):
         api._handle_errors({"errors": errors}, "SmartHvacs")
@@ -477,9 +475,7 @@ def test_smart_hvac_graphql_error_container_is_strict(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("errors", [{}, None, False, "", {"message": "private"}, [None]])
-async def test_inventory_rejects_malformed_errors_even_with_empty_data(
-    api: FrankEnergie, errors: object
-) -> None:
+async def test_inventory_rejects_malformed_errors_even_with_empty_data(api: FrankEnergie, errors: object) -> None:
     """An empty inventory cannot mask an invalid GraphQL errors property."""
     response = {"errors": errors, "data": {"smartHvacs": []}}
     with (
@@ -491,9 +487,7 @@ async def test_inventory_rejects_malformed_errors_even_with_empty_data(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("missing_field", list(_complete_device_record()))
-async def test_inventory_rejects_missing_selected_device_fields(
-    api: FrankEnergie, missing_field: str
-) -> None:
+async def test_inventory_rejects_missing_selected_device_fields(api: FrankEnergie, missing_field: str) -> None:
     """Require every selected device field but permit explicitly null values."""
     device = _complete_device_record()
     device.pop(missing_field)
