@@ -603,7 +603,8 @@ class FrankEnergie:
                 "Frank Energie API timeout during operation [%s]",
                 operation_name,
             )
-            raise NetworkError("Frank Energie API timeout") from err
+            cause = None if operation_name in _SMART_HVAC_QUERY_OPERATIONS else err
+            raise NetworkError("Frank Energie API timeout") from cause
 
         except aiohttp.ClientResponseError as error:
             self._raise_http_response_error(error, operation_name)
