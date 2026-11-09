@@ -227,6 +227,7 @@ jobs:
           PACKAGE_VERSION: ${{ steps.version.outputs.version }}
           RELEASE_URL: ${{ github.event.release.html_url }}
           UPDATE_BRANCH: ${{ steps.branch.outputs.name }}
+          SUPERSEDED_PRS: ${{ steps.branch.outputs.superseded }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -252,12 +253,26 @@ jobs:
 
           **Review required:** Verify client API compatibility (especially Smart HVAC/site references), Python 3.14 and Home Assistant tests, Ruff/Flake8, HACS and hassfest. Do not merge automatically. AI-assisted workflow implementation; maintainer approval is required.
           EOF
-          gh pr create \
+          new_pr="$(gh pr create \
             --repo HiDiHo01/home-assistant-frank_energie \
             --base main \
             --head "$UPDATE_BRANCH" \
             --title "chore(deps): update python-frank-energie to $PACKAGE_VERSION" \
-            --body-file "$RUNNER_TEMP/dependency-pr.md"
+            --body-file "$RUNNER_TEMP/dependency-pr.md")"
+          echo "Created dependency pull request: $new_pr"
+
+          if [[ -n "$SUPERSEDED_PRS" ]]; then
+            IFS=, read -r -a old_pr_numbers <<< "$SUPERSEDED_PRS"
+            for old_pr_number in "${old_pr_numbers[@]}"; do
+              if [[ ! "$old_pr_number" =~ ^[0-9]+$ ]]; then
+                echo "Invalid superseded PR number" >&2
+                exit 1
+              fi
+              gh pr close "$old_pr_number" \
+                --repo HiDiHo01/home-assistant-frank_energie \
+                --comment "Superseded by $new_pr (python-frank-energie==$PACKAGE_VERSION)."
+            done
+          fi
 \t' read -r pr_number pr_branch; do
             if [[ "$pr_branch" =~ ^automation/python-frank-energie-([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2})$ ]]; then
               open_version="${BASH_REMATCH[1]}"
