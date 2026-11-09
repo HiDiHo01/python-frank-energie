@@ -16,6 +16,14 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 
 <!-- /coderabbit-ai-generated:v1 -->
 
+## Synchronize the Home Assistant integration after a published release
+
+- Keep the cross-repository update in `.github/workflows/sync-home-assistant-on-release.yml`, triggered only by `release: published` for stable releases. Verify the tag against the tagged package metadata and wait until PyPI exposes a usable non-yanked wheel before proposing a downstream change.
+- Use an installation-scoped GitHub App token (not the source repository's `GITHUB_TOKEN` or a personal access token) limited to `home-assistant-frank_energie`, with only Contents and Pull Requests write permissions. Configure `HA_DEPENDENCY_BOT_APP_ID` as a repository variable and `HA_DEPENDENCY_BOT_PRIVATE_KEY` as a secret; never log the private key or token.
+- Use `scripts/sync_home_assistant_dependency.py` for validated, monotonic updates to `manifest.json` and the Poetry dependency. Regenerate the downstream `poetry.lock` with the project's specified Poetry version and verify that it contains the exact published library version.
+- Open a release-specific, idempotent downstream pull request and leave all merging to a human reviewer. Never change the integration's own release `version`, bypass its CI, or treat a dependency bump as proof of source-level API compatibility.
+- The Home Assistant coordinator and Smart HVAC `api.me(site_reference)` callers must be compatible with the new library before merging the dependency PR. Missing required API arguments (for example `smart_hvac_status(site_reference)`) can otherwise prevent config-entry setup.
+
 ## Refactor without changing GraphQL error contracts
 
 - When SonarCloud flags request orchestration or error classification for cognitive complexity, extract small helpers at existing boundaries (such as authentication/header preparation or error-container validation) rather than altering exception order, redaction, or partial-response semantics.
