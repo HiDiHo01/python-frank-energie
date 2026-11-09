@@ -8,13 +8,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: home-assistant-dependency-${{ github.event.release.tag_name }
+  group: home-assistant-dependency-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
   propose-dependency-update:
     name: Open Home Assistant dependency update PR
-    if: ${{ !github.event.release.draft && !github.event.release.prerelease }
+    if: ${{ !github.event.release.draft && !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -36,7 +36,7 @@ jobs:
       - name: Check out published library source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # @v7
         with:
-          ref: ${{ github.event.release.tag_name }
+          ref: ${{ github.event.release.tag_name }}
           persist-credentials: false
 
       - name: Set up Python
@@ -47,7 +47,7 @@ jobs:
       - name: Validate stable release tag and package version
         id: version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           python - <<'PY'
           import os
@@ -70,7 +70,7 @@ jobs:
 
       - name: Wait until this release is installable from PyPI
         env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           python - <<'PY'
           import json
@@ -106,8 +106,8 @@ jobs:
         id: integration_token
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # @v2
         with:
-          app-id: ${{ vars.HA_DEPENDENCY_BOT_APP_ID }
-          private-key: ${{ secrets.HA_DEPENDENCY_BOT_PRIVATE_KEY }
+          app-id: ${{ vars.HA_DEPENDENCY_BOT_APP_ID }}
+          private-key: ${{ secrets.HA_DEPENDENCY_BOT_PRIVATE_KEY }}
           owner: HiDiHo01
           repositories: home-assistant-frank_energie
           permission-contents: write
@@ -119,14 +119,14 @@ jobs:
           repository: HiDiHo01/home-assistant-frank_energie
           ref: main
           path: integration
-          token: ${{ steps.integration_token.outputs.token }
+          token: ${{ steps.integration_token.outputs.token }}
           persist-credentials: false
 
       - name: Prepare a release-specific PR branch
         id: branch
         env:
-          GH_TOKEN: ${{ steps.integration_token.outputs.token }
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }
+          GH_TOKEN: ${{ steps.integration_token.outputs.token }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           cd integration
@@ -150,7 +150,7 @@ jobs:
         id: update
         if: steps.branch.outputs.skip != 'true'
         env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           python scripts/sync_home_assistant_dependency.py \
@@ -167,7 +167,7 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         working-directory: integration
         env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           python -m pip install --only-binary=:all: 'poetry==2.5.1'
@@ -194,10 +194,10 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         working-directory: integration
         env:
-          GH_TOKEN: ${{ steps.integration_token.outputs.token }
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }
-          RELEASE_URL: ${{ github.event.release.html_url }
-          UPDATE_BRANCH: ${{ steps.branch.outputs.name }
+          GH_TOKEN: ${{ steps.integration_token.outputs.token }}
+          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          UPDATE_BRANCH: ${{ steps.branch.outputs.name }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
