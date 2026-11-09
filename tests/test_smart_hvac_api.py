@@ -485,11 +485,12 @@ def test_smart_hvac_rejects_non_object_decoded_http_response(
     api: FrankEnergie, operation_name: str, response: object
 ) -> None:
     """Reject invalid top-level JSON before general GraphQL error handling."""
+    started_at = time.monotonic()
     with pytest.raises(RequestException, match="Invalid Smart HVAC GraphQL response"):
         api._process_graphql_response(
             response,
             operation_name,
-            started_at=time.monotonic(),
+            started_at=started_at,
             retry_after_header=None,
             recover_hvac_errors=False,
         )
