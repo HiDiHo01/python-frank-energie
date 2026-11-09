@@ -1,14 +1,26 @@
 """Regression tests for site activation and independent Smart HVAC device endpoints."""
 
 import logging
+import time
 from datetime import UTC, date, datetime
-from unittest.mock import AsyncMock, patch
+from http import HTTPStatus
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.exceptions import AuthRequiredException, RequestException
-from python_frank_energie.models import Me, SmartHvac
+from python_frank_energie.exceptions import (
+    AuthException,
+    AuthRequiredException,
+    FrankEnergieException,
+    NetworkError,
+    RateLimitException,
+    RequestException,
+)
+from python_frank_energie.frank_energie import FrankEnergieQuery
+from python_frank_energie.models import Me, SmartHvac, SmartHvacDevice, SmartHvacSummary
 
 
 @pytest.fixture
@@ -400,3 +412,168 @@ async def test_connect_requests_reject_missing_or_invalid_list(api: FrankEnergie
             pytest.raises(RequestException),
         ):
             await api.smart_hvac_connect_requests()
+
+
+def _complete_device_record() -> dict[str, object]:
+    """Return a synthetic inventory record with every queried GraphQL field."""
+    return {
+        "brand": None,
+        "connectionEAN": None,
+        "createdAt": None,
+        "deletedAt": None,
+        "deviceType": None,
+        "displayName": None,
+        "needsReauthentication": None,
+        "externalReference": None,
+        "id": "synthetic-device",
+        "model": None,
+        "provider": None,
+        "updatedAt": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "operation_name",
+    ["UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"],
+)
+@pytest.mark.parametrize("response", [[{"data": {"smartHvacs": []}}], ["unexpected"], [], "invalid", None])
+def test_smart_hvac_rejects_non_object_decoded_http_response(
+    api: FrankEnergie, operation_name: str, response: object
+) -> None:
+    """Reject invalid top-level JSON before general GraphQL error handling."""
+    with pytest.raises(RequestException, match="Invalid Smart HVAC GraphQL response"):
+        api._process_graphql_response(
+            response,
+            operation_name,
+            started_at=time.monotonic(),
+            retry_after_header=None,
+            recover_hvac_errors=False,
+        )
+
+
+@pytest.mark.parametrize("errors", [{}, None, False, "", "invalid", {"message": "private"}, [None], [42]])
+def test_smart_hvac_graphql_error_container_is_strict(
+    api: FrankEnergie, errors: object
+) -> None:
+    """Malformed errors and entries must raise the public request exception."""
+    with pytest.raises(RequestException):
+        api._handle_errors({"errors": errors}, "SmartHvacs")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("errors", [{}, None, False, "", {"message": "private"}, [None]])
+async def test_inventory_rejects_malformed_errors_even_with_empty_data(
+    api: FrankEnergie, errors: object
+) -> None:
+    """An empty inventory cannot mask an invalid GraphQL errors property."""
+    response = {"errors": errors, "data": {"smartHvacs": []}}
+    with (
+        patch.object(api, "_query", new=AsyncMock(return_value=response)),
+        pytest.raises(RequestException, match="Invalid Smart HVAC"),
+    ):
+        await api.smart_hvacs("synthetic-site")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_field", list(_complete_device_record()))
+async def test_inventory_rejects_missing_selected_device_fields(
+    api: FrankEnergie, missing_field: str
+) -> None:
+    """Require every selected device field but permit explicitly null values."""
+    device = _complete_device_record()
+    device.pop(missing_field)
+    with (
+        patch.object(api, "_query", new=AsyncMock(return_value={"data": {"smartHvacs": [device]}})),
+        pytest.raises(RequestException, match="missing selected fields"),
+    ):
+        await api.smart_hvacs("synthetic-site")
+
+
+@pytest.mark.asyncio
+async def test_inventory_accepts_explicit_null_optional_device_fields(api: FrankEnergie) -> None:
+    """Absent metadata is invalid, while explicitly null optional fields are valid."""
+    with patch.object(
+        api,
+        "_query",
+        new=AsyncMock(return_value={"data": {"smartHvacs": [_complete_device_record()]}}),
+    ):
+        devices = await api.smart_hvacs("synthetic-site")
+    assert len(devices) == 1
+    assert devices[0].id == "synthetic-device"
+    assert devices[0].brand is None
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_exception"),
+    [
+        (HTTPStatus.BAD_REQUEST, RequestException),
+        (HTTPStatus.UNAUTHORIZED, AuthRequiredException),
+        (HTTPStatus.FORBIDDEN, AuthException),
+        (HTTPStatus.TOO_MANY_REQUESTS, RateLimitException),
+        (HTTPStatus.INTERNAL_SERVER_ERROR, FrankEnergieException),
+        (HTTPStatus.IM_A_TEAPOT, FrankEnergieException),
+    ],
+)
+def test_smart_hvac_http_status_redacts_provider_reason(
+    api: FrankEnergie,
+    caplog: pytest.LogCaptureFixture,
+    status: HTTPStatus,
+    expected_exception: type[Exception],
+) -> None:
+    """Never leak a provider-supplied response reason through errors or logs."""
+    secret = "synthetic-private-device-ean-reference"
+    error = aiohttp.ClientResponseError(
+        SimpleNamespace(real_url="https://example.invalid/graphql"),
+        (),
+        status=status,
+        message=secret,
+        headers={"Retry-After": "9"},
+    )
+    with (
+        caplog.at_level(logging.DEBUG),
+        pytest.raises(expected_exception) as error_info,
+    ):
+        api._raise_http_response_error(error, "SmartHvacs")
+    assert secret not in str(error_info.value)
+    assert secret not in caplog.text
+    assert error_info.value.__cause__ is None
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
+        assert isinstance(error_info.value, RateLimitException)
+        assert error_info.value.retry_after == 9
+
+
+@pytest.mark.asyncio
+async def test_smart_hvac_transport_client_error_is_redacted(
+    api: FrankEnergie, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Keep unexpected aiohttp client details out of Smart HVAC diagnostics."""
+    secret = "synthetic-private-device-ean-reference"
+    mocked_session = MagicMock()
+    mocked_session.post.side_effect = aiohttp.ClientConnectionError(secret)
+    query = FrankEnergieQuery("query SmartHvacs { smartHvacs { id } }", "SmartHvacs")
+    with (
+        patch.object(api, "_session", mocked_session),
+        patch.object(api, "_requires_token_refresh", return_value=False),
+        caplog.at_level(logging.DEBUG),
+        pytest.raises(NetworkError) as error_info,
+    ):
+        await api._query(query)
+    assert secret not in str(error_info.value)
+    assert secret not in caplog.text
+    assert error_info.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    ["0001-01-01T00:00:00+23:59", "9999-12-31T23:59:59-23:59"],
+)
+def test_smart_hvac_timestamp_utc_overflow_is_request_exception(timestamp: str) -> None:
+    """Normalize out-of-range UTC dates to a domain-specific validation error."""
+    with pytest.raises(RequestException, match="Invalid Smart HVAC timestamp"):
+        SmartHvacDevice.from_dict({"id": "synthetic-device", "createdAt": timestamp})
+
+
+def test_smart_hvac_summary_rejects_integer_float_overflow() -> None:
+    """Reject huge integers that cannot be converted to a finite float."""
+    with pytest.raises(RequestException, match="finite number"):
+        SmartHvacSummary.from_dict({"totalResult": 10**400})
