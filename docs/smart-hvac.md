@@ -83,7 +83,9 @@ Unrepresentable UTC timestamps and oversized numeric totals also raise
   are **not** quietly mapped to empty collections or `False` flags.
 - New Smart HVAC operations use redacted diagnostics; responses, account IDs,
   device IDs, EANs and external references must not appear in exception text
-  or logs.
+  or logs. This includes untrusted HTTP reason phrases and non-response
+  transport exceptions. Safe messages retain the HTTP status and operation
+  name, while preserving typed authentication and rate-limit exceptions.
 - No periodic polling is introduced. A downstream application chooses when to
   call device endpoints and must isolate feature errors from unrelated entities.
   In Home Assistant, the separate integration issue
