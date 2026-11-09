@@ -618,7 +618,9 @@ async def test_smart_battery_sessions_not_found_still_returns_none(caplog: pytes
     caplog.set_level(logging.DEBUG, logger="python_frank_energie.frank_energie")
 
     with patch.object(client, "_query", query):
-        result = await client.smart_battery_sessions("synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9))
+        result = await client.smart_battery_sessions(
+            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
+        )
 
     assert result is None
     assert "synthetic-battery-private-id" not in caplog.text
