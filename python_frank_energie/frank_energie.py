@@ -3480,6 +3480,15 @@ class FrankEnergie:
 
         Returns a list of all smart battery sessions for a device.
 
+        Returns:
+            SmartBatterySessions | None: Session data or None for a missing battery
+            or a non-throttling request failure.
+
+        Raises:
+            AuthRequiredException: If the client is not authenticated.
+            ValueError: If the device ID is missing.
+            RateLimitException: If the session request or token renewal is throttled.
+
         Full query:
         query SmartBatterySessions($startDate: String!, $endDate: String!, $deviceId: String!) {
             smartBatterySessions(
@@ -3553,14 +3562,15 @@ class FrankEnergie:
         )
 
         try:
-            _LOGGER.debug("Querying smart battery sessions for device_id: %s", device_id)
             response = await self._query(query)
-            _LOGGER.debug("SmartBatterySessions Response: %s", response)
         except SmartBatteryNotFoundException:
-            _LOGGER.debug(_SMART_BATTERY_NOT_FOUND_LOG, device_id)
+            _LOGGER.debug("Smart battery sessions not found")
             return None
-        except Exception as e:
-            _LOGGER.error("Failed to query smart battery sessions: %s", e)
+        except RateLimitException:
+            # Preserve retry metadata from the request or automatic token renewal.
+            raise
+        except Exception:
+            _LOGGER.error("Failed to query smart battery sessions")
             return None
 
         return SmartBatterySessions.from_dict(response)

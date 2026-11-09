@@ -4,7 +4,7 @@ import asyncio
 import copy
 import logging
 import pickle
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -533,3 +533,140 @@ async def test_successful_request_remains_unchanged(retry_header: str | None) ->
     assert result == payload
     retry_parser.assert_not_called()
     session.post.assert_called_once()
+
+
+@pytest.mark.parametrize("error_source", ["graphql", "http"])
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_propagates_api_rate_limit(
+    error_source: str,
+    rate_limit_payload: dict[str, object],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Surface request throttling and retry hints without exposing device identifiers."""
+    client, session, response = _create_client(rate_limit_payload)
+    response.headers = CIMultiDictProxy(CIMultiDict({"Retry-After": "120"}))
+    if error_source == "http":
+        response.raise_for_status.side_effect = aiohttp.ClientResponseError(
+            request_info=MagicMock(),
+            history=(),
+            status=HTTPStatus.TOO_MANY_REQUESTS,
+            headers=response.headers,
+        )
+
+    caplog.set_level(logging.DEBUG, logger="python_frank_energie.frank_energie")
+    with (
+        patch("python_frank_energie.frank_energie.SmartBatterySessions.from_dict") as parser,
+        pytest.raises(RateLimitException) as raised,
+    ):
+        await client.smart_battery_sessions(
+            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
+        )
+
+    assert raised.value.operation_name == "SmartBatterySessions"
+    assert raised.value.retry_after == 120.0
+    assert "synthetic-battery-private-id" not in caplog.text
+    parser.assert_not_called()
+    session.post.assert_called_once()
+    if error_source == "http":
+        response.json.assert_not_awaited()
+    else:
+        response.json.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_preserves_rate_limit_instance() -> None:
+    """Do not replace an upstream throttle or discard its retry metadata."""
+    client = FrankEnergie(auth_token="synthetic-token")  # noqa: S106
+    expected = RateLimitException("SmartBatterySessions", retry_after=45.0)
+    query = AsyncMock(side_effect=expected)
+
+    with patch.object(client, "_query", query):
+        with pytest.raises(RateLimitException) as raised:
+            await client.smart_battery_sessions(
+                "synthetic-battery", date(2026, 11, 1), date(2026, 11, 9)
+            )
+
+    assert raised.value is expected
+    assert raised.value.retry_after == 45.0
+    query.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_propagates_automatic_renewal_throttle(
+    rate_limit_payload: dict[str, object],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Expose RenewToken cooldown and retain authentication without a session request."""
+    client, session, response = _create_client(rate_limit_payload)
+    original_auth = client._auth
+    assert original_auth is not None
+    original_auth.token_expires_at = datetime.now(UTC) - timedelta(minutes=10)
+    response.headers = CIMultiDictProxy(CIMultiDict({"Retry-After": "120"}))
+    caplog.set_level(logging.DEBUG, logger="python_frank_energie.frank_energie")
+
+    with pytest.raises(RateLimitException) as raised:
+        await client.smart_battery_sessions(
+            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
+        )
+
+    assert raised.value.operation_name == "RenewToken"
+    assert raised.value.retry_after == 120.0
+    assert client._auth is original_auth
+    assert "synthetic-battery-private-id" not in caplog.text
+    session.post.assert_called_once()
+    assert session.post.call_args.kwargs["json"]["operationName"] == "RenewToken"
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_not_found_still_returns_none(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Keep a confirmed missing battery distinct from provider throttling."""
+    client = FrankEnergie(auth_token="synthetic-token")  # noqa: S106
+    query = AsyncMock(side_effect=SmartBatteryNotFoundException("missing synthetic battery"))
+    caplog.set_level(logging.DEBUG, logger="python_frank_energie.frank_energie")
+
+    with patch.object(client, "_query", query):
+        result = await client.smart_battery_sessions(
+            "synthetic-battery-private-id", date(2026, 11, 1), date(2026, 11, 9)
+        )
+
+    assert result is None
+    assert "synthetic-battery-private-id" not in caplog.text
+    query.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_does_not_swallow_cancellation() -> None:
+    """Propagate task cancellation instead of returning a missing session result."""
+    client = FrankEnergie(auth_token="synthetic-token")  # noqa: S106
+    query = AsyncMock(side_effect=asyncio.CancelledError())
+
+    with patch.object(client, "_query", query):
+        with pytest.raises(asyncio.CancelledError):
+            await client.smart_battery_sessions(
+                "synthetic-battery", date(2026, 11, 1), date(2026, 11, 9)
+            )
+
+    query.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_sessions_success_uses_original_model_parser() -> None:
+    """Keep successful session parsing unchanged after separating throttles."""
+    client = FrankEnergie(auth_token="synthetic-token")  # noqa: S106
+    payload = {"data": {"smartBatterySessions": {"deviceId": "synthetic-battery", "sessions": []}}}
+    expected = MagicMock()
+    query = AsyncMock(return_value=payload)
+
+    with (
+        patch.object(client, "_query", query),
+        patch("python_frank_energie.frank_energie.SmartBatterySessions.from_dict", return_value=expected) as parser,
+    ):
+        result = await client.smart_battery_sessions(
+            "synthetic-battery", date(2026, 11, 1), date(2026, 11, 9)
+        )
+
+    assert result is expected
+    parser.assert_called_once_with(payload)
+    query.assert_awaited_once()
