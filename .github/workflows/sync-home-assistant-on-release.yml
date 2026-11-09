@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: home-assistant-dependency-${{ github.event.release.tag_name }}
+  group: home-assistant-dependency-releases
   cancel-in-progress: false
 
 jobs:
@@ -33,10 +33,11 @@ jobs:
             pypi.org:443
             files.pythonhosted.org:443
 
-      - name: Check out published library source
+      - name: Check out trusted library automation from main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # @v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: main
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Python
@@ -54,16 +55,29 @@ jobs:
           import re
           import tomllib
           from datetime import date
-          from pathlib import Path
-
           tag = os.environ["RELEASE_TAG"]
           if re.fullmatch(r"v\d{4}\.\d{1,2}\.\d{1,2}", tag) is None:
               raise SystemExit(f"Unsupported stable library release tag: {tag!r}")
           version = tag[1:]
           date(*(int(value) for value in version.split(".")))
-          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          import subprocess
+
+          tag_commit = subprocess.run(
+              ["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout.strip()
+          subprocess.run(["git", "merge-base", "--is-ancestor", tag_commit, "HEAD"], check=True)
+          project_text = subprocess.run(
+              ["git", "show", f"{tag_commit}:pyproject.toml"],
+              check=True,
+              capture_output=True,
+              text=True,
+          ).stdout
+          project = tomllib.loads(project_text)
           if project["tool"]["poetry"]["version"] != version:
-              raise SystemExit("The release tag does not match the library package version")
+              raise SystemExit("The release tag does not match the tagged library package version")
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
               output.write(f"version={version}\n")
           PY
