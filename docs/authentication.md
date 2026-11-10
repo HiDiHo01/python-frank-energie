@@ -29,6 +29,10 @@ access token in the current credential object.
 `await client.validate_authentication()` returns `False` if that check fails
 or renewal raises `AuthException` or `AuthRequiredException`. Request
 failures such as `RateLimitException` and `NetworkError` can propagate.
+It returns `True` when credentials are present and renewal was not due or
+completed successfully. When renewal is not due, it makes no provider request.
+Consequently, `True` does not prove that the provider still accepts the token:
+a revoked but not-yet-expired token can pass this local check.
 
 ## Important Design Decision
 
@@ -68,8 +72,21 @@ The `RenewToken` operation is exempt from authenticated-header injection and tok
 ## Home Assistant Integration
 
 The consuming application owns credential persistence, reauthentication, and
-retry scheduling. See the
-[Home Assistant boundary](ARCHITECTURE.md#home-assistant-boundary).
+retry scheduling. After an operation that may automatically renew credentials,
+applications must persist both **current** tokens, not just the original
+`login()` result: `renew_token()` replaces the client's credential object,
+while the operation triggering automatic renewal does not return the new pair.
+
+Currently, the instance's deprecated `client.auth` property exposes that
+current `Authentication` object (and emits a deprecation error log). Its
+`authToken` and `refreshToken` fields contain the current values. The public
+`client.access_token` and `client.refresh_token` attributes are initialization-
+only placeholders and do **not** track renewed credentials. There is currently
+no nondeprecated public getter for both current tokens. An explicit
+`await client.renew_token()` returns the renewed object, but should not be
+invoked solely to inspect token values. Applications should store both values
+securely and consistently after a possible renewal, never in diagnostics or
+logs. See the [Home Assistant boundary](ARCHITECTURE.md#home-assistant-boundary).
 
 ## Security Considerations
 
