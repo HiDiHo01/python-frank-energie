@@ -66,7 +66,15 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Introduce snake_case public methods as small typed async wrappers around existing methods before renaming or moving legacy implementations. Preserve arguments, return objects, authentication checks, and raised exceptions; do not create a second GraphQL code path.
 - Use deterministic regression tests to check explicit and default arguments, result identity, and exception propagation. Keep existing callers working until any separately reviewed deprecation is justified and documented.
 - Before inserting an alias inside a class, check class-local name resolution for return annotations. In PR #240, placing `user_sites() -> UserSites` **after** `def UserSites(...)` made mypy resolve `UserSites` to the method (`[valid-type]`); moving the alias **before** the legacy method resolved the conflict without behavior changes. For a larger refactor, prefer a distinct imported model alias to avoid order-dependent annotations. Verify with `poetry run mypy python_frank_energie` before pushing.
+- If callers inspect annotations at runtime, verify the evaluated annotations on the supported Python versions as well. Python 3.14 resolves both site methods' return annotations to the class-local `UserSites` method when evaluated, even though mypy passes and the methods return the model.
 - When a regression test nests `patch.object(...)` and `pytest.raises(...)`, Ruff `SIM117` expects one parenthesized `with` with both managers. Keep setup outside `pytest.raises` and only the call expected to raise inside the block.
+
+## Prepare an incremental refactoring
+
+1. Start from current `main`. Trace each affected operation from its public entry point through the state it reads or writes, the request boundary, and result parsing. Compare the trace with the [architecture reference](docs/ARCHITECTURE.md) and record any gaps as open questions.
+2. Inspect package exports, direct module imports, and known callers for dependence on class identity, field aliases, defaults, and fallbacks. Record any deliberate compatibility change for separate review before moving code.
+3. Run the same characterization checks against the base and the proposed change using sanitized responses. Assert observable results, the original exception or exception type as appropriate, and resulting client state. Exercise cancellation, concurrent renewal, and both injected and internally created sessions where the change touches those paths.
+4. Move one responsibility per PR. Verify the public entry points and known downstream callers, then update the architecture reference with the behavior established by the tests.
 
 ## Diagnose and verify PR CI failures
 

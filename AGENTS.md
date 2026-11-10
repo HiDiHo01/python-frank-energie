@@ -16,13 +16,19 @@ This repository contains `python-frank-energie`, an asynchronous Python client l
 
 - Inspect the relevant source, tests, callers, repository instructions, and configuration before changing behavior.
 - Prefer the smallest complete change that fixes the underlying problem.
-- Preserve existing public API behavior unless a breaking change is explicitly required and documented.
 - Treat this repository as a standalone Python library. Do not add Home Assistant dependencies or use Home Assistant-only helpers in library code.
 - Keep changes consistent with the existing module boundaries, naming, data models, and error-handling conventions.
 - Do not add speculative fallbacks that hide malformed or unexpected API responses.
 - Update tests and documentation when behavior or the public API changes.
 - Keep [`SKILLS.md`](SKILLS.md) current. When work verifies a reusable technique or changes existing guidance, update the relevant entry in the same PR or a linked documentation PR. Keep mandatory project rules in `AGENTS.md` and follow `AI_POLICY.md` for policy.
 - Before proposing dependency or packaging changes, inspect `pyproject.toml`, `poetry.lock`, and the affected consumers where available. Consider runtime, development, and downstream compatibility.
+
+## Architecture and public API compatibility
+
+- Use [the architecture reference](docs/ARCHITECTURE.md) for changes to client state, authentication, transport, or models. Keep observed behavior and proposed boundaries in separate sections and identify any unresolved ownership or consumer dependencies.
+- Preserve existing import paths, signatures and defaults, awaitability, model construction and access, return shapes, and exception contracts. For an explicitly required compatibility change, document affected consumers and obtain review of the migration and regression coverage. This applies to legacy method aliases and model accessors as well as package exports.
+- Identify the authoritative owner, inputs, and lifetime of each value before moving runtime state. Preserve caller ownership of injected HTTP sessions. Keep polling, application caches, credential persistence, and event-loop policy with the consuming application.
+- Make each refactoring independently reviewable. Characterize the affected behavior before moving it, following the [refactoring workflow](SKILLS.md#prepare-an-incremental-refactoring).
 
 ## Python and implementation standards
 

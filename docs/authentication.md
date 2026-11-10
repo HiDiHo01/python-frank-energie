@@ -2,117 +2,63 @@
 
 ## Overview
 
-The Frank Energie API uses JWT-based authentication.
+Use `FrankEnergie(auth_token=..., refresh_token=...)` to start with credentials
+from the caller, or `await client.login(username, password)` to obtain them.
+The active credential object and the results of `login()` and `renew_token()`
+use `python_frank_energie.models.Authentication`. See the
+[comparison of authentication models](ARCHITECTURE.md#the-two-authentication-models)
+for the separate package-exported class.
 
-Authentication is established through the `login` mutation, which returns:
+## Token expiration
 
-- `authToken` (access token)
-- `refreshToken` (refresh token)
+The runtime model extracts the JWT `exp` claim into UTC expiry metadata when
+available. With a known access-token expiry, the client starts renewal checks
+five minutes before expiration. With unknown expiry, a nonempty token with at
+least three dot-separated parts is due for renewal. The refresh-token expiry
+is exposed as metadata. The provider determines whether it accepts either token.
 
-These values are stored in the `Authentication` model.
+## Authentication state
 
-## Token Expiration
+`client.is_authenticated` is a property. It checks for a nonempty access token
+in the current credential object. A token can be due for renewal and still
+satisfy this local check.
 
-The `Authentication` model extracts the JWT `exp` claim from the access token and stores it in `expires_at`.
+`await client.validate_authentication()` returns `False` if that local check
+fails or renewal raises `AuthException` or `AuthRequiredException`. It checks
+expiry and renews when necessary. Request failures such as `RateLimitException`
+and `NetworkError` can propagate.
 
-The model exposes `Authentication.is_expired`, which returns `True` when the token has expired or when expiration information cannot be determined.
+## Current authentication lifecycle
 
-An expired access token does not necessarily mean the user session is invalid. A valid refresh token may still be available and can be used to obtain a new access token.
+1. Before sending an operation, the client checks whether the access token is
+   due for renewal. The `RenewToken` operation skips this check.
+2. If renewal is needed, header preparation takes the per-client lock and
+   checks expiry again. A successful renewal installs the returned credentials.
+3. The operation proceeds with the current access token. A renewal failure
+   prevents that request from being sent. Subsequent error handling depends on
+   the public method.
 
-## Authentication State
+`renew_token()` clears the credential object when the renewal request raises
+`RefreshTokenInvalidException`. A rate-limited renewal keeps it intact. See
+[rate-limit errors](rate-limits.md) for the retry hint. A successful
+`logout()` also clears the credential object.
 
-`FrankEnergie.is_authenticated()` intentionally performs a lightweight local credential check.
+## Concurrent renewal protection
 
-It verifies that authentication credentials are available and suitable for token renewal. It does not validate token expiration and does not perform a network request.
+Automatic renewal during header preparation and expiry checks in
+`validate_authentication()` share the same lock. Waiting requests check the
+current credentials after acquiring it. An explicit `renew_token()` call
+bypasses the lock.
 
-This separation is intentional:
+## Authorization headers
 
-- `is_authenticated()` is a cheap local check.
-- `validate_authentication()` verifies authentication state.
-- `_query()` is responsible for renewing expired access tokens before sending requests.
+When the credential object exists, the client adds a bearer authorization
+header to GraphQL requests. `RenewToken` skips the automatic bearer header and
+passes the current tokens as mutation variables.
 
-## Important Design Decision
+## Home Assistant integration
 
-Do not make `FrankEnergie.is_authenticated()` depend solely on token expiration.
-
-Doing so would cause valid sessions to become unauthenticated immediately when the access token expires, even though a valid refresh token may still be available.
-
-This would force Home Assistant users into unnecessary reauthentication flows.
-
-## Current Authentication Lifecycle
-
-Current request flow:
-
-```text
-API request
-    ↓
-Access token expired?
-    ↓ yes
-renew_token()
-    ↓
-Continue request
-```
-
-Only when token renewal fails should the client be considered unauthenticated.
-
-```text
-API request
-    ↓
-Access token expired
-    ↓
-renew_token()
-    ↓
-Renewal failed
-    ↓
-Raise AuthRequiredException
-    ↓
-Home Assistant reauthentication flow
-```
-
-## Concurrent Renewal Protection
-
-The client uses an internal renewal lock to prevent multiple coroutines from refreshing the token simultaneously.
-
-Only one request performs token renewal while other requests wait for the updated authentication state.
-
-This avoids duplicate renewal requests and refresh-token race conditions.
-
-## Authorization Headers
-
-Authenticated GraphQL operations automatically receive:
-
-```text
-Authorization: Bearer <authToken>
-```
-
-The `RenewToken` operation is exempt from authenticated-header injection and token-refresh prechecks to avoid recursive renewal loops.
-
-## Home Assistant Integration
-
-The Home Assistant integration stores both access and refresh tokens and relies on the library to manage authentication state.
-
-Preferred user experience:
-
-1. Access token expires.
-2. Library automatically renews the token.
-3. Requests continue normally.
-4. Reauthentication is requested only if renewal fails.
-
-## Security Considerations
-
-The library avoids exposing credentials through logging:
-
-- Passwords are sanitized before logging.
-- Refresh tokens are not logged.
-- Authorization headers are not logged.
-- JWT expiration timestamps are parsed and stored locally.
-
-## Future Improvements
-
-Potential improvements:
-
-- Refresh-before-expiry window (for example 5 minutes before expiration).
-- Token redaction in debug logging.
-- Centralized authentication state management.
-- Automatic retry when a request fails because a token becomes invalid unexpectedly.
-- Additional server-side validation strategies for revoked but non-expired tokens.
+Credential persistence, reauthentication flows, and retry scheduling are
+responsibilities of the consuming application. A temporary request failure,
+including a rate limit during renewal, is distinct from rejected credentials.
+See the [Home Assistant boundary](ARCHITECTURE.md#home-assistant-boundary).
