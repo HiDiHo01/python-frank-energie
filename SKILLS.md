@@ -65,3 +65,11 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 
 - Introduce snake_case public methods as small typed async wrappers around existing methods before renaming or moving legacy implementations. Preserve arguments, return objects, authentication checks, and raised exceptions; do not create a second GraphQL code path.
 - Use deterministic regression tests to check explicit and default arguments, result identity, and exception propagation. Keep existing callers working until any separately reviewed deprecation is justified and documented.
+- Before inserting an alias inside a class, check class-local name resolution for return annotations. In PR #240, placing `user_sites() -> UserSites` **after** `def UserSites(...)` made mypy resolve `UserSites` to the method (`[valid-type]`); moving the alias **before** the legacy method resolved the conflict without behavior changes. For a larger refactor, prefer a distinct imported model alias to avoid order-dependent annotations. Verify with `poetry run mypy python_frank_energie` before pushing.
+- When a regression test nests `patch.object(...)` and `pytest.raises(...)`, Ruff `SIM117` expects one parenthesized `with` with both managers. Keep setup outside `pytest.raises` and only the call expected to raise inside the block.
+
+## Diagnose and verify PR CI failures
+
+- Identify the current PR head SHA and the corresponding workflow run, then inspect **failed job logs** for the exact source location and diagnostic rather than assuming every red job is a failed unit test. PR #240 first failed mypy on Python 3.12/3.13 (`[valid-type]`), then Ruff on Python 3.13 (`SIM117`); both fixes were local to their root causes.
+- Preserve passing behavior and tests; make the minimal corrective commit, describe the reason in the PR, and inspect the **new** run on the updated SHA across every required Python version and job. Never report CI success based on an older commit, a queued run, or a partial job count.
+- Relevant checks include `poetry run ruff format --check .`, `poetry run ruff check .`, `poetry run mypy python_frank_energie` and `poetry run pytest tests`. Record which commands were actually executed locally and which results were observed only in GitHub Actions.
