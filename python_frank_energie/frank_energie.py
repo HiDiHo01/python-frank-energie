@@ -2382,6 +2382,14 @@ class FrankEnergie:
 
         return UserSites.from_dict(response)
 
+    async def user_sites(self, site_reference: str | None = None) -> UserSites:
+        """Fetch delivery sites using the existing UserSites API operation.
+
+        Preserve the legacy method's argument, result, and exception behavior
+        while exposing a snake_case name for new callers.
+        """
+        return await self.UserSites(site_reference)
+
     async def contract_price_resolution_state(
         self,
         connection_id: str | None = None,
