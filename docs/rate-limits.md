@@ -34,7 +34,7 @@ quota or cooldown is inferred from a missing or malformed header.
 
 `RateLimitException` propagates from every method that does not catch request
 errors itself: `invoices()`, `login()`, `month_summary()`, `renew_token()`,
-`validate_authentication()`, `user()`, `me()`, `UserSites()`, `user_country()`,
+`validate_authentication()`, `user()`, `me()`, `UserSites()` / `user_sites()`, `user_country()`,
 `prices()`, `user_prices()`, `country_prices()`, `meter_readings()`,
 `smart_hvac_status()`, `smart_hvacs()`, `smart_hvac()`,
 `smart_hvac_summary()`, `smart_hvac_connect_requests()`, `smart_pv_systems()`, `smart_pv_system_summary()` and
