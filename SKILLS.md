@@ -60,3 +60,8 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Assert that cancellation is propagated and successful session parsing still uses the original model parser. Keep device identifiers, upstream response bodies, and provider exception details out of session request logs.
 - After a published release, verify downstream integrations against the released dependency rather than assuming that upstream `main` matches their pinned runtime version.
 - For non-throttling session-query failures that still use the legacy `None` fallback, log a fixed category (`timeout`, `network`, `authentication`, or `other`) rather than provider-controlled exception messages; cover each with synthetic sensitive values.
+
+## Introduce compatible public API aliases
+
+- Introduce snake_case public methods as small typed async wrappers around existing methods before renaming or moving legacy implementations. Preserve arguments, return objects, authentication checks, and raised exceptions; do not create a second GraphQL code path.
+- Use deterministic regression tests to check explicit and default arguments, result identity, and exception propagation. Keep existing callers working until any separately reviewed deprecation is justified and documented.
