@@ -32,10 +32,13 @@ The following state is initialized by `FrankEnergie.__init__()`.
 | `self._renew_lock` | An `asyncio.Lock` created per client. Header preparation rechecks expiry after acquiring it. `validate_authentication()` also checks expiry under this lock. Direct calls to `renew_token()` bypass the lock. The lock coordinates these automatic checks within one client instance. |
 
 `_user_country` is also initialization-only. Price and site context come from
-the arguments and returned models. `_last_query` and `_last_variables` hold
-transient references to the last prepared request. The transport uses
-`_last_variables` to log variable names. `get_diagnostic_data()` currently
-returns a fixed string. The client holds credentials in memory.
+the arguments and returned models. `_last_query` and `_last_variables` retain
+the last request and its variables until a later `_query()` replaces them or
+the client instance is discarded. After `login()`, these references can retain
+the login password; `close()` does not clear them. The transport logs variable
+names, not values, but retained request state must not be shared in diagnostics
+or logs. `get_diagnostic_data()` currently returns a fixed string. The client
+holds credentials in memory.
 
 ### Request lifecycle and error handling
 
@@ -54,8 +57,11 @@ returns a fixed string. The client holds credentials in memory.
    `me()` can keep usable account data if all errors belong to the optional
    `userSmartHvac` field and no recognized failure takes precedence.
    `month_summary()` handles the known missing-meter-reading response as
-   `None`. The Smart HVAC operations enforce stricter response validation and
-   sanitize diagnostics at the transport and parsing boundaries.
+   `None`. Smart HVAC query operations enforce stricter response validation
+   and redact relevant errors at transport and parsing boundaries. This does
+   not cover every Smart HVAC mutation: `smart_hvac_update_settings()` can log
+   device identifiers and raw failed responses. Such mutation logs are not
+   guaranteed sanitized and require review before sharing.
 
 The following mappings apply at the shared request boundary. Individual public
 wrappers can preserve, translate, or handle these errors as described below.
@@ -63,8 +69,8 @@ wrappers can preserve, translate, or handle these errors as described below.
 | Failure | Shared request result |
 | --- | --- |
 | HTTP 401, 403, 400 | `AuthRequiredException`, `AuthException`, `RequestException`, respectively. |
-| HTTP 500 and other unmapped HTTP response errors | `FrankEnergieException`. |
-| Client timeout, other `aiohttp.ClientError`, or the recognized GraphQL backend timeout | `NetworkError`. |
+| HTTP 500 and other unmapped HTTP response errors, including `ContentTypeError` for a successful non-JSON response | `FrankEnergieException`. |
+| Client timeout, non-response `aiohttp.ClientError` (excluding `ClientResponseError`), or the recognized GraphQL backend timeout | `NetworkError`. |
 | HTTP 429 or the recognized GraphQL `Too Many Requests` message | `RateLimitException` (a `RequestException`) with `operation_name` and optional `retry_after` seconds. See [rate-limit errors](rate-limits.md). |
 | Known GraphQL authentication or feature errors | Typed exceptions such as `AuthException`, `AuthRequiredException`, `RefreshTokenInvalidException`, `SmartTradingNotEnabledException`, `SmartChargingNotEnabledException`, and `SmartBatteryNotFoundException`. `RefreshTokenInvalidException` subclasses `AuthException`. |
 | Other GraphQL errors or malformed responses | Handling depends on the operation. Some errors reach the model parser, which may raise `RequestException` or apply a model-specific fallback. The dedicated [Smart HVAC operations](smart-hvac.md#error-and-privacy-guarantees) reject malformed responses. |
@@ -199,9 +205,14 @@ See the [inventory](../tests/test_device_inventories.py),
   legacy operation sends an empty variables dictionary regardless of the
   argument. The parser requires a nonempty site list, fills its top-level
   fields from the first entry, and exposes the parsed entries in
-  `deliverySites`. First-entry fields describe the returned order. Site
-  selection is up to the caller. The [alias tests](../tests/test_user_sites_alias.py)
-  cover forwarding, result identity, and error parity.
+  `deliverySites`. An exception is `UserSites.addressFormatted`: the query
+  requests `address.addressFormatted` inside each site, but the parser reads
+  `addressFormatted` directly from the first site. For this response shape,
+  the top-level field is `None` despite its `str` annotation; the nested
+  address remains separate. Other first-entry fields describe the returned
+  order. Site selection is up to the caller. The
+  [alias tests](../tests/test_user_sites_alias.py) cover forwarding, result
+  identity, and error parity.
 - Both site methods declare `UserSites` as their return type. On Python
   3.14, default runtime inspection of that annotation resolves to the
   class-local `FrankEnergie.UserSites` method. The methods still return the
