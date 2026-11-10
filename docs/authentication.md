@@ -29,10 +29,17 @@ access token in the current credential object.
 `await client.validate_authentication()` returns `False` if that check fails
 or renewal raises `AuthException` or `AuthRequiredException`. Request
 failures such as `RateLimitException` and `NetworkError` can propagate.
-It returns `True` when credentials are present and renewal was not due or
-completed successfully. When renewal is not due, it makes no provider request.
-Consequently, `True` does not prove that the provider still accepts the token:
-a revoked but not-yet-expired token can pass this local check.
+It returns `True` when credentials passed the initial check and renewal was
+not due or completed successfully. When renewal is not due, it makes no provider
+request. Consequently, `True` does not prove that the provider still accepts
+the token: a revoked but not-yet-expired token can pass this local check.
+
+In concurrent calls, `True` also does not guarantee credentials are still
+present: two calls can pass the initial check before either acquires the renewal
+lock. If the first then clears the shared credentials after an invalid refresh
+token (`RefreshTokenInvalidException`), the second can acquire the lock, skip
+renewal because credentials are now absent, and return `True`. This exception
+concerns concurrent validation; it does not change the sequential behavior.
 
 ## Important Design Decision
 
