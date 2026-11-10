@@ -2,63 +2,80 @@
 
 ## Overview
 
-Use `FrankEnergie(auth_token=..., refresh_token=...)` to start with credentials
-from the caller, or `await client.login(username, password)` to obtain them.
-The active credential object and the results of `login()` and `renew_token()`
-use `python_frank_energie.models.Authentication`. See the
+The Frank Energie API uses JWT-based authentication.
+
+The `login` mutation returns two tokens.
+
+- `authToken` (access token)
+- `refreshToken` (refresh token)
+
+The client stores these values in `python_frank_energie.models.Authentication`.
+It can also start with tokens provided through its constructor. See the
 [comparison of authentication models](ARCHITECTURE.md#the-two-authentication-models)
 for the separate package-exported class.
 
-## Token expiration
+## Token Expiration
 
-The runtime model extracts the JWT `exp` claim into UTC expiry metadata when
-available. With a known access-token expiry, the client starts renewal checks
-five minutes before expiration. With unknown expiry, a nonempty token with at
-least three dot-separated parts is due for renewal. The refresh-token expiry
-is exposed as metadata. The provider determines whether it accepts either token.
+The runtime model extracts the JWT `exp` claim into UTC expiry metadata
+when available. Its `is_expired` property uses a five-minute renewal margin.
+With unknown expiry, a nonempty access token with at least three dot-separated
+parts is due for renewal. Refresh-token expiry is exposed as metadata.
 
-## Authentication state
+## Authentication State
 
-`client.is_authenticated` is a property. It checks for a nonempty access token
-in the current credential object. A token can be due for renewal and still
-satisfy this local check.
+`FrankEnergie.is_authenticated` is a property that checks for a nonempty
+access token in the current credential object.
 
-`await client.validate_authentication()` returns `False` if that local check
-fails or renewal raises `AuthException` or `AuthRequiredException`. It checks
-expiry and renews when necessary. Request failures such as `RateLimitException`
-and `NetworkError` can propagate.
+`await client.validate_authentication()` returns `False` if that check fails
+or renewal raises `AuthException` or `AuthRequiredException`. Request
+failures such as `RateLimitException` and `NetworkError` can propagate.
 
-## Current authentication lifecycle
+## Important Design Decision
 
-1. Before sending an operation, the client checks whether the access token is
-   due for renewal. The `RenewToken` operation skips this check.
-2. If renewal is needed, header preparation takes the per-client lock and
-   checks expiry again. A successful renewal installs the returned credentials.
-3. The operation proceeds with the current access token. A renewal failure
-   prevents that request from being sent. Subsequent error handling depends on
-   the public method.
+Keep the local authentication check independent of expiry so the client can
+renew an expired access token.
 
-`renew_token()` clears the credential object when the renewal request raises
-`RefreshTokenInvalidException`. A rate-limited renewal keeps it intact. See
+## Current Authentication Lifecycle
+
+1. Before sending an operation, the client checks whether the access token
+   is due for renewal. The `RenewToken` operation skips this check.
+2. A successful renewal installs the returned credentials and lets the
+   original request proceed. A renewal failure prevents that request from
+   being sent.
+
+A renewal request that raises `RefreshTokenInvalidException` clears the
+credential object. A rate-limited renewal keeps it intact. See
 [rate-limit errors](rate-limits.md) for the retry hint. A successful
 `logout()` also clears the credential object.
 
-## Concurrent renewal protection
+## Concurrent Renewal Protection
 
-Automatic renewal during header preparation and expiry checks in
-`validate_authentication()` share the same lock. Waiting requests check the
-current credentials after acquiring it. An explicit `renew_token()` call
-bypasses the lock.
+Header preparation and `validate_authentication()` share a per-client lock
+and check expiry after acquiring it. Direct `renew_token()` calls bypass
+that lock.
 
-## Authorization headers
+## Authorization Headers
 
-When the credential object exists, the client adds a bearer authorization
-header to GraphQL requests. `RenewToken` skips the automatic bearer header and
-passes the current tokens as mutation variables.
+When the credential object exists, GraphQL operations automatically receive
+the current access token in the bearer header.
 
-## Home Assistant integration
+```text
+Authorization: Bearer <authToken>
+```
 
-Credential persistence, reauthentication flows, and retry scheduling are
-responsibilities of the consuming application. A temporary request failure,
-including a rate limit during renewal, is distinct from rejected credentials.
-See the [Home Assistant boundary](ARCHITECTURE.md#home-assistant-boundary).
+The `RenewToken` operation is exempt from authenticated-header injection and token-refresh prechecks to avoid recursive renewal loops.
+
+## Home Assistant Integration
+
+The consuming application owns credential persistence, reauthentication, and
+retry scheduling. See the
+[Home Assistant boundary](ARCHITECTURE.md#home-assistant-boundary).
+
+## Security Considerations
+
+JWT expiration timestamps are parsed and stored locally. They guide renewal
+timing. The provider determines whether it accepts the token.
+
+## Future Improvements
+
+See the [proposed refactoring sequence](ARCHITECTURE.md#proposed-refactoring-sequence).
