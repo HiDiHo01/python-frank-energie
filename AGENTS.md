@@ -41,6 +41,9 @@ This repository contains `python-frank-energie`, an asynchronous Python client l
 - Use Ruff (`poetry run ruff format`) to format Python source and `poetry run ruff check` to lint it. Keep the existing 120-character line length and Python 3.12 target. Black is not the Python source formatter; `blacken-docs` remains for fenced documentation examples.
 - Use modern Python syntax, precise type hints, and `snake_case` names.
 - Add clear docstrings to modules, classes, methods, and public functions, following the surrounding code's conventions.
+
+- When adding a public method or compatibility alias to a class, check whether its name shadows an imported model/type used in annotations within that class. Use an unambiguous type alias or safe declaration order, and verify the result with mypy on all supported Python versions. Do not silence `valid-type` errors with `Any` or ignores.
+- In tests, combine independent nested context managers into a single parenthesized `with` statement to satisfy Ruff `SIM117`; keep the operation expected to raise isolated in the `pytest.raises` body.
 - **Maximum Cognitive Complexity: 15 per function or method**, as measured by SonarCloud rule `python:S3776`. Refactor any function exceeding 15 into cohesive, well-named helpers without changing behavior or public contracts. Do not suppress, disable, or accept `python:S3776` findings to bypass this limit. Check new and modified functions during review and resolve any confirmed violations before merge, with relevant regression tests.
 - Prefer built-in generic types such as `list[str]` and `dict[str, object]`; do not introduce legacy `typing.List` or `typing.Dict`.
 - Use asynchronous I/O for network operations. Do not block the event loop with synchronous network or file I/O.
@@ -79,6 +82,7 @@ poetry run pre-commit run --all-files
 - Keep tests deterministic and isolated. Do not weaken assertions, coverage, linting, typing, or security checks merely to obtain a passing result.
 - Investigate failures introduced by the change. Distinguish pre-existing failures from regressions using evidence.
 - If a check cannot be run, state that clearly in the pull request. Report the actual command and result; never claim that a test, review, or workflow passed without verifying its result.
+- For PR CI failures, inspect the specific failed job logs and rule IDs, apply the smallest root-cause fix, and verify a new run on the updated head SHA. Check every required job in the Python/version matrix; earlier successful jobs or a queued run do not establish a green PR.
 - Do not add new mandatory tools or change CI policy without a clear need and corresponding configuration/documentation updates.
 
 ### Key project setup recommendations
