@@ -41,9 +41,11 @@ async def test_user_sites_alias_propagates_request_errors() -> None:
     client = FrankEnergie()
     expected_error = RequestException("Synthetic request failure")
 
-    with patch.object(client, "UserSites", new_callable=AsyncMock, side_effect=expected_error) as legacy_method:
-        with pytest.raises(RequestException) as error_info:
-            await client.user_sites("synthetic-site-reference")
+    with (
+        patch.object(client, "UserSites", new_callable=AsyncMock, side_effect=expected_error) as legacy_method,
+        pytest.raises(RequestException) as error_info,
+    ):
+        await client.user_sites("synthetic-site-reference")
 
     assert error_info.value is expected_error
     legacy_method.assert_awaited_once_with("synthetic-site-reference")
