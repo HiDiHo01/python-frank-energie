@@ -119,6 +119,39 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   is not by itself a blocker once mapping, tests, CI and human review are
   confirmed. Never claim provider-schema completeness.
 
+### Lessons from historical GraphQL schema and third-party client research
+
+- **Search issues and comments, not only source files.** An archived Home Assistant
+  integration may have no `.graphql` or SDL file, while its issue history
+  contains a genuine historical introspection result. For example,
+  [bajansen/home-assistant-frank_energie #96](https://github.com/bajansen/home-assistant-frank_energie/issues/96)
+  includes a 2023 `__schema` response listing 237 named types and 59 root
+  query field names. That snapshot has no `smartPvSystems`,
+  `smartPvSystemSummary` or Smart PV type definitions, and its fields-only
+  selection does not establish GraphQL scalar types or nullability. Treat
+  its date, selection depth and missing types as explicit evidence limits.
+- **Inspect actual client GraphQL selections, not wish lists.** Compare third-party
+  documentation against the precise queries checked into that repository.
+  Proposed `capacity`, `maxPower`, `currentPower` or `todayGeneration`
+  fields are not verified merely because a README or driver proposal lists
+  them. Existing Smart PV queries in
+  [RienduPre/homey-frank-energie](https://github.com/RienduPre/homey-frank-energie)
+  and [hhi/org.hhi.onbalansmarkt-frankenergie](https://github.com/hhi/org.hhi.onbalansmarkt-frankenergie)
+  did not establish any additional fields for the current typed inventory
+  and summary models.
+- **Separate related operations from fields in scope.** Historical or third-party
+  `smartPvSystemConnectRequests` and `smartFeedInSessions` query examples
+  are candidates for separately authorized, read-only verification. Neither
+  proves current endpoint availability nor extends the existing
+  `smart_pv_systems()`/`smart_pv_system_summary()` field contract.
+- **Interpret introspection failures narrowly.** If authenticated `__typename`
+  succeeds while `__schema` fails with `GRAPHQL_VALIDATION_ERROR`, the
+  GraphQL connection works but the schema query was rejected; do not infer
+  the provider's exact policy or that no further fields exist. Preserve only
+  safe error categories, not provider error bodies, credentials or account
+  identifiers. A historical export does not replace contemporary evidence
+  for a newly selected GraphQL field.
+
 ### Lessons verified while reviewing PR #246
 
 - **Update the snapshot source that pytest actually reads.** The active Syrupy file
