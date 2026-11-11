@@ -5,7 +5,13 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .authentication import Authentication
 from .domain import CountryCode, EnergyType, Resolution
-from .exceptions import AuthException, ConnectionException, RateLimitException, RequestException
+from .exceptions import (
+    AuthException,
+    ConnectionException,
+    RateLimitException,
+    RequestException,
+    SmartFeedInNotEnabledException,
+)
 from .frank_energie import _DISTRIBUTION_NAME, FrankEnergie
 from .models import (
     ContractPriceResolutionChangeResult,
@@ -52,4 +58,5 @@ __all__ = [
     "ConnectionException",
     "RateLimitException",
     "RequestException",
+    "SmartFeedInNotEnabledException",
 ]

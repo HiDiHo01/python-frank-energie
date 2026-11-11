@@ -17,6 +17,10 @@ class RequestException(FrankEnergieException):
     """Request failed."""
 
 
+class SmartFeedInNotEnabledException(RequestException):
+    """Smart Feed-In is disabled; Smart PV inventory is not verified."""
+
+
 class RateLimitException(RequestException):
     """Report a rate-limited request and an optional server-provided delay."""
 

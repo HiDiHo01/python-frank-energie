@@ -47,6 +47,13 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Translate numeric overflows (integer-to-float and offset-aware timestamp normalization) to the established `RequestException`. Exercise extreme but synthetic values in regression tests.
 - Escape literal `|` characters in Markdown table cells documenting nullable union return types so the rendered API table retains the correct columns.
 
+## Verify Smart PV empty-inventory versus feature-disabled outcomes
+
+- A live, sanitized `SmartPvSystems` response for an account without Smart Feed-In contained `{"data": null, "errors": [{"message": "user-error:smart-feed-in-not-enabled", "path": ["smartPvSystems"]}]}`. This is a **feature-disabled error**, not a successful, verified `smartPvSystems: []` inventory.
+- Preserve a distinct `SmartFeedInNotEnabledException(RequestException)` for that exact single-error, null-data response at the public `smart_pv_systems()` boundary. Keep `user_smart_feed_in()` and other operations unchanged; reject mixed and differently scoped errors.
+- Require complete queried PV-system records, unique system IDs, valid nested panel groups, and valid unique panel-group IDs before exposing an inventory. A missing, malformed or partially invalid response must fail closed. An explicit successful `smartPvSystems: []` is the only authoritative empty inventory.
+- Regression-test both the HTTP GraphQL request path and the actual model parser with synthetic fixtures. A mocked `SmartPvSystems(systems=[])` does not prove the provider response was valid. Home Assistant Repairs must not count feature-disabled outcomes as confirmed absence; see [issue #243](https://github.com/HiDiHo01/python-frank-energie/issues/243) and [integration issue #455](https://github.com/HiDiHo01/home-assistant-frank_energie/issues/455).
+
 ## Keep diagnostic logs safe
 
 - For sensitive operations such as Smart HVAC, provider-controlled HTTP reason phrases and client exception messages are untrusted and may include EANs or device IDs. Log only safe operation names and numeric status codes; raise sanitized exceptions without displaying upstream exception chains. Preserve typed authentication and rate-limit behavior. Cover status codes and transport errors with synthetic secrets in both logs and exception text.

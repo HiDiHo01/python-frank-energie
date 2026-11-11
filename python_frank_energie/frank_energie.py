@@ -31,6 +31,7 @@ from .exceptions import (
     RequestException,
     SmartBatteryNotFoundException,
     SmartChargingNotEnabledException,
+    SmartFeedInNotEnabledException,
     SmartTradingNotEnabledException,
 )
 from .models import (
@@ -328,6 +329,21 @@ def _require_device_inventory(response: object, field_name: str) -> list[dict[st
     for device in devices:
         _validate_inventory_record(device, field_name, seen_ids)
     return devices
+
+
+def _is_smart_pv_feed_in_disabled(response: object) -> bool:
+    """Recognize the observed Smart PV service-disabled GraphQL response."""
+    if not isinstance(response, dict) or "data" not in response or response["data"] is not None:
+        return False
+    errors = response.get("errors")
+    if not isinstance(errors, list) or len(errors) != 1:
+        return False
+    error = errors[0]
+    return (
+        isinstance(error, dict)
+        and error.get("message") == "user-error:smart-feed-in-not-enabled"
+        and error.get("path") == ["smartPvSystems"]
+    )
 
 
 class _MonthSummaryReadingsUnavailable(FrankEnergieException):
@@ -3639,6 +3655,8 @@ class FrankEnergie:
         )
 
         response = await self._query(query)
+        if _is_smart_pv_feed_in_disabled(response):
+            raise SmartFeedInNotEnabledException("Smart Feed-In is not enabled; Smart PV inventory is unavailable.")
         return SmartPvSystems.from_dict(response)
 
     SMART_PV_SYSTEM_SUMMARY_QUERY = """
