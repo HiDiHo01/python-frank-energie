@@ -135,3 +135,7 @@ jobs:
 
       - name: Run ${{ matrix.hook.name }}
         run: poetry run pre-commit run ${{ matrix.hook.id }} --all-files --hook-stage manual
+
+      - name: Show formatting diff when Ruff modifies files
+        if: ${{ failure() && matrix.hook.id == 'ruff-format' }}
+        run: git diff -- python_frank_energie tests
