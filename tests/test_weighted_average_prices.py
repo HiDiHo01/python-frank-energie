@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from copy import deepcopy
+from typing import TYPE_CHECKING
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 from urllib.parse import urlsplit
@@ -13,7 +14,6 @@ from zoneinfo import ZoneInfo
 
 import aiohttp
 import pytest
-from aresponses import ResponsesMockServer
 
 from python_frank_energie import FrankEnergie, WeightedAveragePrices
 from python_frank_energie.exceptions import (
@@ -24,6 +24,9 @@ from python_frank_energie.exceptions import (
     RequestException,
 )
 from python_frank_energie.weighted_average_prices import WeightedAveragePriceCategory, WeightedAveragePriceItem
+
+if TYPE_CHECKING:
+    from aresponses import ResponsesMockServer
 
 # Synthetic fixtures: a live March 2025 response confirmed a populated electricity category.
 _ITEM = {
