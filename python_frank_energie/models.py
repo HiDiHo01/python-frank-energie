@@ -5032,7 +5032,6 @@ def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[s
     }
 
 
-
 _SMART_PV_SYSTEM_FIELDS = frozenset(
     {
         "id",
