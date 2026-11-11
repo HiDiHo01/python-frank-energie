@@ -19,6 +19,14 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Never include site references, account IDs, or complete provider
   responses in exception messages or logs. Mock API responses with
   fictional identifiers in regression tests.
+- When sanitized live weighted-price evidence becomes available, record
+  *observed structure* independently from the assumed schema. A March 2025
+  response confirms 31 daily electricity entries, nullable gas/feed-in
+  categories, UTC `from`/`till` strings, `KWH`, a negative daily market
+  price, and a 23-hour local day during Europe's spring DST transition.
+  Test the real calendar boundary with invented identifiers and prices;
+  never replace observed provider values with client-calculated averages.
+  Nonempty gas/feed-in and nullable prices remain unverified until observed.
 
 ## Address pull request feedback
 
