@@ -1,0 +1,67 @@
+name: Temporary Sonar issues inspection
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  public-issue-metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restrict outbound network
+        uses: step-security/harden-runner@1d88384fd173af6ecb012dfd0264a306b711241a # v2.22.4
+        with:
+          egress-policy: block
+          allowed-endpoints: sonarcloud.io:443
+      - name: Inspect public nonsecurity issues only
+        env:
+          SONAR_PROJECT: HiDiHo01_python-frank-energie
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python - <<'PY'
+          """Print safe Sonar issue metadata; never log response bodies or security findings."""
+          import json
+          import os
+          from urllib.error import HTTPError, URLError
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          query = urlencode(
+              {
+                  "componentKeys": os.environ["SONAR_PROJECT"],
+                  "pullRequest": os.environ["PR_NUMBER"],
+                  "resolved": "false",
+                  "ps": "100",
+              }
+          )
+          request = Request(
+              "https://sonarcloud.io/api/issues/search?" + query,
+              headers={"Accept": "application/json", "User-Agent": "CI-Maintainability-Inspection"},
+          )
+          try:
+              with urlopen(request, timeout=20) as response:
+                  payload = json.load(response)
+          except HTTPError as error:
+              raise SystemExit(f"Public Sonar issue metadata unavailable (HTTP {error.code})") from None
+          except (URLError, ValueError, TimeoutError):
+              raise SystemExit("Public Sonar issue metadata unavailable (network/JSON error)") from None
+
+          issues = payload.get("issues", [])
+          print("SonarQube Cloud nonsecurity issue metadata; PR", os.environ["PR_NUMBER"])
+          print("Reported total:", payload.get("paging", {}).get("total"))
+          print("Returned items:", len(issues))
+          for item in issues:
+              if item.get("type") not in {"CODE_SMELL", "BUG"}:
+                  continue
+              if any(impact.get("softwareQuality") == "SECURITY" for impact in item.get("impacts", [])):
+                  continue
+              source = item.get("component", "").split(":", 1)[-1]
+              line = item.get("line")
+              print(
+                  "MAINTAINABILITY_ISSUE",
+                  json.dumps({"rule": item.get("rule"), "file": source, "line": line}),
+              )
+          PY
