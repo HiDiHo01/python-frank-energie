@@ -26,6 +26,7 @@ from .models import (
     SmartHvacDevice,
     SmartHvacSummary,
 )
+from .weighted_average_prices import WeightedAveragePriceCategory, WeightedAveragePriceItem, WeightedAveragePrices
 
 try:
     __version__ = version(_DISTRIBUTION_NAME)
@@ -49,6 +50,9 @@ __all__ = [
     "Price",
     "PriceData",
     "PeriodUsageAndCosts",
+    "WeightedAveragePriceCategory",
+    "WeightedAveragePriceItem",
+    "WeightedAveragePrices",
     "SmartHvac",
     "SmartHvacConnectRequest",
     "SmartHvacDevice",
