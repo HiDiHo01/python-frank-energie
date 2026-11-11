@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import logging
+import re
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -305,7 +305,9 @@ async def test_weighted_average_prices_preserves_transport_errors(error: BaseExc
         ([{"message": "private-provider-error-marker"}], RequestException),
         ([{"message": "No connections found for user private-provider-error-marker"}], FrankEnergieException),
         ([{"message": "request-error:request-not-supported-in-country"}], FrankEnergieException),
-        ("private-provider-error-marker", FrankEnergieException),
+        ("private-provider-error-marker", RequestException),
+        ("", RequestException),
+        (None, RequestException),
         (["private-provider-error-marker"], RequestException),
     ],
 )
@@ -475,12 +477,151 @@ async def test_weighted_average_prices_keeps_graphql_error_precedence(
 def test_weighted_average_graphql_helper_preserves_known_errors(upstream_message: str, public_message: str) -> None:
     """Keep established exception text while sanitizing account details."""
     with pytest.raises(FrankEnergieException, match="^" + re.escape(public_message) + "$") as raised:
-        FrankEnergie._handle_weighted_average_graphql_error(upstream_message)
+        FrankEnergie._handle_redacted_graphql_error(upstream_message, "WeightedAveragePrices")
 
     assert raised.value.__cause__ is None
 
 
 def test_weighted_average_graphql_helper_defers_unknown_errors() -> None:
     """Allow later GraphQL errors to retain their existing precedence."""
-    assert FrankEnergie._handle_weighted_average_graphql_error("synthetic-unrecognized") is None
+    assert FrankEnergie._handle_redacted_graphql_error("synthetic-unrecognized", "WeightedAveragePrices") is None
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_body", "content_type"),
+    [
+        ("<html>private-provider-error-marker</html>", "text/html"),
+        ('{"private-provider-error-marker":', "application/json"),
+    ],
+)
+async def test_weighted_average_prices_redacts_malformed_json_response(
+    aresponses: ResponsesMockServer,
+    caplog: pytest.LogCaptureFixture,
+    response_body: str,
+    content_type: str,
+) -> None:
+    """Reject invalid JSON and unexpected media types through the real transport."""
+    aresponses.add(
+        urlsplit(FrankEnergie.DATA_URL).netloc,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=response_body,
+            status=200,
+            headers={"Content-Type": content_type},
+        ),
+    )
+    async with aiohttp.ClientSession() as session:
+        client = FrankEnergie(session, auth_token="synthetic-test-token")  # noqa: S106
+        with (
+            caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+            pytest.raises(RequestException, match="^Invalid WeightedAveragePrices JSON response$") as raised,
+        ):
+            await client.weighted_average_prices("synthetic-site", "2025-03")
+
+    assert raised.value.__cause__ is None
+    assert "private-provider-error-marker" not in caplog.text
+    assert "private-provider-error-marker" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response_status", "exception_type"),
+    [
+        (502, FrankEnergieException),
+        (401, AuthRequiredException),
+        (429, RateLimitException),
+    ],
+)
+async def test_weighted_average_prices_redacts_automatic_token_renewal_failures(
+    aresponses: ResponsesMockServer,
+    caplog: pytest.LogCaptureFixture,
+    response_status: int,
+    exception_type: type[Exception],
+) -> None:
+    """Redact the renewal HTTP error triggered before a weighted-price request."""
+    aresponses.add(
+        urlsplit(FrankEnergie.DATA_URL).netloc,
+        "/",
+        "POST",
+        aresponses.Response(
+            status=response_status,
+            reason="private-provider-error-marker",
+            headers={"Retry-After": "7"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        client = FrankEnergie(
+            session,
+            auth_token="synthetic-access-token",  # noqa: S106
+            refresh_token="synthetic-refresh-token",  # noqa: S106
+        )
+        with (
+            patch.object(
+                client,
+                "_requires_token_refresh",
+                side_effect=lambda operation_name: operation_name == "WeightedAveragePrices",
+            ),
+            caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+            pytest.raises(exception_type) as raised,
+        ):
+            await client.weighted_average_prices("synthetic-site", "2025-03")
+
+    if isinstance(raised.value, RateLimitException):
+        assert raised.value.operation_name == "RenewToken"
+        assert raised.value.retry_after == 7.0
+    assert raised.value.__cause__ is None
+    assert "private-provider-error-marker" not in caplog.text
+    assert "private-provider-error-marker" not in str(raised.value)
+    assert "synthetic-refresh-token" not in caplog.text
+    assert "synthetic-site" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_weighted_average_prices_redacts_graphql_token_renewal_error(
+    aresponses: ResponsesMockServer,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Prevent unrecognized renewal GraphQL errors from leaking private metadata."""
+    aresponses.add(
+        urlsplit(FrankEnergie.DATA_URL).netloc,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [
+                        {
+                            "message": "private-provider-error-marker",
+                            "extensions": {"private": "private-provider-error-marker"},
+                        }
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+    async with aiohttp.ClientSession() as session:
+        client = FrankEnergie(
+            session,
+            auth_token="synthetic-access-token",  # noqa: S106
+            refresh_token="synthetic-refresh-token",  # noqa: S106
+        )
+        with (
+            patch.object(
+                client,
+                "_requires_token_refresh",
+                side_effect=lambda operation_name: operation_name == "WeightedAveragePrices",
+            ),
+            caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+            pytest.raises(RequestException, match="^RenewToken GraphQL request failed$") as raised,
+        ):
+            await client.weighted_average_prices("synthetic-site", "2025-03")
+
+    assert raised.value.__cause__ is None
+    assert "private-provider-error-marker" not in caplog.text
+    assert "private-provider-error-marker" not in str(raised.value)
