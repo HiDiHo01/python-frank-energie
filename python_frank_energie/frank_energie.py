@@ -3173,7 +3173,7 @@ class FrankEnergie:
         if not isinstance(site_reference, str) or not site_reference.strip():
             raise ValueError("The 'site_reference' must be a nonempty string.")
 
-        if not isinstance(month, str) or re.fullmatch(r"\\d{4}-\\d{2}", month) is None:
+        if not isinstance(month, str) or re.fullmatch(r"\d{4}-\d{2}", month) is None:
             raise ValueError("The 'month' must use YYYY-MM format, for example '2025-03'.")
 
         try:
