@@ -449,6 +449,7 @@ async def test_pv_other_graphql_errors_are_not_service_disabled(response: dict[s
         await api.smart_pv_systems()
     assert not isinstance(caught.value, SmartFeedInNotEnabledException)
 
+
 @pytest.mark.parametrize(
     "missing_field",
     ("id", "position", "azimuth", "tilt", "capacityKwp", "annualKwh", "panelCount", "installationDate"),
