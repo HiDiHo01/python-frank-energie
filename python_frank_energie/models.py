@@ -5308,7 +5308,9 @@ class SmartPvSystemSummary(DictLikeMixin):
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemSummary:
         """Parse only complete summary responses while retaining direct-payload support."""
-        if not isinstance(data, dict) or ("errors" in data and (not isinstance(data["errors"], list) or data["errors"])):
+        if not isinstance(data, dict):
+            raise RequestException("Invalid smartPvSystemSummary GraphQL response.")
+        if "errors" in data and (not isinstance(data["errors"], list) or data["errors"]):
             raise RequestException("Invalid smartPvSystemSummary GraphQL response.")
 
         if "data" in data:

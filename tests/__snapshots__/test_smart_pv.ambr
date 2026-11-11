@@ -54,10 +54,10 @@
 # name: test_smart_pv_system_summary
   SmartPvSystemSummary(
     operational_status=<SmartPvOperationalStatus.OPERATIONAL: 'OPERATIONAL'>,
-    operational_status_timestamp=datetime.datetime(2026, 5, 28, 14, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')),
+    operational_status_timestamp=datetime.datetime(2026, 5, 28, 14, 0, tzinfo=datetime.timezone.utc),
     steering_status=<SmartPvSteeringStatus.STEERING: 'STEERING'>,
     total_bonus=12.34,
-    total_result=None,
+    total_result=8.9,
   )
 # ---
 # name: test_smart_pv_systems
@@ -77,6 +77,16 @@
         model='SE3000',
         onboarding_status=<SmartPvOnboardingStatus.COMPLETED: 'COMPLETED'>,
         panel_groups=list([
+          SmartPvSystemPanelGroup(
+            annual_kwh=2600,
+            azimuth=180,
+            capacity_kwp=3.06,
+            id='panel-1',
+            installation_date=datetime.datetime(2026, 5, 28, 10, 0, tzinfo=zoneinfo.ZoneInfo(key='UTC')),
+            panel_count=7,
+            position=1,
+            tilt=15,
+          ),
         ]),
         provider='SolarEdge',
         steering_status=<SmartPvSteeringStatus.ACTIVE: 'ACTIVE'>,
