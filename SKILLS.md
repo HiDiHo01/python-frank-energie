@@ -2,6 +2,24 @@
 
 Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI_POLICY.md). Update a practice when new evidence changes how to carry it out.
 
+## Add read-only GraphQL operations with unverified response fields
+
+- When a new GraphQL operation is supplied as a request but no live response
+  exists, copy the operation name, selection set, and variable names exactly;
+  use synthetic schema-shaped tests and clearly mark which semantics still
+  require live verification. Do not invent prices, units, or provider rules.
+- Preserve an explicitly null category and explicit empty `items: []`
+  separately from a missing field, malformed object, or GraphQL error.
+  Reject non-finite and non-numeric price data, including booleans, and
+  keep unknown units and timestamp formatting unchanged.
+- Use a separate parser for substantial new data models rather than
+  increasing the complexity of a large unrelated parser. Export public
+  classes, document the result contract, and test authentication, argument
+  validation, negative prices, cancellation, and error propagation.
+- Never include site references, account IDs, or complete provider
+  responses in exception messages or logs. Mock API responses with
+  fictional identifiers in regression tests.
+
 ## Address pull request feedback
 
 1. Record the current PR head and base. Fetch all pages of inline review threads and check their resolved state, including outdated threads. Before assessing or resolving each unresolved thread, fetch every page of its comments, including replies on outdated threads. Read actionable findings in the conversation and review summaries.
