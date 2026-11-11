@@ -25,6 +25,22 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   Test the real `_query()` route with mocked HTTP responses and `caplog`,
   including malformed error containers and private upstream reason text.
   A test mocking `_query()` cannot establish logging safety.
+- For a privacy-safe GraphQL operation, audit every path **before**
+  the response parser: unexpected error entries, malformed error containers,
+  GraphQL validation, unhandled provider messages, HTTP reasons, client
+  failures, and exception chaining. Redact log messages and raised error
+  details, not just returned data; retain safe HTTP statuses and operation
+  names for diagnostics.
+- Preserve existing GraphQL error semantics when adding redaction:
+  recognized authentication, retryable HTTP/GraphQL rate limits (including
+  `Retry-After`), and timeouts must still take precedence in **response
+  order**. Unknown errors must not mask recognized errors later in the
+  same response. Use synthetic mixed-error regression cases to test both
+  precedence and redaction, including errors in `extensions` and `path`.
+- Before considering AI-review feedback complete, fetch review threads
+  again from the latest PR HEAD: bots can automatically mark a thread
+  resolved after a new push. An automatically resolved thread does not
+  prove that the specific regression tests or final CI matrix passed.
 - When sanitized live weighted-price evidence becomes available, record
   *observed structure* independently from the assumed schema. A March 2025
   response confirms 31 daily electricity entries, nullable gas/feed-in
