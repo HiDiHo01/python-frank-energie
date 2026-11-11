@@ -83,6 +83,20 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - If callers inspect annotations at runtime, verify the evaluated annotations on the supported Python versions as well. Python 3.14 resolves both site methods' return annotations to the class-local `UserSites` method when evaluated, even though mypy passes and the methods return the model.
 - When a regression test nests `patch.object(...)` and `pytest.raises(...)`, Ruff `SIM117` expects one parenthesized `with` with both managers. Keep setup outside `pytest.raises` and only the call expected to raise inside the block.
 
+## Verify concurrent authentication validation
+
+- For local token validation, check both initial credential presence and the final
+  return value under the same per-client renewal lock. A pre-lock check can become
+  stale while another validator refreshes or clears the shared credentials.
+- Reproduce renewal races with two tasks and `asyncio.Event` barriers. Mock the
+  GraphQL request boundary (not the whole renewal method) to exercise the real
+  state-clearing behavior after `RefreshTokenInvalidException`.
+- Check both failed and successful overlapping renewals: neither waiting call
+  may report credentials already cleared, and successful renewal should run
+  only once. Verify request errors propagate and cancellation remains unhandled.
+- Document the guarantee narrowly: local status is not proof of upstream token
+  acceptance, and direct `renew_token()`/`logout()` calls bypass this lock.
+
 ## Prepare an incremental refactoring
 
 1. Start from current `main`. Trace each affected operation from its public entry point through the state it reads or writes, the request boundary, and result parsing. Compare the trace with the [architecture reference](docs/ARCHITECTURE.md) and record any gaps as open questions.
