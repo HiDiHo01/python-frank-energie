@@ -78,6 +78,9 @@ if sys.platform == "win32":
 _DISTRIBUTION_NAME = "python-frank-energie"
 _SMART_BATTERY_NOT_FOUND_LOG = "Smart battery not found for device_id: %s"
 _GRAPHQL_VALIDATION_MESSAGE = "Graphql validation error"
+_INVALID_GRAPHQL_ERROR_STRUCTURE = "Invalid GraphQL error structure"
+_REQUEST_NOT_SUPPORTED_IN_COUNTRY = "request-error:request-not-supported-in-country"
+_NO_CONNECTIONS_FOUND_FOR_USER = "No connections found for user"
 _SMART_HVAC_QUERY_OPERATIONS = frozenset(
     {"UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"}
 )
@@ -855,7 +858,7 @@ class FrankEnergie:
             raise RequestException("Invalid Smart HVAC GraphQL error structure")
         if operation_name == "WeightedAveragePrices" and "errors" in response and not isinstance(errors_obj, list):
             if errors_obj:
-                raise FrankEnergieException("Invalid GraphQL error structure") from None
+                raise FrankEnergieException(_INVALID_GRAPHQL_ERROR_STRUCTURE) from None
             raise RequestException("Invalid WeightedAveragePrices GraphQL error structure") from None
         if not errors_obj:
             return None
@@ -864,7 +867,7 @@ class FrankEnergie:
             if is_smart_hvac:
                 raise RequestException("Invalid Smart HVAC GraphQL error structure")
             _LOGGER.error("Invalid GraphQL error structure: %s", errors_obj)
-            raise FrankEnergieException("Invalid GraphQL error structure")
+            raise FrankEnergieException(_INVALID_GRAPHQL_ERROR_STRUCTURE)
 
         return errors_obj
 
@@ -911,7 +914,7 @@ class FrankEnergie:
         safe_response = self._redact_meter_reading_errors(response)
         safe_errors = safe_response.get("errors")
         if not isinstance(safe_errors, list):
-            raise FrankEnergieException("Invalid GraphQL error structure")
+            raise FrankEnergieException(_INVALID_GRAPHQL_ERROR_STRUCTURE)
 
         recovered_response = self._me_without_failed_hvac(response, errors_obj) if recover_hvac_errors else None
         suppress_response_details = (
@@ -946,9 +949,17 @@ class FrankEnergie:
         if message == _GRAPHQL_VALIDATION_MESSAGE:
             _LOGGER.debug("Smart HVAC GraphQL validation failed for operation [%s]", operation_name)
             raise RequestException("Smart HVAC GraphQL query is not supported by this API")
-        if message == "request-error:request-not-supported-in-country":
+        if message == _REQUEST_NOT_SUPPORTED_IN_COUNTRY:
             raise RequestException("Smart HVAC query is not supported in this country")
         raise RequestException("Smart HVAC GraphQL operation failed")
+
+    @staticmethod
+    def _handle_weighted_average_graphql_error(message: str) -> None:
+        """Classify weighted-price errors without exposing upstream account details."""
+        if message.startswith(_NO_CONNECTIONS_FOUND_FOR_USER):
+            raise FrankEnergieException(_NO_CONNECTIONS_FOUND_FOR_USER) from None
+        if message == _REQUEST_NOT_SUPPORTED_IN_COUNTRY:
+            raise FrankEnergieException("Request not supported in the user's country") from None
 
     def _handle_graphql_error(
         self,
@@ -1001,10 +1012,7 @@ class FrankEnergie:
             )
 
         if operation_name == "WeightedAveragePrices":
-            if message.startswith("No connections found for user"):
-                raise FrankEnergieException("No connections found for user") from None
-            if message == "request-error:request-not-supported-in-country":
-                raise FrankEnergieException("Request not supported in the user's country") from None
+            self._handle_weighted_average_graphql_error(message)
             # Unknown errors are rejected by the operation parser after all
             # entries have been checked for existing recognized exception types.
             return
@@ -1017,9 +1025,9 @@ class FrankEnergie:
         if message == "'Base' niet aanwezig in prijzen verzameling":
             _LOGGER.debug("'Base' niet aanwezig in prijzen verzameling %s.", path)
             return
-        if message.startswith("No connections found for user"):
+        if message.startswith(_NO_CONNECTIONS_FOUND_FOR_USER):
             raise FrankEnergieException(f"Request failed: {message}")
-        if message == "request-error:request-not-supported-in-country":
+        if message == _REQUEST_NOT_SUPPORTED_IN_COUNTRY:
             _LOGGER.error("Request not supported in user's country: %s", error_obj)
             raise FrankEnergieException("Request not supported in the user's country")
 
