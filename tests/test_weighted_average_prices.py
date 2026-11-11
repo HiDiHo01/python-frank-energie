@@ -467,6 +467,7 @@ async def test_weighted_average_prices_keeps_graphql_error_precedence(
     assert "private-provider-error-marker" not in caplog.text
     assert "synthetic-site" not in caplog.text
 
+
 @pytest.mark.parametrize(
     ("upstream_message", "public_message"),
     [
