@@ -99,8 +99,9 @@ See the request-boundary tests for [timeouts and cancellation](../tests/test_gra
   returns `None` and follows the [session ownership rules](#runtime-state-and-ownership).
 - `is_authenticated` is a `bool` property that checks for a nonempty access
   token in `_auth`. `validate_authentication()` is async and returns `bool`.
-  It checks the local state and renews when needed. Absent authentication or
-  caught `AuthException`/`AuthRequiredException` produces `False`. Request
+  It checks credential presence under the per-client renewal lock, renews
+  when needed, and rechecks local state before returning. Absent authentication
+  or caught `AuthException`/`AuthRequiredException` produces `False`. Request
   failures such as `RateLimitException` and `NetworkError` can propagate.
 - `auth` is a deprecated property that logs a message and returns the current
   `models.Authentication | None`. `token_expires_at` and
