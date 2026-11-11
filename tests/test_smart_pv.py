@@ -8,6 +8,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie, SmartFeedInNotEnabledException
+from python_frank_energie.domain import SmartPvSteeringStatus
 from python_frank_energie.exceptions import RequestException
 from python_frank_energie.models import SmartPvSystems
 
@@ -240,13 +241,12 @@ def test_pv_nullable_serial_numbers_remain_supported() -> None:
     assert inventory.systems[0].inverter_serial_numbers == []
 
 
-def test_pv_invalid_enum_is_sanitized() -> None:
-    """Do not expose raw provider values in malformed-model errors."""
+def test_pv_unknown_steering_status_retains_fallback() -> None:
+    """Preserve the library's UNKNOWN fallback for new provider status values."""
     system = _sample_pv_record()
-    system["steeringStatus"] = "UNRECOGNIZED_PRIVATE_VALUE"
-    with pytest.raises(RequestException, match="Invalid smartPvSystems inventory fields") as caught:
-        SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
-    assert "UNRECOGNIZED_PRIVATE_VALUE" not in str(caught.value)
+    system["steeringStatus"] = "NEW_PROVIDER_STATUS"
+    inventory = SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+    assert inventory.systems[0].steering_status is SmartPvSteeringStatus.UNKNOWN
 
 
 @pytest.mark.asyncio
