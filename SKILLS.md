@@ -112,8 +112,12 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Preserve the fail-closed inventory guarantees of #243. Distinguish
   a missing selected field from an explicit null; do not silently convert
   malformed non-null summary numbers or timestamps to `None`.
-- If authorized schema introspection is unavailable, record that limitation,
-  avoid speculative query changes, and leave the completeness audit open.
+- If authorized schema introspection is unavailable, record the failure
+  category and evidence boundary without exposing credentials or provider
+  payloads. Avoid speculative query changes. For issue #244, acceptance
+  covers independently verifiable fields only: an unavailable full schema
+  is not by itself a blocker once mapping, tests, CI and human review are
+  confirmed. Never claim provider-schema completeness.
 
 ### Lessons verified while reviewing PR #246
 
@@ -137,8 +141,9 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   nullability, measurement units or accounting periods. The observed
   `onboarding_status=ACTIVE`, `operational_status=ON` and
   `steering_status=INACTIVE` are independent states, not evidence of
-  electricity production or disconnection. Keep completeness work open
-  until an authorized schema or provider contract confirms additional fields.
+  electricity production or disconnection. Any *additional* field requires
+  independent provider-origin evidence before implementation; the bounded
+  issue #244 can close without proving that the provider schema is exhaustive.
 - **Classify each CI failure against the current commit.** In PR #246,
   new fixture values initially failed two Syrupy snapshots, while separate
   Ruff format and `I001` import-order failures required their own minimal
