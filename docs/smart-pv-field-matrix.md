@@ -7,10 +7,14 @@ provider-declared GraphQL scalar types or `!` (non-null) schema guarantees.
 The existing sanitized fixtures and issue #244's redacted observation support
 only the indicated values; synthetic test fixtures are **not provider schema evidence**.
 
-At this audit date (2026-11-11), an authorized provider schema/introspection
-result or comprehensive official Smart PV type definition was not available.
-Consequently **no additional provider field is independently confirmed**,
-and no unverified field is selected in this PR.
+On 2026-11-11, authorized read-only diagnostics reported that `__typename`
+succeeded but `__schema` returned `GRAPHQL_VALIDATION_ERROR`. This does not
+prove why introspection was rejected. No provider SDL or comprehensive official
+Smart PV type definition was available. **No additional provider field was
+independently confirmed**; merged PR #246 did not select speculative fields.
+The scope of [issue #244](https://github.com/HiDiHo01/python-frank-energie/issues/244)
+is limited to independently verifiable, relevant fields, **not** an exhaustive
+inventory of the external provider schema.
 
 ## Inventory — `FrankEnergie.smart_pv_systems()`
 
@@ -67,8 +71,8 @@ a **library contract** and is not claimed to match the remote schema.
 ## Verification status and unsupported assumptions
 
 - **Implemented baseline:** all 27 query-selected paths already map to typed
-  Python attributes on `main`. This PR expands deterministic tests and
-  documents those mappings; it does not add speculative query selections.
+  Python attributes on `main`. Merged PR #246 expanded deterministic tests
+  and documented those mappings; no speculative query selections were added.
 - **Verified missing provider fields:** none established by available evidence.
   A new field may only be introduced after an authorized source establishes its
   exact GraphQL type, path, nullability and actual response semantics.
@@ -84,10 +88,24 @@ a **library contract** and is not claimed to match the remote schema.
   verified empty inventory; see [issue #243](https://github.com/HiDiHo01/python-frank-energie/issues/243).
   No live private records, EANs or serials were used in this audit.
 
-### Follow-up required before closing #244
+### Acceptance boundary for issue #244
 
-Obtain authorized, sanitized Smart PV schema/introspection evidence or a
-provider-published schema, record exact field definitions and source date,
-compare it against this matrix, then add only the newly verified fields
-with compatibility-safe models and tests. Without that evidence, **the
-completeness claim cannot be established** and this issue stays open.
+Completion means that **all independently verifiable, relevant Smart PV fields
+within the supported read-only operations** have documented evidence, are
+selected in the corresponding GraphQL queries, and are exposed through typed
+models with compatible behavior and regression tests. This matrix separates:
+
+- **Already implemented:** the 27 selected paths listed above.
+- **Independently confirmed but missing:** none identified from available evidence.
+- **Unverified candidates:** the categories listed above; their existence,
+  schema types, nullability, units and response semantics remain unconfirmed.
+
+A provider SDL or successful `__schema` introspection is **not a prerequisite**
+for closing #244 under its revised criteria, provided the bounded mapping,
+quality checks and mandatory human review have been verified. Closing the issue
+must **not** be described as proof that all fields supported by the provider
+have been discovered.
+
+If additional fields are independently confirmed later, document their exact
+source, GraphQL path, types and semantics, and track any required model/query
+changes as separate follow-up work. Do not guess unsupported field names.
