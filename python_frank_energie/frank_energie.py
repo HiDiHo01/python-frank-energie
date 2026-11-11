@@ -81,6 +81,7 @@ _GRAPHQL_VALIDATION_MESSAGE = "Graphql validation error"
 _SMART_HVAC_QUERY_OPERATIONS = frozenset(
     {"UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"}
 )
+_REDACTED_QUERY_OPERATIONS = _SMART_HVAC_QUERY_OPERATIONS | {"WeightedAveragePrices"}
 
 try:
     VERSION = _pkg_version(_DISTRIBUTION_NAME)
@@ -631,7 +632,7 @@ class FrankEnergie:
                 "Frank Energie API timeout during operation [%s]",
                 operation_name,
             )
-            cause = None if operation_name in _SMART_HVAC_QUERY_OPERATIONS else err
+            cause = None if operation_name in _REDACTED_QUERY_OPERATIONS else err
             raise NetworkError("Frank Energie API timeout") from cause
 
         except aiohttp.ClientResponseError as error:
@@ -647,6 +648,9 @@ class FrankEnergie:
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             _LOGGER.error("Frank Energie Smart HVAC HTTP client error during [%s]", operation_name)
             raise NetworkError("Frank Energie Smart HVAC HTTP client error") from None
+        if operation_name == "WeightedAveragePrices":
+            _LOGGER.error("Frank Energie HTTP client error during [%s]", operation_name)
+            raise NetworkError("Frank Energie HTTP client error") from None
         _LOGGER.error(
             "Frank Energie HTTP client error during [%s]: %s",
             operation_name,
@@ -660,6 +664,9 @@ class FrankEnergie:
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             _LOGGER.error("Invalid Smart HVAC API response during [%s]", operation_name)
             raise NetworkError("Invalid Smart HVAC API response") from None
+        if operation_name == "WeightedAveragePrices":
+            _LOGGER.error("Invalid WeightedAveragePrices API response")
+            raise NetworkError("Invalid WeightedAveragePrices API response") from None
         _LOGGER.error(
             "Unexpected API response structure during [%s]: missing key %s",
             operation_name,
@@ -677,8 +684,8 @@ class FrankEnergie:
         recover_hvac_errors: bool,
     ) -> dict[str, object]:
         """Classify GraphQL errors and return the usable response."""
-        if operation_name in _SMART_HVAC_QUERY_OPERATIONS and not isinstance(response, dict):
-            raise RequestException("Invalid Smart HVAC GraphQL response: expected an object")
+        if operation_name in _REDACTED_QUERY_OPERATIONS and not isinstance(response, dict):
+            raise RequestException(f"Invalid {operation_name} GraphQL response: expected an object")
         if not response:
             _LOGGER.debug("Empty API response received for operation [%s]", operation_name)
             return {}
@@ -700,7 +707,8 @@ class FrankEnergie:
     def _raise_http_response_error(error: aiohttp.ClientResponseError, operation_name: str) -> Never:
         """Map HTTP failures while redacting Smart HVAC upstream reason text."""
         is_smart_hvac = operation_name in _SMART_HVAC_QUERY_OPERATIONS
-        cause = None if is_smart_hvac else error
+        is_redacted = operation_name in _REDACTED_QUERY_OPERATIONS
+        cause = None if is_redacted else error
         if error.status == HTTPStatus.TOO_MANY_REQUESTS:
             retry_after_header = error.headers.get("Retry-After") if error.headers else None
             retry_after = _parse_retry_after(retry_after_header)
@@ -717,6 +725,8 @@ class FrankEnergie:
                 operation_name,
                 error.status,
             )
+        elif is_redacted:
+            _LOGGER.error("Frank Energie API error during operation [%s]: status=%s", operation_name, error.status)
         else:
             _LOGGER.error("Frank Energie API error during operation [%s]: %s", operation_name, error)
         if error.status == HTTPStatus.UNAUTHORIZED:
@@ -729,6 +739,8 @@ class FrankEnergie:
             raise FrankEnergieException("Internal server error.") from cause
         if is_smart_hvac:
             raise FrankEnergieException(f"Smart HVAC HTTP request failed (status {error.status})") from None
+        if is_redacted:
+            raise FrankEnergieException(f"HTTP request failed (status {error.status})") from None
         raise FrankEnergieException(f"Unexpected response: {error}") from error
 
     @staticmethod
@@ -826,6 +838,8 @@ class FrankEnergie:
             return error_obj
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             raise RequestException("Invalid Smart HVAC GraphQL error entry")
+        if operation_name == "WeightedAveragePrices":
+            raise RequestException("Invalid WeightedAveragePrices GraphQL error entry")
         _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
         return None
 
@@ -836,6 +850,8 @@ class FrankEnergie:
         is_smart_hvac = operation_name in _SMART_HVAC_QUERY_OPERATIONS
         if is_smart_hvac and "errors" in response and not isinstance(errors_obj, list):
             raise RequestException("Invalid Smart HVAC GraphQL error structure")
+        if operation_name == "WeightedAveragePrices" and "errors" in response and not isinstance(errors_obj, list):
+            raise RequestException("Invalid WeightedAveragePrices GraphQL error structure")
         if not errors_obj:
             return None
 
@@ -893,7 +909,7 @@ class FrankEnergie:
             raise FrankEnergieException("Invalid GraphQL error structure")
 
         recovered_response = self._me_without_failed_hvac(response, errors_obj) if recover_hvac_errors else None
-        suppress_response_details = recovered_response is not None or any(
+        suppress_response_details = active_query == "WeightedAveragePrices" or recovered_response is not None or any(
             isinstance(error_obj, dict) and error_obj.get("message") == "timeout of 60000ms exceeded"
             for error_obj in safe_errors
         )
@@ -974,6 +990,14 @@ class FrankEnergie:
                 response=response,
                 suppress_response_logging=suppress_unhandled_logging,
             )
+
+        if operation_name == "WeightedAveragePrices":
+            if message.startswith("No connections found for user"):
+                raise FrankEnergieException("No connections found for user") from None
+            if message == "request-error:request-not-supported-in-country":
+                raise FrankEnergieException("Request not supported in the user's country") from None
+            _LOGGER.debug("WeightedAveragePrices GraphQL request failed")
+            raise RequestException("WeightedAveragePrices GraphQL request failed") from None
 
         if message.startswith(("No marketprices found for segment", "No reading dates found for user")):
             return
