@@ -3237,7 +3237,6 @@ class FrankEnergie:
         response = await self._query(query)
         return WeightedAveragePrices.from_dict(response)
 
-
     async def period_usage_and_costs(
         self,
         site_reference: str,
