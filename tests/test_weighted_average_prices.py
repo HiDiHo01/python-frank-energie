@@ -3,15 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+import aiohttp
 import pytest
+from aresponses import ResponsesMockServer
 
 from python_frank_energie import FrankEnergie, WeightedAveragePrices
-from python_frank_energie.exceptions import AuthRequiredException, NetworkError, RequestException
+from python_frank_energie.exceptions import (
+    AuthRequiredException,
+    FrankEnergieException,
+    NetworkError,
+    RateLimitException,
+    RequestException,
+)
 from python_frank_energie.weighted_average_prices import WeightedAveragePriceCategory, WeightedAveragePriceItem
 
 # Synthetic fixtures: a live March 2025 response confirmed a populated electricity category.
@@ -280,3 +291,130 @@ async def test_weighted_average_prices_preserves_transport_errors(error: BaseExc
     ):
         await client.weighted_average_prices("synthetic-site", "2025-03")
     assert raised.value is error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("errors", "exception_type"),
+    [
+        ([{"message": "Graphql validation error", "path": ["private-path-marker"]}], FrankEnergieException),
+        ([{"message": "private-provider-error-marker"}], RequestException),
+        ([{"message": "No connections found for user private-provider-error-marker"}], FrankEnergieException),
+        ([{"message": "request-error:request-not-supported-in-country"}], FrankEnergieException),
+        ("private-provider-error-marker", RequestException),
+        (["private-provider-error-marker"], RequestException),
+    ],
+)
+async def test_weighted_average_prices_redacts_real_graphql_transport_errors(
+    aresponses: ResponsesMockServer,
+    caplog: pytest.LogCaptureFixture,
+    errors: object,
+    exception_type: type[Exception],
+) -> None:
+    """Never log provider details while the real GraphQL transport classifies errors."""
+    payload = {
+        "data": {"privateData": "private-provider-error-marker"},
+        "errors": errors,
+    }
+    if isinstance(errors, list):
+        for error_entry in errors:
+            if isinstance(error_entry, dict):
+                error_entry = error_entry.copy()
+                error_entry["extensions"] = {"account": "private-provider-error-marker"}
+                payload["errors"] = [error_entry] if len(errors) == 1 else errors
+    aresponses.add(
+        urlsplit(FrankEnergie.DATA_URL).netloc,
+        "/",
+        "POST",
+        aresponses.Response(text=json.dumps(payload), status=200, headers={"Content-Type": "application/json"}),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        client = FrankEnergie(session, auth_token="synthetic-test-token")  # noqa: S106
+        with (
+            caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+            pytest.raises(exception_type) as raised,
+        ):
+            await client.weighted_average_prices("synthetic-site", "2025-03")
+
+    assert "private-provider-error-marker" not in caplog.text
+    assert "private-path-marker" not in caplog.text
+    assert "synthetic-site" not in caplog.text
+    assert "synthetic-test-token" not in caplog.text
+    assert "private-provider-error-marker" not in str(raised.value)
+    assert "private-path-marker" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("graphql_message", "exception_type"),
+    [
+        ("user-error:auth-required", AuthRequiredException),
+        ("Too Many Requests", RateLimitException),
+        ("timeout of 60000ms exceeded", NetworkError),
+    ],
+)
+async def test_weighted_average_prices_keeps_recognized_graphql_error_classification(
+    aresponses: ResponsesMockServer,
+    caplog: pytest.LogCaptureFixture,
+    graphql_message: str,
+    exception_type: type[Exception],
+) -> None:
+    """Keep existing auth, rate-limit, and timeout handling while suppressing metadata."""
+    aresponses.add(
+        urlsplit(FrankEnergie.DATA_URL).netloc,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [
+                        {
+                            "message": graphql_message,
+                            "extensions": {"private": "private-provider-error-marker"},
+                        }
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json", "Retry-After": "42"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        client = FrankEnergie(session, auth_token="synthetic-test-token")  # noqa: S106
+        with (
+            caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+            pytest.raises(exception_type) as raised,
+        ):
+            await client.weighted_average_prices("synthetic-site", "2025-03")
+
+    if isinstance(raised.value, RateLimitException):
+        assert raised.value.operation_name == "WeightedAveragePrices"
+        assert raised.value.retry_after == 42.0
+    assert "private-provider-error-marker" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_weighted_average_prices_redacts_real_http_error_reason(
+    aresponses: ResponsesMockServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ensure raw HTTP reason text cannot escape through shared transport logs."""
+    aresponses.add(
+        urlsplit(FrankEnergie.DATA_URL).netloc,
+        "/",
+        "POST",
+        aresponses.Response(status=502, reason="private-provider-error-marker"),
+    )
+    async with aiohttp.ClientSession() as session:
+        client = FrankEnergie(session, auth_token="synthetic-test-token")  # noqa: S106
+        with (
+            caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+            pytest.raises(FrankEnergieException) as raised,
+        ):
+            await client.weighted_average_prices("synthetic-site", "2025-03")
+
+    assert "private-provider-error-marker" not in caplog.text
+    assert "private-provider-error-marker" not in str(raised.value)
+    assert "synthetic-site" not in caplog.text
