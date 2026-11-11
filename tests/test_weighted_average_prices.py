@@ -472,9 +472,7 @@ async def test_weighted_average_prices_keeps_graphql_error_precedence(
         ("request-error:request-not-supported-in-country", "Request not supported in the user's country"),
     ],
 )
-def test_weighted_average_graphql_helper_preserves_known_errors(
-    upstream_message: str, public_message: str
-) -> None:
+def test_weighted_average_graphql_helper_preserves_known_errors(upstream_message: str, public_message: str) -> None:
     """Keep established exception text while sanitizing account details."""
     with pytest.raises(FrankEnergieException, match="^" + re.escape(public_message) + "$") as raised:
         FrankEnergie._handle_weighted_average_graphql_error(upstream_message)
