@@ -960,8 +960,10 @@ class FrankEnergie:
         raise RequestException("Smart HVAC GraphQL operation failed")
 
     @staticmethod
-    def _handle_weighted_average_graphql_error(message: str) -> None:
-        """Classify weighted-price errors without exposing upstream account details."""
+    def _handle_redacted_graphql_error(message: str, operation_name: str) -> None:
+        """Classify sensitive GraphQL errors without exposing provider details."""
+        if operation_name == "RenewToken":
+            raise RequestException("RenewToken GraphQL request failed") from None
         if message.startswith(_NO_CONNECTIONS_FOUND_FOR_USER):
             raise FrankEnergieException(_NO_CONNECTIONS_FOUND_FOR_USER) from None
         if message == _REQUEST_NOT_SUPPORTED_IN_COUNTRY:
@@ -1017,14 +1019,11 @@ class FrankEnergie:
                 suppress_response_logging=suppress_unhandled_logging,
             )
 
-        if operation_name == "WeightedAveragePrices":
-            self._handle_weighted_average_graphql_error(message)
-            # Unknown errors are rejected by the operation parser after all
-            # entries have been checked for existing recognized exception types.
+        if operation_name in {"WeightedAveragePrices", "RenewToken"}:
+            self._handle_redacted_graphql_error(message, operation_name)
+            # Unknown weighted-price errors are rejected by the result parser,
+            # after earlier recognized errors retain their response-order precedence.
             return
-
-        if operation_name == "RenewToken":
-            raise RequestException("RenewToken GraphQL request failed") from None
 
         if message.startswith(("No marketprices found for segment", "No reading dates found for user")):
             return
