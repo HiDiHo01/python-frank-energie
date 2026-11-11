@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -12,7 +14,7 @@ from python_frank_energie import FrankEnergie, WeightedAveragePrices
 from python_frank_energie.exceptions import AuthRequiredException, NetworkError, RequestException
 from python_frank_energie.weighted_average_prices import WeightedAveragePriceCategory, WeightedAveragePriceItem
 
-# Schema-shaped fixtures are synthetic. No live WeightedAveragePrices response was provided.
+# Synthetic fixtures: a live March 2025 response confirmed a populated electricity category.
 _ITEM = {
     "_id": "synthetic-price-item",
     "date": "2025-03-01",
@@ -73,6 +75,64 @@ async def test_weighted_average_prices_builds_exact_named_query() -> None:
     assert result.feed_in is not None
     assert result.feed_in.items == []
     assert result.feed_in.average_market_price is None
+
+
+def test_weighted_average_prices_preserves_live_observed_march_shape_and_dst() -> None:
+    """Parse 31 fictional daily prices and retain the observed spring DST boundary."""
+    local_zone = ZoneInfo("Europe/Amsterdam")
+    daily_items: list[dict[str, object]] = []
+    for day_number in range(1, 32):
+        local_start = datetime(2025, 3, day_number, tzinfo=local_zone)
+        local_end = local_start + timedelta(days=1)
+        daily_items.append(
+            {
+                "_id": f"synthetic-price-{day_number:02d}",
+                "date": local_start.date().isoformat(),
+                "from": local_start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "till": local_end.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+                "averageMarketPrice": -0.01 if day_number == 30 else 0.06,
+                "averageMarketPricePlus": 0.02 if day_number == 30 else 0.09,
+                "perUnit": "KWH",
+            }
+        )
+
+    # IDs and prices are invented; only the response shape, day count and DST pattern were observed.
+    response = {
+        "data": {
+            "weightedAveragePrices": {
+                "_id": "synthetic-site|2025-03",
+                "gas": None,
+                "electricity": {
+                    "averageMarketPrice": 0.07,
+                    "averageMarketPricePlus": 0.11,
+                    "perUnit": "KWH",
+                    "items": daily_items,
+                },
+                "feedIn": None,
+            }
+        }
+    }
+
+    result = WeightedAveragePrices.from_dict(response)
+
+    assert result._id == "synthetic-site|2025-03"
+    assert result.gas is None
+    assert result.feed_in is None
+    assert result.electricity is not None
+    assert result.electricity.per_unit == "KWH"
+    assert len(result.electricity.items) == 31
+    assert result.electricity.items[0].from_time == "2025-02-28T23:00:00.000Z"
+    assert result.electricity.items[-1].till_time == "2025-03-31T22:00:00.000Z"
+
+    dst_item = result.electricity.items[29]
+    assert dst_item.date == "2025-03-30"
+    assert dst_item.from_time == "2025-03-29T23:00:00.000Z"
+    assert dst_item.till_time == "2025-03-30T22:00:00.000Z"
+    assert dst_item.average_market_price == -0.01
+    assert dst_item.average_market_price_plus == 0.02
+    from_utc = datetime.fromisoformat(dst_item.from_time.replace("Z", "+00:00"))
+    till_utc = datetime.fromisoformat(dst_item.till_time.replace("Z", "+00:00"))
+    assert till_utc - from_utc == timedelta(hours=23)
 
 
 @pytest.mark.asyncio
