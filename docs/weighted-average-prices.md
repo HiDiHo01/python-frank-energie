@@ -58,11 +58,31 @@ original provider strings; the library does not guess their time zone.
 ## Provider verification and scope
 
 The **GraphQL selection and variable shape** came from a user-supplied
-request with operation name `WeightedAveragePrices`. The provider's
-**actual response schema, nullability, values, currency/pricing semantics,
-and populated items have not yet been verified** against a live response.
-The regression fixtures are entirely synthetic and demonstrate parser
-behavior, not provider-confirmed values.
+request with operation name `WeightedAveragePrices`. A read-only live
+response for **March 2025**, provided on 2026-11-11, confirmed:
+
+- A nonempty period `_id` containing a site reference and month. The real
+  reference and item identifiers are deliberately omitted here.
+- `gas: null` and `feedIn: null`, while `electricity` contained the
+  monthly `averageMarketPrice`, `averageMarketPricePlus`, `perUnit: "KWH"`,
+  and `items` with **31 daily records**.
+- Each item contained `_id`, calendar `date`, UTC `from` and `till`
+  strings, both numeric price fields, and `perUnit: "KWH"`.
+- The **2025-03-30** entry covered **23 hours**: from
+  `2025-03-29T23:00:00.000Z` to `2025-03-30T22:00:00.000Z` because
+  Europe/Amsterdam entered daylight-saving time. Daily `from`/`till`
+  values must not be assumed to span exactly 24 hours.
+- A daily `averageMarketPrice` was negative while the corresponding
+  `averageMarketPricePlus` was positive. Preserve each value rather than
+  clamping negative prices.
+
+These observations confirm the **populated electricity result structure**
+and explicitly null gas/feed-in for one site/month. They **do not** establish
+the behavior of populated gas/feed-in categories, null numeric fields,
+absence of a category, or whether `averageMarketPricePlus` includes
+specific taxes/charges. The regression test recreates the observed
+31-day/DST shape with **entirely synthetic IDs and prices**, not a copy
+of the user's raw response.
 
 In particular, `averageMarketPricePlus` should not be described as
 including any specific taxes or markups without provider evidence.
