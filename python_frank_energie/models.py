@@ -5055,36 +5055,39 @@ _SMART_PV_PANEL_FIELDS = frozenset(
 )
 
 
-def _validate_smart_pv_inventory_item(raw: object, seen_ids: set[str]) -> dict[str, object]:
-    """Require a complete PV record with stable, unique system and panel-group IDs."""
-    if not isinstance(raw, dict):
-        raise RequestException("Invalid smartPvSystems inventory record.")
-    if not _SMART_PV_SYSTEM_FIELDS.issubset(raw):
-        raise RequestException("Incomplete smartPvSystems inventory record.")
+def _validate_smart_pv_inventory_identifier(raw_id: object, seen_ids: set[str], collection: str) -> None:
+    """Validate and register one nonblank, stable, unique inventory ID."""
+    if not isinstance(raw_id, str) or not raw_id.strip() or raw_id != raw_id.strip():
+        raise RequestException(f"Invalid {collection} inventory ID.")
+    if raw_id in seen_ids:
+        raise RequestException(f"Duplicate {collection} inventory ID.")
+    seen_ids.add(raw_id)
 
-    system_id = raw["id"]
-    if not isinstance(system_id, str) or not system_id.strip() or system_id != system_id.strip():
-        raise RequestException("Invalid smartPvSystems inventory ID.")
-    if system_id in seen_ids:
-        raise RequestException("Duplicate smartPvSystems inventory ID.")
-    seen_ids.add(system_id)
 
-    serials = raw["inverterSerialNumbers"]
-    if serials is not None and (not isinstance(serials, list) or any(not isinstance(s, str) for s in serials)):
-        raise RequestException("Invalid smartPvSystems inverter serial numbers.")
-    groups = raw["SmartPvSystemPanelGroups"]
+def _validate_smart_pv_panel_groups(groups: object) -> None:
+    """Validate complete panel-group records without silently losing groups."""
     if not isinstance(groups, list):
         raise RequestException("Missing or invalid SmartPvSystemPanelGroups inventory.")
     group_ids: set[str] = set()
     for group in groups:
         if not isinstance(group, dict) or not _SMART_PV_PANEL_FIELDS.issubset(group):
             raise RequestException("Invalid SmartPvSystemPanelGroups inventory record.")
-        group_id = group["id"]
-        if not isinstance(group_id, str) or not group_id.strip() or group_id != group_id.strip():
-            raise RequestException("Invalid SmartPvSystemPanelGroups inventory ID.")
-        if group_id in group_ids:
-            raise RequestException("Duplicate SmartPvSystemPanelGroups inventory ID.")
-        group_ids.add(group_id)
+        _validate_smart_pv_inventory_identifier(group["id"], group_ids, "SmartPvSystemPanelGroups")
+
+
+def _validate_smart_pv_inventory_item(raw: object, seen_ids: set[str]) -> dict[str, object]:
+    """Require a complete PV record with stable, unique IDs and valid panel groups."""
+    if not isinstance(raw, dict):
+        raise RequestException("Invalid smartPvSystems inventory record.")
+    if not _SMART_PV_SYSTEM_FIELDS.issubset(raw):
+        raise RequestException("Incomplete smartPvSystems inventory record.")
+
+    _validate_smart_pv_inventory_identifier(raw["id"], seen_ids, "smartPvSystems")
+
+    serials = raw["inverterSerialNumbers"]
+    if serials is not None and (not isinstance(serials, list) or any(not isinstance(s, str) for s in serials)):
+        raise RequestException("Invalid smartPvSystems inverter serial numbers.")
+    _validate_smart_pv_panel_groups(raw["SmartPvSystemPanelGroups"])
     return raw
 
 
