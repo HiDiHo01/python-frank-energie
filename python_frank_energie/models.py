@@ -5139,6 +5139,41 @@ def _validate_smart_pv_inventory_item(raw: object, seen_ids: set[str]) -> dict[s
     return raw
 
 
+_SMART_PV_SUMMARY_FIELDS = frozenset(
+    {"operationalStatus", "operationalStatusTimestamp", "steeringStatus", "totalBonus", "totalResult"}
+)
+
+
+def _parse_smart_pv_summary_timestamp(value: object) -> datetime | None:
+    """Parse a nullable summary timestamp into UTC without leaking raw values."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise RequestException("Invalid Smart PV summary operationalStatusTimestamp.")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except (ValueError, OverflowError):
+        raise RequestException("Invalid Smart PV summary operationalStatusTimestamp.") from None
+
+
+def _parse_smart_pv_summary_number(value: object, field_name: str) -> float | None:
+    """Keep genuine null totals but reject malformed non-null summary amounts."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise RequestException(f"Invalid Smart PV summary {field_name}.")
+    try:
+        number = _safe_float(value)
+    except OverflowError:
+        number = None
+    if number is None:
+        raise RequestException(f"Invalid Smart PV summary {field_name}.")
+    return number
+
+
 @dataclass
 class SmartPvSystemPanelGroup(DictLikeMixin):
     """Represents a panel group (dakvlak) of a smart PV system."""
@@ -5272,17 +5307,28 @@ class SmartPvSystemSummary(DictLikeMixin):
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> SmartPvSystemSummary:
-        inner = data.get("data")
-        raw_payload = inner.get("smartPvSystemSummary") if isinstance(inner, dict) else None
-        payload = raw_payload if isinstance(raw_payload, dict) else data
-        timestamp_raw = payload.get("operationalStatusTimestamp")
+        """Parse only complete summary responses while retaining direct-payload support."""
+        if not isinstance(data, dict) or ("errors" in data and (not isinstance(data["errors"], list) or data["errors"])):
+            raise RequestException("Invalid smartPvSystemSummary GraphQL response.")
+
+        if "data" in data:
+            envelope = data["data"]
+            payload = envelope.get("smartPvSystemSummary") if isinstance(envelope, dict) else None
+        else:
+            payload = data
+
+        if not isinstance(payload, dict) or not _SMART_PV_SUMMARY_FIELDS.issubset(payload):
+            raise RequestException("Missing or invalid smartPvSystemSummary fields.")
+        for field_name in ("operationalStatus", "steeringStatus"):
+            if not isinstance(payload[field_name], str) or not payload[field_name].strip():
+                raise RequestException(f"Invalid Smart PV summary {field_name}.")
 
         return cls(
-            operational_status=SmartPvOperationalStatus(str(payload["operationalStatus"])),
-            operational_status_timestamp=(_parse_datetime(timestamp_raw) if isinstance(timestamp_raw, str) else None),
-            steering_status=SmartPvSteeringStatus(str(payload["steeringStatus"])),
-            total_bonus=_safe_float(payload.get("totalBonus")),
-            total_result=_safe_float(payload.get("totalResult")),
+            operational_status=SmartPvOperationalStatus(payload["operationalStatus"]),
+            operational_status_timestamp=_parse_smart_pv_summary_timestamp(payload["operationalStatusTimestamp"]),
+            steering_status=SmartPvSteeringStatus(payload["steeringStatus"]),
+            total_bonus=_parse_smart_pv_summary_number(payload["totalBonus"], "totalBonus"),
+            total_result=_parse_smart_pv_summary_number(payload["totalResult"], "totalResult"),
         )
 
 
