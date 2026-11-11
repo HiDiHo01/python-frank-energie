@@ -29,7 +29,12 @@ cancellation error classifications. Weighted-price failures are redacted
 before the shared HTTP and GraphQL transport can log provider details.
 Known GraphQL validation failures retain their exception class. Unknown
 GraphQL errors are rejected without exposing upstream response content;
-known failures retain their order of precedence.
+known failures retain their order of precedence. A malformed JSON body,
+an unexpected JSON content type, or an invalid GraphQL `errors` container
+raises a privacy-safe `RequestException` for this operation. Errors in
+automatic `RenewToken` requests are redacted at the same transport boundary,
+while recognized authentication, refresh-token and rate-limit categories
+retain their existing classifications.
 
 ## Result models
 
