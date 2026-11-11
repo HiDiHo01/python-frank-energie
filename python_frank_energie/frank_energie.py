@@ -65,6 +65,7 @@ from .models import (
     UserSites,
     UserSmartFeedInStatus,
 )
+from .weighted_average_prices import WeightedAveragePrices
 from .types import PriceResolution
 
 T = TypeVar("T")
@@ -3158,6 +3159,84 @@ class FrankEnergie:
         )
         response = await self._query(query)
         return MarketPrices.from_userprices_dict(response, user_country)
+
+    async def weighted_average_prices(self, site_reference: str, month: str) -> WeightedAveragePrices:
+        """Fetch weighted market prices for a site and month (YYYY-MM).
+
+        The provider query uses a String! date argument; the observed request
+        format is a calendar month, not a day. No client-side prices are
+        calculated or inferred.
+        """
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+
+        if not isinstance(site_reference, str) or not site_reference.strip():
+            raise ValueError("The 'site_reference' must be a nonempty string.")
+
+        if not isinstance(month, str) or re.fullmatch(r"\\d{4}-\\d{2}", month) is None:
+            raise ValueError("The 'month' must use YYYY-MM format, for example '2025-03'.")
+
+        try:
+            date.fromisoformat(f"{month}-01")
+        except ValueError as exc:
+            raise ValueError("The 'month' must contain a valid calendar year and month.") from exc
+
+        query = FrankEnergieQuery(
+            """
+            query WeightedAveragePrices($date: String!, $siteReference: String!) {
+                weightedAveragePrices(date: $date, siteReference: $siteReference) {
+                    _id
+                    gas {
+                        averageMarketPrice
+                        averageMarketPricePlus
+                        perUnit
+                        items {
+                            _id
+                            date
+                            from
+                            till
+                            averageMarketPrice
+                            averageMarketPricePlus
+                            perUnit
+                        }
+                    }
+                    electricity {
+                        averageMarketPrice
+                        averageMarketPricePlus
+                        perUnit
+                        items {
+                            _id
+                            date
+                            from
+                            till
+                            averageMarketPrice
+                            averageMarketPricePlus
+                            perUnit
+                        }
+                    }
+                    feedIn {
+                        averageMarketPrice
+                        averageMarketPricePlus
+                        perUnit
+                        items {
+                            _id
+                            date
+                            from
+                            till
+                            averageMarketPrice
+                            averageMarketPricePlus
+                            perUnit
+                        }
+                    }
+                }
+            }
+            """,
+            "WeightedAveragePrices",
+            {"date": month, "siteReference": site_reference},
+        )
+        response = await self._query(query)
+        return WeightedAveragePrices.from_dict(response)
+
 
     async def period_usage_and_costs(
         self,
