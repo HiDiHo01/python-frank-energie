@@ -19,6 +19,12 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Never include site references, account IDs, or complete provider
   responses in exception messages or logs. Mock API responses with
   fictional identifiers in regression tests.
+- Redact provider errors **before** they reach shared GraphQL/HTTP logging,
+  not only in a downstream response parser. Keep recognized auth,
+  rate-limit and timeout classifications and the original error order.
+  Test the real `_query()` route with mocked HTTP responses and `caplog`,
+  including malformed error containers and private upstream reason text.
+  A test mocking `_query()` cannot establish logging safety.
 - When sanitized live weighted-price evidence becomes available, record
   *observed structure* independently from the assumed schema. A March 2025
   response confirms 31 daily electricity entries, nullable gas/feed-in
