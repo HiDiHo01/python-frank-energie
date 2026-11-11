@@ -2,6 +2,7 @@
 
 import json
 import logging
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import aiohttp
@@ -11,7 +12,7 @@ from syrupy.assertion import SnapshotAssertion
 from python_frank_energie import FrankEnergie, SmartFeedInNotEnabledException
 from python_frank_energie.domain import SmartPvSteeringStatus
 from python_frank_energie.exceptions import RequestException
-from python_frank_energie.models import SmartPvSystems
+from python_frank_energie.models import SmartPvSystemSummary, SmartPvSystems
 
 from . import load_fixtures
 
@@ -447,3 +448,114 @@ async def test_pv_other_graphql_errors_are_not_service_disabled(response: dict[s
     ):
         await api.smart_pv_systems()
     assert not isinstance(caught.value, SmartFeedInNotEnabledException)
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ("id", "position", "azimuth", "tilt", "capacityKwp", "annualKwh", "panelCount", "installationDate"),
+)
+def test_pv_missing_queried_panel_group_field_rejected(missing_field: str) -> None:
+    """Require every selected panel-group field, even when its value may be null."""
+    system = _sample_pv_record()
+    group = _sample_pv_panel_group()
+    group.pop(missing_field)
+    system["SmartPvSystemPanelGroups"] = [group]
+    with pytest.raises(RequestException, match="SmartPvSystemPanelGroups"):
+        SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+
+
+def test_pv_multiple_systems_preserve_individual_panel_groups() -> None:
+    """Preserve distinct system identities and their independent nested groups."""
+    first = _sample_pv_record()
+    second = _sample_pv_record()
+    second["id"] = "pv-456"
+    second["externalReference"] = "ext-456"
+    second["connectionEAN"] = "000000000000000000"
+    second["SmartPvSystemPanelGroups"] = []
+    second["steeringStatus"] = "INACTIVE"
+    inventory = SmartPvSystems.from_dict({"data": {"smartPvSystems": [first, second]}})
+    assert [system.id for system in inventory.systems] == ["pv-123", "pv-456"]
+    assert inventory.systems[0].panel_groups[0].id == "panel-1"
+    assert inventory.systems[0].panel_groups[0].panel_count == 7
+    assert inventory.systems[0].panel_groups[0].installation_date is not None
+    assert inventory.systems[1].panel_groups == []
+    assert inventory.systems[1].steering_status is SmartPvSteeringStatus.INACTIVE
+
+
+def _sample_pv_summary() -> dict[str, object]:
+    """Return a complete synthetic summary with every selected field."""
+    return json.loads(load_fixtures("smart_pv_system_summary.json"))["data"]["smartPvSystemSummary"]
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ("operationalStatus", "operationalStatusTimestamp", "steeringStatus", "totalBonus", "totalResult"),
+)
+def test_pv_summary_missing_queried_fields_rejected(missing_field: str) -> None:
+    """Do not silently turn omitted GraphQL summary fields into null values."""
+    summary = _sample_pv_summary()
+    summary.pop(missing_field)
+    with pytest.raises(RequestException, match="smartPvSystemSummary"):
+        SmartPvSystemSummary.from_dict({"data": {"smartPvSystemSummary": summary}})
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    (
+        ("operationalStatus", None),
+        ("operationalStatus", 1),
+        ("steeringStatus", ""),
+        ("steeringStatus", False),
+        ("operationalStatusTimestamp", 42),
+        ("operationalStatusTimestamp", ""),
+        ("operationalStatusTimestamp", "not-a-date"),
+        ("totalBonus", True),
+        ("totalBonus", "NaN"),
+        ("totalResult", "not-a-number"),
+        ("totalResult", float("inf")),
+    ),
+)
+def test_pv_summary_malformed_values_rejected(field_name: str, invalid_value: object) -> None:
+    """Reject malformed non-null values instead of silently reporting missing data."""
+    summary = _sample_pv_summary()
+    summary[field_name] = invalid_value
+    with pytest.raises(RequestException, match=field_name):
+        SmartPvSystemSummary.from_dict({"data": {"smartPvSystemSummary": summary}})
+
+
+@pytest.mark.parametrize("nullable_field", ("operationalStatusTimestamp", "totalBonus", "totalResult"))
+def test_pv_summary_explicit_null_values_remain_supported(nullable_field: str) -> None:
+    """Retain existing nullable summary fields when the provider supplies null."""
+    summary = _sample_pv_summary()
+    summary[nullable_field] = None
+    result = SmartPvSystemSummary.from_dict({"data": {"smartPvSystemSummary": summary}})
+    assert getattr(result, {
+        "operationalStatusTimestamp": "operational_status_timestamp",
+        "totalBonus": "total_bonus",
+        "totalResult": "total_result",
+    }[nullable_field]) is None
+
+
+@pytest.mark.parametrize(
+    "invalid_response",
+    (
+        None,
+        {},
+        {"data": None},
+        {"data": {"smartPvSystemSummary": None}},
+        {"data": {"smartPvSystemSummary": []}},
+        {"data": {"smartPvSystemSummary": {}}, "errors": [{"message": "unavailable"}]},
+    ),
+)
+def test_pv_summary_invalid_envelopes_rejected(invalid_response: object) -> None:
+    """Require a complete successful summary response, not an arbitrary mapping."""
+    with pytest.raises(RequestException):
+        SmartPvSystemSummary.from_dict(invalid_response)
+
+
+def test_pv_summary_preserves_utc_offset_and_direct_payload() -> None:
+    """Convert offset-aware timestamps into UTC and retain direct-payload parsing."""
+    summary = _sample_pv_summary()
+    summary["operationalStatusTimestamp"] = "2026-05-28T16:00:00+02:00"
+    parsed = SmartPvSystemSummary.from_dict(summary)
+    assert parsed.operational_status_timestamp == datetime(2026, 5, 28, 14, tzinfo=UTC)
+    assert parsed.total_result == 8.9

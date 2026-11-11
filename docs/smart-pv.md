@@ -3,6 +3,10 @@
 The asynchronous client exposes the read-only `FrankEnergie.smart_pv_systems()` and
 `FrankEnergie.smart_pv_system_summary(device_id)` methods.
 
+The [Smart PV field matrix](smart-pv-field-matrix.md) documents every currently
+selected field, its typed model mapping, and the evidence boundary. No provider
+schema introspection was available to verify additional fields.
+
 ## Inventory: `smart_pv_systems()`
 
 The Smart PV inventory is a `SmartPvSystems` model with a `systems` list.

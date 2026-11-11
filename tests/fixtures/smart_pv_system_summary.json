@@ -4,7 +4,8 @@
       "operationalStatus": "OPERATIONAL",
       "operationalStatusTimestamp": "2026-05-28T14:00:00.000Z",
       "steeringStatus": "STEERING",
-      "totalBonus": 12.34
+      "totalBonus": 12.34,
+      "totalResult": 8.9
     }
   }
 }

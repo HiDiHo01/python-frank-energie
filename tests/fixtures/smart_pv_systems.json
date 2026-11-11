@@ -9,13 +9,26 @@
         "deletedAt": null,
         "displayName": "Tuin PV",
         "externalReference": "ext-123",
-        "inverterSerialNumbers": ["SE123456"],
+        "inverterSerialNumbers": [
+          "SE123456"
+        ],
         "model": "SE3000",
         "onboardingStatus": "COMPLETED",
         "provider": "SolarEdge",
         "steeringStatus": "ACTIVE",
         "updatedAt": "2026-05-28T12:00:00.000Z",
-        "SmartPvSystemPanelGroups": []
+        "SmartPvSystemPanelGroups": [
+          {
+            "id": "panel-1",
+            "position": 1,
+            "azimuth": 180,
+            "tilt": 15,
+            "capacityKwp": 3.06,
+            "annualKwh": 2600,
+            "panelCount": 7,
+            "installationDate": "2026-05-28T10:00:00Z"
+          }
+        ]
       }
     ]
   }

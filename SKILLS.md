@@ -97,3 +97,20 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Identify the current PR head SHA and the corresponding workflow run, then inspect **failed job logs** for the exact source location and diagnostic rather than assuming every red job is a failed unit test. PR #240 first failed mypy on Python 3.12/3.13 (`[valid-type]`), then Ruff on Python 3.13 (`SIM117`); both fixes were local to their root causes.
 - Preserve passing behavior and tests; make the minimal corrective commit, describe the reason in the PR, and inspect the **new** run on the updated SHA across every required Python version and job. Never report CI success based on an older commit, a queued run, or a partial job count.
 - Relevant checks include `poetry run ruff format --check .`, `poetry run ruff check .`, `poetry run mypy python_frank_energie` and `poetry run pytest tests`. Record which commands were actually executed locally and which results were observed only in GitHub Actions.
+
+## Audit schema-dependent Smart PV fields
+
+- Distinguish checked-in query/model mappings from independently verified
+  provider GraphQL type definitions. An existing query or synthetic fixture is
+  not proof that all available provider fields have been discovered.
+- Maintain a source-grounded field matrix with the GraphQL path, Python model
+  type, nullable behavior, and the evidence boundary. Do not invent scalar
+  types, `!` nullability or additional GraphQL field names from UI labels.
+- Cover all query-selected fields in privacy-safe fixtures: at least one
+  nonempty nested panel group and non-null summary `totalResult`, plus
+  explicit null, missing/invalid, multiple-system and timezone-offset cases.
+- Preserve the fail-closed inventory guarantees of #243. Distinguish
+  a missing selected field from an explicit null; do not silently convert
+  malformed non-null summary numbers or timestamps to `None`.
+- If authorized schema introspection is unavailable, record that limitation,
+  avoid speculative query changes, and leave the completeness audit open.
