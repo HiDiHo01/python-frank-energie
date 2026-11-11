@@ -26,20 +26,21 @@ parts is due for renewal. Refresh-token expiry is exposed as metadata.
 `FrankEnergie.is_authenticated` is a property that checks for a nonempty
 access token in the current credential object.
 
-`await client.validate_authentication()` returns `False` if that check fails
-or renewal raises `AuthException` or `AuthRequiredException`. Request
-failures such as `RateLimitException` and `NetworkError` can propagate.
-It returns `True` when credentials passed the initial check and renewal was
-not due or completed successfully. When renewal is not due, it makes no provider
-request. Consequently, `True` does not prove that the provider still accepts
-the token: a revoked but not-yet-expired token can pass this local check.
+`await client.validate_authentication()` checks local credential presence
+under the per-client renewal lock. It returns `False` if credentials are absent
+or renewal raises `AuthException` or `AuthRequiredException`. Request failures
+such as `RateLimitException` and `NetworkError` can propagate.
+It returns `True` only when a nonempty local access token is present after
+any required renewal. When renewal is not due, it makes no provider request.
+Consequently, `True` does not prove that the provider still accepts the token:
+a revoked but not-yet-expired token can pass this local check.
 
-In concurrent calls, `True` also does not guarantee credentials are still
-present: two calls can pass the initial check before either acquires the renewal
-lock. If the first then clears the shared credentials after an invalid refresh
-token (`RefreshTokenInvalidException`), the second can acquire the lock, skip
-renewal because credentials are now absent, and return `True`. This exception
-concerns concurrent validation; it does not change the sequential behavior.
+When validation calls overlap, a waiting call rechecks credentials after
+acquiring the renewal lock. If an earlier validation cleared them after an
+invalid refresh token (`RefreshTokenInvalidException`), the waiting call
+returns `False`. This lock protects coordinated automatic renewal, not
+concurrent direct calls to `renew_token()` or `logout()`; those interactions
+are outside the scope of this local validation guarantee.
 
 ## Important Design Decision
 
