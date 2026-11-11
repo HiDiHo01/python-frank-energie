@@ -34,9 +34,7 @@ def _client_with_expired_credentials() -> FrankEnergie:
     ("access_token", "expected"),
     [(None, False), ("", False), ("synthetic-valid-access", True)],
 )
-async def test_validate_authentication_without_expired_credentials(
-    access_token: str | None, expected: bool
-) -> None:
+async def test_validate_authentication_without_expired_credentials(access_token: str | None, expected: bool) -> None:
     """Return local status without making a renewal request."""
     client = FrankEnergie()
     if access_token is not None:
