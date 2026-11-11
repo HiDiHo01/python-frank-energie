@@ -914,9 +914,13 @@ class FrankEnergie:
             raise FrankEnergieException("Invalid GraphQL error structure")
 
         recovered_response = self._me_without_failed_hvac(response, errors_obj) if recover_hvac_errors else None
-        suppress_response_details = active_query == "WeightedAveragePrices" or recovered_response is not None or any(
-            isinstance(error_obj, dict) and error_obj.get("message") == "timeout of 60000ms exceeded"
-            for error_obj in safe_errors
+        suppress_response_details = (
+            active_query == "WeightedAveragePrices"
+            or recovered_response is not None
+            or any(
+                isinstance(error_obj, dict) and error_obj.get("message") == "timeout of 60000ms exceeded"
+                for error_obj in safe_errors
+            )
         )
 
         for error_obj in safe_errors:
