@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -463,3 +464,25 @@ async def test_weighted_average_prices_keeps_graphql_error_precedence(
 
     assert "private-provider-error-marker" not in caplog.text
     assert "synthetic-site" not in caplog.text
+
+@pytest.mark.parametrize(
+    ("upstream_message", "public_message"),
+    [
+        ("No connections found for user synthetic-site", "No connections found for user"),
+        ("request-error:request-not-supported-in-country", "Request not supported in the user's country"),
+    ],
+)
+def test_weighted_average_graphql_helper_preserves_known_errors(
+    upstream_message: str, public_message: str
+) -> None:
+    """Keep established exception text while sanitizing account details."""
+    with pytest.raises(FrankEnergieException, match="^" + re.escape(public_message) + "$") as raised:
+        FrankEnergie._handle_weighted_average_graphql_error(upstream_message)
+
+    assert raised.value.__cause__ is None
+
+
+def test_weighted_average_graphql_helper_defers_unknown_errors() -> None:
+    """Allow later GraphQL errors to retain their existing precedence."""
+    assert FrankEnergie._handle_weighted_average_graphql_error("synthetic-unrecognized") is None
+
