@@ -84,6 +84,17 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 
 ## Refactor without changing GraphQL error contracts
 
+- **PR #256 SonarQube Cloud maintainability findings:** replace repeated
+  provider and error-message literals with descriptive module constants;
+  preserve the *exact* public exception text and distinguish prefix
+  matching (such as a missing connection) from full error-code equality.
+  Extract operation-specific error classification into a private static
+  helper when it lowers `python:S3776` Cognitive Complexity, but keep
+  the shared GraphQL error loop and response-order precedence unchanged.
+  Cover known and unknown provider errors, privacy-safe exception messages,
+  and the behavior of other operations in regression tests. Verify that
+  both the Python CI matrix and the updated Sonar issue count agree before
+  declaring the findings closed.
 - When SonarCloud flags request orchestration or error classification for cognitive complexity, extract small helpers at existing boundaries (such as authentication/header preparation or error-container validation) rather than altering exception order, redaction, or partial-response semantics.
 - In async request methods, delegate `ClientError` and `KeyError` mapping to small `@staticmethod` helpers returning `Never` when reducing `python:S3776` complexity. Preserve sanitized `raise ... from None` for sensitive operations and original `raise ... from error` for legacy operations; cover both paths with deterministic tests.
 - In `pytest.raises` blocks, calculate auxiliary values (for example, timestamps) beforehand so the context contains only the single operation expected to raise. Recheck the new PR head after a fresh SonarCloud analysis; a concurrent audit workflow may temporarily report findings from the previous scan.
