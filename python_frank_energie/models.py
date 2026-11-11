@@ -5064,6 +5064,36 @@ def _validate_smart_pv_inventory_identifier(raw_id: object, seen_ids: set[str], 
     seen_ids.add(raw_id)
 
 
+def _validate_smart_pv_datetime(raw_value: object, field_name: str) -> None:
+    """Reject invalid non-null Smart PV dates without exposing the provider value."""
+    if raw_value is None:
+        return
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise RequestException(f"Invalid {field_name} in Smart PV inventory.")
+    try:
+        _parse_datetime(raw_value)
+    except (ValueError, OverflowError):
+        raise RequestException(f"Invalid {field_name} in Smart PV inventory.") from None
+
+
+def _validate_smart_pv_panel_number(raw_value: object, field_name: str) -> None:
+    """Validate nullable numeric fields using the corresponding model conversion."""
+    if raw_value is None:
+        return
+    if isinstance(raw_value, bool):
+        raise RequestException(f"Invalid Smart PV panel-group {field_name}.")
+    if field_name in ("position", "azimuth", "tilt"):
+        if _as_int(raw_value) is None:
+            raise RequestException(f"Invalid Smart PV panel-group {field_name}.")
+        return
+    try:
+        numeric_value = _safe_float(raw_value)
+    except OverflowError:
+        raise RequestException(f"Invalid Smart PV panel-group {field_name}.") from None
+    if numeric_value is None or (field_name in ("annualKwh", "panelCount") and not numeric_value.is_integer()):
+        raise RequestException(f"Invalid Smart PV panel-group {field_name}.")
+
+
 def _validate_smart_pv_panel_groups(groups: object) -> None:
     """Validate complete panel-group records without silently losing groups."""
     if not isinstance(groups, list):
@@ -5073,6 +5103,9 @@ def _validate_smart_pv_panel_groups(groups: object) -> None:
         if not isinstance(group, dict) or not _SMART_PV_PANEL_FIELDS.issubset(group):
             raise RequestException("Invalid SmartPvSystemPanelGroups inventory record.")
         _validate_smart_pv_inventory_identifier(group["id"], group_ids, "SmartPvSystemPanelGroups")
+        for field_name in ("position", "azimuth", "tilt", "capacityKwp", "annualKwh", "panelCount"):
+            _validate_smart_pv_panel_number(group[field_name], field_name)
+        _validate_smart_pv_datetime(group["installationDate"], "installationDate")
 
 
 def _validate_smart_pv_inventory_item(raw: object, seen_ids: set[str]) -> dict[str, object]:
@@ -5083,6 +5116,21 @@ def _validate_smart_pv_inventory_item(raw: object, seen_ids: set[str]) -> dict[s
         raise RequestException("Incomplete smartPvSystems inventory record.")
 
     _validate_smart_pv_inventory_identifier(raw["id"], seen_ids, "smartPvSystems")
+
+    for field_name in (
+        "brand",
+        "connectionEAN",
+        "externalReference",
+        "provider",
+        "onboardingStatus",
+        "steeringStatus",
+    ):
+        if not isinstance(raw[field_name], str):
+            raise RequestException(f"Invalid smartPvSystems inventory {field_name}.")
+    for field_name in ("displayName", "model"):
+        if raw[field_name] is not None and not isinstance(raw[field_name], str):
+            raise RequestException(f"Invalid smartPvSystems inventory {field_name}.")
+    _validate_smart_pv_datetime(raw["deletedAt"], "deletedAt")
 
     serials = raw["inverterSerialNumbers"]
     if serials is not None and (not isinstance(serials, list) or any(not isinstance(s, str) for s in serials)):
