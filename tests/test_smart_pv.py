@@ -1,6 +1,7 @@
 """Tests for Frank Energie Smart PV implementation."""
 
 import json
+import logging
 from unittest.mock import patch
 
 import aiohttp
@@ -205,6 +206,129 @@ def test_pv_invalid_panel_groups_rejected(panel_groups: object) -> None:
         SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
 
 
+def _sample_pv_panel_group() -> dict[str, object]:
+    """Build a complete, synthetic panel group with valid optional values."""
+    return {
+        "id": "panel-1",
+        "position": 1,
+        "azimuth": 180,
+        "tilt": 15,
+        "capacityKwp": 3.06,
+        "annualKwh": 2600,
+        "panelCount": 7,
+        "installationDate": "2026-05-28T10:00:00Z",
+    }
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    (
+        ("position", "bad"),
+        ("azimuth", True),
+        ("tilt", 1.5),
+        ("capacityKwp", "invalid"),
+        ("capacityKwp", True),
+        ("capacityKwp", "NaN"),
+        ("annualKwh", "invalid"),
+        ("annualKwh", 2.5),
+        ("panelCount", "invalid"),
+        ("panelCount", 1.5),
+        ("panelCount", float("inf")),
+        ("installationDate", 42),
+        ("installationDate", ""),
+        ("installationDate", "not-a-date"),
+        ("installationDate", "2026-02-30"),
+    ),
+)
+def test_pv_malformed_panel_group_values_rejected(field_name: str, invalid_value: object) -> None:
+    """Reject malformed non-null panel values instead of silently returning None."""
+    system = _sample_pv_record()
+    group = _sample_pv_panel_group()
+    group[field_name] = invalid_value
+    system["SmartPvSystemPanelGroups"] = [group]
+    with pytest.raises(RequestException, match=field_name):
+        SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ("position", "azimuth", "tilt", "capacityKwp", "annualKwh", "panelCount", "installationDate"),
+)
+def test_pv_nullable_panel_group_fields_remain_valid(field_name: str) -> None:
+    """Preserve supported null values for optional panel attributes."""
+    system = _sample_pv_record()
+    group = _sample_pv_panel_group()
+    group[field_name] = None
+    system["SmartPvSystemPanelGroups"] = [group]
+    inventory = SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+    assert len(inventory.systems[0].panel_groups) == 1
+
+
+def test_pv_valid_panel_group_numeric_strings_remain_supported() -> None:
+    """Keep numeric-string parsing that is already supported by the PV models."""
+    system = _sample_pv_record()
+    group = _sample_pv_panel_group()
+    group.update(
+        position="1",
+        azimuth="180",
+        tilt="15",
+        capacityKwp="3.06",
+        annualKwh="2600",
+        panelCount="7",
+    )
+    system["SmartPvSystemPanelGroups"] = [group]
+    inventory = SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+    parsed = inventory.systems[0].panel_groups[0]
+    assert parsed.panel_count == 7
+    assert parsed.annual_kwh == 2600
+    assert parsed.capacity_kwp == 3.06
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    (
+        ("deletedAt", 123),
+        ("deletedAt", ""),
+        ("deletedAt", "invalid-date"),
+        ("deletedAt", "2026-02-30"),
+        ("connectionEAN", None),
+        ("connectionEAN", 123),
+        ("brand", None),
+        ("externalReference", None),
+        ("provider", None),
+        ("onboardingStatus", None),
+        ("steeringStatus", None),
+        ("displayName", 123),
+        ("model", {}),
+    ),
+)
+def test_pv_malformed_system_metadata_rejected(field_name: str, invalid_value: object) -> None:
+    """Reject malformed required and optional metadata before model coercions."""
+    system = _sample_pv_record()
+    system[field_name] = invalid_value
+    with pytest.raises(RequestException, match=field_name):
+        SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+
+
+def test_pv_valid_deletion_date_and_null_ean_guards() -> None:
+    """Permit valid deletedAt while retaining the existing non-null string EAN model."""
+    system = _sample_pv_record()
+    system["deletedAt"] = "2026-05-29T10:00:00Z"
+    inventory = SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+    assert inventory.systems[0].deleted_at is not None
+    assert inventory.systems[0].connection_ean == system["connectionEAN"]
+
+
+def test_pv_invalid_metadata_is_not_reflected_in_exception() -> None:
+    """Avoid leaking provider-supplied metadata in validation messages."""
+    system = _sample_pv_record()
+    marker = "private-fictitious-data"
+    system["deletedAt"] = marker
+    with pytest.raises(RequestException, match="deletedAt") as caught:
+        SmartPvSystems.from_dict({"data": {"smartPvSystems": [system]}})
+    assert marker not in str(caught.value)
+
+
 def test_pv_duplicate_panel_group_identifiers_rejected() -> None:
     """Reject duplicate nested IDs rather than returning partial panel data."""
     system = _sample_pv_record()
@@ -285,7 +409,10 @@ async def test_pv_service_disabled_graphql_response_is_not_empty(aresponses, cap
     )
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
-        with pytest.raises(SmartFeedInNotEnabledException, match="Smart Feed-In"):
+        with (
+            caplog.at_level(logging.DEBUG, logger="python_frank_energie"),
+            pytest.raises(SmartFeedInNotEnabledException, match="Smart Feed-In"),
+        ):
             await api.smart_pv_systems()
     assert marker not in caplog.text
 
