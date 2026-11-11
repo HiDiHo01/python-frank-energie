@@ -24,8 +24,12 @@ async with FrankEnergie() as api:
 
 Pass credentials and site references securely at runtime. The method requires
 authentication, sends a request through the existing shared GraphQL transport,
-and preserves its network, GraphQL, authentication, rate-limit and
-cancellation errors.
+and preserves existing network, authentication, rate-limit and
+cancellation error classifications. Weighted-price failures are redacted
+before the shared HTTP and GraphQL transport can log provider details.
+Known GraphQL validation failures retain their exception class. Unknown
+GraphQL errors are rejected without exposing upstream response content;
+known failures retain their order of precedence.
 
 ## Result models
 
