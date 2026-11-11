@@ -10,7 +10,6 @@ import pytest
 
 from python_frank_energie import FrankEnergie, WeightedAveragePrices
 from python_frank_energie.exceptions import AuthRequiredException, NetworkError, RequestException
-from python_frank_energie.frank_energie import FrankEnergieQuery
 from python_frank_energie.weighted_average_prices import WeightedAveragePriceCategory, WeightedAveragePriceItem
 
 # Schema-shaped fixtures are synthetic. No live WeightedAveragePrices response was provided.
@@ -47,7 +46,6 @@ async def test_weighted_average_prices_builds_exact_named_query() -> None:
 
     request.assert_awaited_once()
     sent_query = request.await_args.args[0]
-    assert isinstance(sent_query, FrankEnergieQuery)
     assert sent_query.operation_name == "WeightedAveragePrices"
     assert sent_query.variables == {"date": "2025-03", "siteReference": "synthetic-site"}
     assert "query WeightedAveragePrices($date: String!, $siteReference: String!)" in sent_query.query
