@@ -862,8 +862,10 @@ class FrankEnergie:
         is_smart_hvac = operation_name in _SMART_HVAC_QUERY_OPERATIONS
         if is_smart_hvac and "errors" in response and not isinstance(errors_obj, list):
             raise RequestException("Invalid Smart HVAC GraphQL error structure")
-        if operation_name in {"WeightedAveragePrices", "RenewToken"} and "errors" in response and not isinstance(
-            errors_obj, list
+        if (
+            operation_name in {"WeightedAveragePrices", "RenewToken"}
+            and "errors" in response
+            and not isinstance(errors_obj, list)
         ):
             raise RequestException(f"Invalid {operation_name} GraphQL error structure") from None
         if not errors_obj:
