@@ -5032,6 +5032,63 @@ def battery_group_to_extra_state_attributes(group: BatteryEntityGroup) -> dict[s
     }
 
 
+
+_SMART_PV_SYSTEM_FIELDS = frozenset(
+    {
+        "id",
+        "brand",
+        "connectionEAN",
+        "createdAt",
+        "deletedAt",
+        "displayName",
+        "externalReference",
+        "inverterSerialNumbers",
+        "model",
+        "onboardingStatus",
+        "provider",
+        "steeringStatus",
+        "updatedAt",
+        "SmartPvSystemPanelGroups",
+    }
+)
+_SMART_PV_PANEL_FIELDS = frozenset(
+    {"id", "position", "azimuth", "tilt", "capacityKwp", "annualKwh", "panelCount", "installationDate"}
+)
+
+
+def _validate_smart_pv_inventory_item(raw: object, seen_ids: set[str]) -> dict[str, object]:
+    """Require a complete PV record with stable, unique system and panel-group IDs."""
+    if not isinstance(raw, dict):
+        raise RequestException("Invalid smartPvSystems inventory record.")
+    if not _SMART_PV_SYSTEM_FIELDS.issubset(raw):
+        raise RequestException("Incomplete smartPvSystems inventory record.")
+
+    system_id = raw["id"]
+    if not isinstance(system_id, str) or not system_id.strip() or system_id != system_id.strip():
+        raise RequestException("Invalid smartPvSystems inventory ID.")
+    if system_id in seen_ids:
+        raise RequestException("Duplicate smartPvSystems inventory ID.")
+    seen_ids.add(system_id)
+
+    serials = raw["inverterSerialNumbers"]
+    if serials is not None and (not isinstance(serials, list) or any(not isinstance(s, str) for s in serials)):
+        raise RequestException("Invalid smartPvSystems inverter serial numbers.")
+    groups = raw["SmartPvSystemPanelGroups"]
+    if not isinstance(groups, list):
+        raise RequestException("Missing or invalid SmartPvSystemPanelGroups inventory.")
+    group_ids: set[str] = set()
+    for group in groups:
+        if not isinstance(group, dict) or not _SMART_PV_PANEL_FIELDS.issubset(group):
+            raise RequestException("Invalid SmartPvSystemPanelGroups inventory record.")
+        group_id = group["id"]
+        if not isinstance(group_id, str) or not group_id.strip() or group_id != group_id.strip():
+            raise RequestException("Invalid SmartPvSystemPanelGroups inventory ID.")
+        if group_id in group_ids:
+            raise RequestException("Duplicate SmartPvSystemPanelGroups inventory ID.")
+        group_ids.add(group_id)
+    return raw
+
+
 @dataclass
 class SmartPvSystemPanelGroup(DictLikeMixin):
     """Represents a panel group (dakvlak) of a smart PV system."""
@@ -5133,12 +5190,21 @@ class SmartPvSystems:
 
     @classmethod
     def from_dict(cls, response: dict[str, object] | None) -> SmartPvSystems:
-        if not response:
-            return cls(systems=[])
+        """Parse only complete Smart PV inventories; fail closed for API errors."""
+        if not isinstance(response, dict):
+            raise RequestException("Missing or invalid smartPvSystems GraphQL response.")
+        if "errors" in response and (not isinstance(response["errors"], list) or response["errors"]):
+            raise RequestException("Failed or invalid smartPvSystems GraphQL response.")
         data = response.get("data")
-        pv_dicts = data.get("smartPvSystems") if isinstance(data, dict) else None
-        pv_dicts = pv_dicts or []
-        return cls(systems=[SmartPvSystem.from_dict(v) for v in pv_dicts if isinstance(v, dict)])
+        if not isinstance(data, dict) or not isinstance(data.get("smartPvSystems"), list):
+            raise RequestException("Missing or invalid smartPvSystems inventory in GraphQL response.")
+
+        seen_ids: set[str] = set()
+        validated = [_validate_smart_pv_inventory_item(item, seen_ids) for item in data["smartPvSystems"]]
+        try:
+            return cls(systems=[SmartPvSystem.from_dict(item) for item in validated])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            raise RequestException("Invalid smartPvSystems inventory fields.") from None
 
     def __bool__(self) -> bool:
         return bool(self.systems)

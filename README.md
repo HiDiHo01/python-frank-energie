@@ -17,6 +17,7 @@ python3 -m pip install python-frank-energie
 
 For the site-level Smart HVAC feature status and distinct device-oriented API methods, see
 [Smart HVAC API](docs/smart-hvac.md).
+[Smart PV inventory and status](docs/smart-pv.md).
 
 ## Contributing
 This repo uses [Python Poetry](https://python-poetry.org) to easily run CI/CD scripts using a local environment. In combination with pre-commet you can make sure the PR passes the checks the first time.
