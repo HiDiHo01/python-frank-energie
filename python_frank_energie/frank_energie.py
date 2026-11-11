@@ -65,8 +65,8 @@ from .models import (
     UserSites,
     UserSmartFeedInStatus,
 )
-from .weighted_average_prices import WeightedAveragePrices
 from .types import PriceResolution
+from .weighted_average_prices import WeightedAveragePrices
 
 T = TypeVar("T")
 
