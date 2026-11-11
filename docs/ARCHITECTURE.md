@@ -16,6 +16,7 @@ tracked in [issue #177](https://github.com/HiDiHo01/python-frank-energie/issues/
 | `Authentication` in [`models.py`](../python_frank_energie/models.py) | Represents the client's current credentials and expiry metadata. The client constructs it from supplied tokens or parses the result of a login or renewal mutation. The separate [`authentication.py`](../python_frank_energie/authentication.py) model is the package export. |
 | GraphQL transport and errors in [`frank_energie.py`](../python_frank_energie/frank_energie.py) | Private client helpers prepare headers, post JSON through `aiohttp`, classify HTTP and GraphQL errors, and return the response for parsing. The exception types live in [`exceptions.py`](../python_frank_energie/exceptions.py). |
 | [`models.py`](../python_frank_energie/models.py) and [`domain.py`](../python_frank_energie/domain.py) | Model parsers translate response fields to Python objects. The module includes dataclasses, a Pydantic `DeliverySite`, domain-specific validation, legacy accessors, and price and battery calculations. `domain.py` provides enums used by the models, including status enums with an `UNKNOWN` fallback. [`time_periods.py`](../python_frank_energie/time_periods.py) supplies price-period helpers. |
+| [`weighted_average_prices.py`](../python_frank_energie/weighted_average_prices.py) | Provides isolated, typed GraphQL response models and validation for the additive weighted-average-price operation. Values and timestamps are not recalculated; malformed or missing selected data raises `RequestException`. |
 | HTTP session and token renewal in [`frank_energie.py`](../python_frank_energie/frank_energie.py) | The client borrows an injected `aiohttp.ClientSession` or lazily creates one. `_prepare_query_headers()` and `validate_authentication()` coordinate expiry-driven renewal with a per-client lock. `renew_token()` sends the renewal mutation through the same transport. |
 
 ### Runtime state and ownership
@@ -84,7 +85,7 @@ See the request-boundary tests for [timeouts and cancellation](../tests/test_gra
 
 | Import path | Current surface |
 | --- | --- |
-| [`python_frank_energie`](../python_frank_energie/__init__.py) | `FrankEnergie`, `Authentication`, `CountryCode`, `EnergyType`, `Resolution`, `ContractPriceResolutionChangeResult`, `ContractPriceResolutionState`, `Invoices`, `MarketPrices`, `PeriodUsageAndCosts`, `Price`, `PriceData`, `SmartHvac`, `SmartHvacConnectRequest`, `SmartHvacDevice`, `SmartHvacSummary`, `AuthException`, `ConnectionException`, `RateLimitException`, and `RequestException` are in `__all__`. The module also exposes `__version__`. |
+| [`python_frank_energie`](../python_frank_energie/__init__.py) | `FrankEnergie`, `Authentication`, `CountryCode`, `EnergyType`, `Resolution`, `ContractPriceResolutionChangeResult`, `ContractPriceResolutionState`, `Invoices`, `MarketPrices`, `PeriodUsageAndCosts`, `WeightedAveragePrices`, `WeightedAveragePriceCategory`, `WeightedAveragePriceItem`, `Price`, `PriceData`, `SmartHvac`, `SmartHvacConnectRequest`, `SmartHvacDevice`, `SmartHvacSummary`, `AuthException`, `ConnectionException`, `RateLimitException`, and `RequestException` are in `__all__`. The module also exposes `__version__`. |
 | [`python_frank_energie.frank_energie`](../python_frank_energie/frank_energie.py) | The same `FrankEnergie` class and the directly importable `FrankEnergieQuery` and `sanitize_query()`. The latter masks a password through the shared variables dictionary. `_query()` is private. |
 | [`python_frank_energie.authentication`](../python_frank_energie/authentication.py) | The package-exported `Authentication` class and the separate `AuthenticationResult` dataclass with `authToken` and `refreshToken` fields. |
 | [`python_frank_energie.models`](../python_frank_energie/models.py) | The operation result models, including `UserSites`, `DeliverySite`, `Me`, `User`, and the distinct runtime `Authentication` class. Models such as `PriceData` re-exported by the package root refer to the same classes as their definitions here. |
@@ -121,7 +122,7 @@ See the request-boundary tests for [timeouts and cancellation](../tests/test_gra
 
 #### Operation methods and return types
 
-All operations in this table are async. Result models come from `models.py`.
+All operations in this table are async. Most result models come from `models.py`; the weighted-average-price models come from `weighted_average_prices.py`.
 
 | Area | Method | Annotated return type |
 | --- | --- | --- |
@@ -135,6 +136,7 @@ All operations in this table are async. Result models come from `models.py`.
 | Readings and billing | `month_insights(site_reference, date)` | `MonthInsights \| None` |
 | Readings and billing | `invoices(site_reference)` | `Invoices` |
 | Readings and billing | `period_usage_and_costs(site_reference, start_date)` | `PeriodUsageAndCosts` |
+| Customer prices | `weighted_average_prices(site_reference, month)` | `WeightedAveragePrices` |
 | Contract resolution | `contract_price_resolution_state(connection_id=None)` | `ContractPriceResolutionState \| None` |
 | Contract resolution | `contract_price_resolution_request_change(connection_id=None, resolution=None)` | `ContractPriceResolutionChangeResult \| None` |
 | Enode | `enode_chargers(site_reference, start_date)` | `EnodeChargers` |
