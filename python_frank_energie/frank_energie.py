@@ -16,6 +16,7 @@ from email.utils import parsedate_to_datetime
 from http import HTTPStatus
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from json import JSONDecodeError
 from typing import Any, Never, TypeVar
 
 import aiohttp
@@ -84,7 +85,7 @@ _NO_CONNECTIONS_FOUND_FOR_USER = "No connections found for user"
 _SMART_HVAC_QUERY_OPERATIONS = frozenset(
     {"UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"}
 )
-_REDACTED_QUERY_OPERATIONS = _SMART_HVAC_QUERY_OPERATIONS | {"WeightedAveragePrices"}
+_REDACTED_QUERY_OPERATIONS = _SMART_HVAC_QUERY_OPERATIONS | {"WeightedAveragePrices", "RenewToken"}
 
 try:
     VERSION = _pkg_version(_DISTRIBUTION_NAME)
@@ -619,7 +620,12 @@ class FrankEnergie:
             async with self._session.post(self.DATA_URL, json=payload, headers=headers, timeout=timeout) as resp:
                 resp.raise_for_status()
 
-                response: dict[str, object] | None = await resp.json()
+                try:
+                    response: dict[str, object] | None = await resp.json()
+                except (aiohttp.ContentTypeError, JSONDecodeError):
+                    if operation_name in {"WeightedAveragePrices", "RenewToken"}:
+                        raise RequestException(f"Invalid {operation_name} JSON response") from None
+                    raise
                 retry_after_header = resp.headers.get("Retry-After")
 
             return self._process_graphql_response(
@@ -651,7 +657,7 @@ class FrankEnergie:
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             _LOGGER.error("Frank Energie Smart HVAC HTTP client error during [%s]", operation_name)
             raise NetworkError("Frank Energie Smart HVAC HTTP client error") from None
-        if operation_name == "WeightedAveragePrices":
+        if operation_name in {"WeightedAveragePrices", "RenewToken"}:
             _LOGGER.error("Frank Energie HTTP client error during [%s]", operation_name)
             raise NetworkError("Frank Energie HTTP client error") from None
         _LOGGER.error(
@@ -667,9 +673,9 @@ class FrankEnergie:
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             _LOGGER.error("Invalid Smart HVAC API response during [%s]", operation_name)
             raise NetworkError("Invalid Smart HVAC API response") from None
-        if operation_name == "WeightedAveragePrices":
-            _LOGGER.error("Invalid WeightedAveragePrices API response")
-            raise NetworkError("Invalid WeightedAveragePrices API response") from None
+        if operation_name in {"WeightedAveragePrices", "RenewToken"}:
+            _LOGGER.error("Invalid API response during [%s]", operation_name)
+            raise NetworkError(f"Invalid {operation_name} API response") from None
         _LOGGER.error(
             "Unexpected API response structure during [%s]: missing key %s",
             operation_name,
@@ -843,7 +849,7 @@ class FrankEnergie:
             return error_obj
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             raise RequestException("Invalid Smart HVAC GraphQL error entry")
-        if operation_name == "WeightedAveragePrices":
+        if operation_name in _REDACTED_QUERY_OPERATIONS:
             # Preserve later recognized-error precedence without logging the invalid entry.
             return None
         _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
@@ -856,10 +862,10 @@ class FrankEnergie:
         is_smart_hvac = operation_name in _SMART_HVAC_QUERY_OPERATIONS
         if is_smart_hvac and "errors" in response and not isinstance(errors_obj, list):
             raise RequestException("Invalid Smart HVAC GraphQL error structure")
-        if operation_name == "WeightedAveragePrices" and "errors" in response and not isinstance(errors_obj, list):
-            if errors_obj:
-                raise FrankEnergieException(_INVALID_GRAPHQL_ERROR_STRUCTURE) from None
-            raise RequestException("Invalid WeightedAveragePrices GraphQL error structure") from None
+        if operation_name in {"WeightedAveragePrices", "RenewToken"} and "errors" in response and not isinstance(
+            errors_obj, list
+        ):
+            raise RequestException(f"Invalid {operation_name} GraphQL error structure") from None
         if not errors_obj:
             return None
 
@@ -918,7 +924,7 @@ class FrankEnergie:
 
         recovered_response = self._me_without_failed_hvac(response, errors_obj) if recover_hvac_errors else None
         suppress_response_details = (
-            active_query == "WeightedAveragePrices"
+            active_query in _REDACTED_QUERY_OPERATIONS
             or recovered_response is not None
             or any(
                 isinstance(error_obj, dict) and error_obj.get("message") == "timeout of 60000ms exceeded"
@@ -1016,6 +1022,9 @@ class FrankEnergie:
             # Unknown errors are rejected by the operation parser after all
             # entries have been checked for existing recognized exception types.
             return
+
+        if operation_name == "RenewToken":
+            raise RequestException("RenewToken GraphQL request failed") from None
 
         if message.startswith(("No marketprices found for segment", "No reading dates found for user")):
             return
