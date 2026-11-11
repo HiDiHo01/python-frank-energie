@@ -25,6 +25,19 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   Test the real `_query()` route with mocked HTTP responses and `caplog`,
   including malformed error containers and private upstream reason text.
   A test mocking `_query()` cannot establish logging safety.
+- When a public API call may **renew an expired token before its own GraphQL
+  request**, include the nested `RenewToken` operation in the privacy
+  review. Sanitize transport, status, and unknown GraphQL errors at the
+  renewal boundary, without changing recognized authentication,
+  refresh-token-invalid, or rate-limit classifications.
+- Validate the full response-decoding boundary: `resp.json()` can raise
+  both `aiohttp.ContentTypeError` for an unexpected media type on HTTP 200
+  and `json.JSONDecodeError` for invalid JSON despite an expected media
+  type. For sensitive operations, map both to the same sanitized
+  `RequestException`; keep other operations' legacy HTTP handling.
+  Explicitly malformed `errors` values must not produce different
+  exceptions based on truthiness. Test all cases through mocked
+  HTTP responses with `caplog` and synthetic secret markers.
 - For a privacy-safe GraphQL operation, audit every path **before**
   the response parser: unexpected error entries, malformed error containers,
   GraphQL validation, unhandled provider messages, HTTP reasons, client
