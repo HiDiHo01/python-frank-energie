@@ -528,11 +528,12 @@ def test_pv_summary_explicit_null_values_remain_supported(nullable_field: str) -
     summary = _sample_pv_summary()
     summary[nullable_field] = None
     result = SmartPvSystemSummary.from_dict({"data": {"smartPvSystemSummary": summary}})
-    assert getattr(result, {
+    attribute_name = {
         "operationalStatusTimestamp": "operational_status_timestamp",
         "totalBonus": "total_bonus",
         "totalResult": "total_result",
-    }[nullable_field]) is None
+    }[nullable_field]
+    assert getattr(result, attribute_name) is None
 
 
 @pytest.mark.parametrize(
