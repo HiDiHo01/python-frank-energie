@@ -44,7 +44,9 @@ def _nullable_unit(data: Mapping[str, object], context: str) -> str | None:
     if "perUnit" not in data:
         raise RequestException(f"Missing 'perUnit' in {context}.")
     unit = data["perUnit"]
-    if unit is not None and (not isinstance(unit, str) or not unit.strip()):
+    if unit is None:
+        return None
+    if not isinstance(unit, str) or not unit.strip():
         raise RequestException(f"Invalid 'perUnit' in {context}.")
     return unit
 
