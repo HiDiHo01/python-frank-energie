@@ -41,6 +41,15 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   again from the latest PR HEAD: bots can automatically mark a thread
   resolved after a new push. An automatically resolved thread does not
   prove that the specific regression tests or final CI matrix passed.
+- Changes to shared GraphQL routing can unintentionally change the
+  **exact exception messages** of existing operations. After introducing
+  operation-specific redaction, run the legacy Smart HVAC and other
+  transport tests too; retain existing exception text for older API
+  families and add new error messages only for the new operation.
+- When an annotation-only test dependency triggers Ruff `TC002`, move
+  the import under `if TYPE_CHECKING:` if postponed annotations are
+  enabled. Treat separate Ruff-format, Ruff-lint, and pytest failures
+  independently; use job logs to identify their actual causes.
 - When sanitized live weighted-price evidence becomes available, record
   *observed structure* independently from the assumed schema. A March 2025
   response confirms 31 daily electricity entries, nullable gas/feed-in
