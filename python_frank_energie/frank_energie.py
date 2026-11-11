@@ -839,7 +839,8 @@ class FrankEnergie:
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             raise RequestException("Invalid Smart HVAC GraphQL error entry")
         if operation_name == "WeightedAveragePrices":
-            raise RequestException("Invalid WeightedAveragePrices GraphQL error entry")
+            # Preserve later recognized-error precedence without logging the invalid entry.
+            return None
         _LOGGER.error("Unexpected GraphQL error entry: %s", error_obj)
         return None
 
@@ -851,7 +852,9 @@ class FrankEnergie:
         if is_smart_hvac and "errors" in response and not isinstance(errors_obj, list):
             raise RequestException("Invalid Smart HVAC GraphQL error structure")
         if operation_name == "WeightedAveragePrices" and "errors" in response and not isinstance(errors_obj, list):
-            raise RequestException("Invalid WeightedAveragePrices GraphQL error structure")
+            if errors_obj:
+                raise FrankEnergieException("Invalid GraphQL error structure") from None
+            raise RequestException("Invalid WeightedAveragePrices GraphQL error structure") from None
         if not errors_obj:
             return None
 
@@ -996,8 +999,9 @@ class FrankEnergie:
                 raise FrankEnergieException("No connections found for user") from None
             if message == "request-error:request-not-supported-in-country":
                 raise FrankEnergieException("Request not supported in the user's country") from None
-            _LOGGER.debug("WeightedAveragePrices GraphQL request failed")
-            raise RequestException("WeightedAveragePrices GraphQL request failed") from None
+            # Unknown errors are rejected by the operation parser after all
+            # entries have been checked for existing recognized exception types.
+            return
 
         if message.startswith(("No marketprices found for segment", "No reading dates found for user")):
             return
