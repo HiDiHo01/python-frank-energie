@@ -684,8 +684,10 @@ class FrankEnergie:
         recover_hvac_errors: bool,
     ) -> dict[str, object]:
         """Classify GraphQL errors and return the usable response."""
-        if operation_name in _REDACTED_QUERY_OPERATIONS and not isinstance(response, dict):
-            raise RequestException(f"Invalid {operation_name} GraphQL response: expected an object")
+        if operation_name in _SMART_HVAC_QUERY_OPERATIONS and not isinstance(response, dict):
+            raise RequestException("Invalid Smart HVAC GraphQL response: expected an object")
+        if operation_name == "WeightedAveragePrices" and not isinstance(response, dict):
+            raise RequestException("Invalid WeightedAveragePrices GraphQL response: expected an object")
         if not response:
             _LOGGER.debug("Empty API response received for operation [%s]", operation_name)
             return {}
