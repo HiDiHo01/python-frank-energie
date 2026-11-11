@@ -3,9 +3,14 @@
 The asynchronous client exposes the read-only `FrankEnergie.smart_pv_systems()` and
 `FrankEnergie.smart_pv_system_summary(device_id)` methods.
 
-The [Smart PV field matrix](smart-pv-field-matrix.md) documents every currently
-selected field, its typed model mapping, and the evidence boundary. No provider
-schema introspection was available to verify additional fields.
+The [Smart PV field matrix](smart-pv-field-matrix.md) documents all 27 currently
+selected fields, their typed model mappings, and the evidence boundary.
+A read-only `__typename` check succeeded on 2026-11-11, but `__schema` was
+rejected with a GraphQL validation error. This does not establish why
+introspection failed or which unqueried fields might exist. Under
+[issue #244](https://github.com/HiDiHo01/python-frank-energie/issues/244),
+acceptance covers independently verifiable fields, not the complete provider
+schema. A provider schema export is not required for issue closure.
 
 ## Inventory: `smart_pv_systems()`
 
