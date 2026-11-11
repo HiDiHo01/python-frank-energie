@@ -163,6 +163,25 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 
 ## Diagnose and verify PR CI failures
 
+- **PR #256 Ruff-only CI lesson:** Six failed jobs across Python 3.12,
+  3.13, and 3.14 were **lint/format failures, not pytest failures**; the
+  pytest and mypy jobs already passed. Read the job name and the failing
+  hook's diagnostic before changing tests or production behavior.
+  Ruff `I001` was caused by the stdlib `TYPE_CHECKING` import being placed
+  before `datetime` in `tests/test_weighted_average_prices.py`, despite
+  correctly moving `aresponses.ResponsesMockServer` into a
+  `TYPE_CHECKING` block for `TC002`. Keep both rules satisfied: type-only
+  imports in the guard, and all import statements ordered by Ruff/isort.
+- **PR #256 formatter lesson:** A multi-line `or`/generator expression in
+  `frank_energie.py` was semantically correct but needed the parentheses
+  and indentation produced by Ruff format. Do not weaken tests or rewrite
+  business logic to repair formatting. Run `poetry run ruff format --check .`
+  and `poetry run ruff check .` independently before pushing. After the
+  minimal formatting commits `dd52ac5` and `7b477a9`, GitHub Actions
+  run `43093678526` on HEAD `7b477a9` reported **74 successful, 2
+  skipped, 1 neutral, 0 failed** checks; pytest, mypy, Ruff lint and Ruff
+  format passed on all three supported Python versions. These results
+  apply to that commit only, not automatically to later documentation commits.
 - **PR #245 regression lesson:** a first CI run failed Ruff formatting because its hook reformatted one Python file; commit the exact formatter change and run formatting checks on the new head. The first pytest run also failed a newly written unknown-steering-status assertion; inspect the existing `_FallbackStrEnum` behavior before changing application code. After both fixes, rerun the full applicable Python 3.12/3.13/3.14 CI matrix and verify results on the **last commit**, including checks started by any later refactoring.
 - Keep formatting failures, behavioral test failures, and pending automated reviews separate in the status report. A green test suite on a superseded commit is not evidence for the current head; skipped/unavailable reviews and SonarCloud coverage measurements do not equal completed independent human review.
 - Identify the current PR head SHA and the corresponding workflow run, then inspect **failed job logs** for the exact source location and diagnostic rather than assuming every red job is a failed unit test. PR #240 first failed mypy on Python 3.12/3.13 (`[valid-type]`), then Ruff on Python 3.13 (`SIM117`); both fixes were local to their root causes.
