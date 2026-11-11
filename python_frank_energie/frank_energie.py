@@ -438,34 +438,36 @@ class FrankEnergie:
 
     @property
     def is_authenticated(self) -> bool:
-        """Return True when valid authentication tokens are available."""
+        """Return True when a nonempty local access token is available."""
 
         return bool(self._auth is not None and self._auth.authToken)
 
     async def validate_authentication(self) -> bool:
-        """Validate tokens, renewing an expired access token when needed.
+        """Check local authentication and renew an expired access token if needed.
+
+        The result reflects the client's current credentials, not whether the
+        provider will accept an otherwise unexpired token.
 
         Returns:
-            False if authentication is absent or rejected; True otherwise.
+            True when an access token remains after any required renewal;
+            False when authentication is absent or renewal is rejected.
 
         Raises:
             RateLimitException: If renewal is rate limited, preserving authentication.
             FrankEnergieException: If renewal fails for another request-level reason.
         """
-
-        if not self.is_authenticated:
-            return False
-
-        self._log_token_status()
-
         try:
             async with self._renew_lock:
+                if not self.is_authenticated:
+                    return False
+
+                self._log_token_status()
                 if self._auth is not None and self._auth.is_expired:
                     await self.renew_token()
+
+                return self.is_authenticated
         except (AuthException, AuthRequiredException):
             return False
-
-        return True
 
     def _requires_token_refresh(
         self,
