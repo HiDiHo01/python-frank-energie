@@ -114,3 +114,42 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   malformed non-null summary numbers or timestamps to `None`.
 - If authorized schema introspection is unavailable, record that limitation,
   avoid speculative query changes, and leave the completeness audit open.
+
+### Lessons verified while reviewing PR #246
+
+- **Update the snapshot source that pytest actually reads.** The active Syrupy file
+  for the Smart PV tests is `tests/__snapshots__/test_smart_pv.ambr`, not
+  `tests/snapshots/test_smart_pv.ambr`. After expanding a fixture, inspect the
+  failed assertion and record the *actual* model representation, including
+  `datetime.timezone.utc` versus `ZoneInfo("UTC")` in snapshot output.
+  Updating an unused similarly named file does not fix the running test.
+- **Validate the whole selected summary contract, not just successful parsing.**
+  Test missing queried fields separately from explicit nullable values;
+  malformed non-null totals, status types and timestamps must not silently
+  become valid missing values. Retain direct-payload model parsing where
+  supported, the existing enum fallback and UTC normalization for timezone
+  offsets. Keep model exceptions privacy-safe and document intentional
+  changes to the invalid-response contract.
+- **Do not promote model observations to provider-schema facts.** A redacted
+  `SmartPvSystem` and `SmartPvSystemSummary` observation verifies mapped
+  values, including a nonempty panel group and non-null `total_result`;
+  it does not enumerate all GraphQL fields or prove GraphQL scalar types,
+  nullability, measurement units or accounting periods. The observed
+  `onboarding_status=ACTIVE`, `operational_status=ON` and
+  `steering_status=INACTIVE` are independent states, not evidence of
+  electricity production or disconnection. Keep completeness work open
+  until an authorized schema or provider contract confirms additional fields.
+- **Classify each CI failure against the current commit.** In PR #246,
+  new fixture values initially failed two Syrupy snapshots, while separate
+  Ruff format and `I001` import-order failures required their own minimal
+  corrections (including a missing blank line between tests). Inspect the
+  job log, fix the precise cause, and verify the entire 3.12/3.13/3.14
+  matrix against the final head; all 30 CI jobs ultimately passed on
+  `a873988`. A queued job or a passing superseded commit is insufficient.
+- **Distinguish CI, automated review and actual PR state.** In PR #246,
+  CodeQL and SonarCloud succeeded, but CodeRabbit was rate-limited and
+  Sourcery's review was skipped; these are not equivalent to a completed
+  independent human review. Read the live GitHub `draft`, `merged`,
+  head/base and branch state rather than trusting a PR description that
+  still says "Draft". Once a PR is merged and its branch deleted, start
+  any new documentation change from current `main` in a separate PR.
