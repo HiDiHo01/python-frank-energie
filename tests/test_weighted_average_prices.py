@@ -189,7 +189,9 @@ def test_weighted_average_prices_rejects_malformed_items(field_name: str, invali
         WeightedAveragePrices.from_dict(response)
 
 
-@pytest.mark.parametrize("field_name", ("_id", "date", "from", "till", "averageMarketPrice", "averageMarketPricePlus", "perUnit"))
+@pytest.mark.parametrize(
+    "field_name", ("_id", "date", "from", "till", "averageMarketPrice", "averageMarketPricePlus", "perUnit")
+)
 def test_weighted_average_prices_rejects_missing_item_field(field_name: str) -> None:
     """Keep missing selected item fields distinct from explicit null fields."""
     response = deepcopy(_RESPONSE)
