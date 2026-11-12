@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -373,6 +373,33 @@ async def test_extra_query_propagates_transport_errors(error: BaseException, exp
     ):
         await client.user_smart_charging()
     assert raised.value is error
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation_name", (*[case[1] for case in _CASES], "UserRewardsData"))
+async def test_extra_query_generic_client_error_redacts_sensitive_details(
+    operation_name: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Do not leak a generic HTTP client exception for the new read-only operations."""
+    private_message = "synthetic-private-client-error"
+    session = MagicMock(spec=aiohttp.ClientSession)
+    session.post.side_effect = aiohttp.ClientError(private_message)
+    client = FrankEnergie(session)
+    query = FrankEnergieQuery(f"query {operation_name} {{ __typename }}", operation_name)
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"),
+        pytest.raises(NetworkError) as raised,
+    ):
+        await client._query(query)
+
+    assert str(raised.value) == "Frank Energie HTTP client error"
+    assert raised.value.__cause__ is None
+    assert private_message not in str(raised.value)
+    assert private_message not in caplog.text
+    assert f"Frank Energie HTTP client error during [{operation_name}]" in caplog.text
+    session.post.assert_called_once()
 
 
 @pytest.mark.asyncio
