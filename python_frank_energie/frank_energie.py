@@ -562,7 +562,7 @@ class FrankEnergie:
         headers: dict[str, str] = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "x-graphql-client-version": "4.13.3",
+            "x-graphql-client-version": "4.35.0",
             "x-graphql-client-name": "frank-app",
             "x-graphql-client-os": "ios/26.0.1",
             "skip-graphcdn": "1",
