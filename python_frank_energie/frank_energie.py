@@ -669,11 +669,11 @@ class FrankEnergie:
 
     @staticmethod
     def _raise_query_client_error(error: ClientError, operation_name: str) -> Never:
-        """Preserve legacy HTTP errors while redacting Smart HVAC diagnostics."""
+        """Preserve legacy HTTP errors while redacting sensitive diagnostics."""
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             _LOGGER.error("Frank Energie Smart HVAC HTTP client error during [%s]", operation_name)
             raise NetworkError("Frank Energie Smart HVAC HTTP client error") from None
-        if operation_name in {"WeightedAveragePrices", "RenewToken"}:
+        if operation_name in _REDACTED_QUERY_OPERATIONS:
             _LOGGER.error("Frank Energie HTTP client error during [%s]", operation_name)
             raise NetworkError("Frank Energie HTTP client error") from None
         _LOGGER.error(
