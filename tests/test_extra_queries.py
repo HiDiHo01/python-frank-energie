@@ -187,7 +187,7 @@ async def test_user_smart_charging_rejects_missing_subscription_fields(missing_f
         patch.object(
             client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
         ),
-        pytest.raises(RequestException, match=r"Invalid userSmartCharging\\.subscription response"),
+        pytest.raises(RequestException, match=r"Invalid userSmartCharging\.subscription response"),
     ):
         await client.user_smart_charging()
 
@@ -212,7 +212,7 @@ async def test_user_smart_charging_rejects_malformed_subscription(invalid_subscr
         patch.object(
             client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
         ),
-        pytest.raises(RequestException, match=r"Invalid userSmartCharging\\.subscription"),
+        pytest.raises(RequestException, match=r"Invalid userSmartCharging\.subscription"),
     ):
         await client.user_smart_charging()
 
