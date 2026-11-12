@@ -2,6 +2,50 @@
 
 Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI_POLICY.md). Update a practice when new evidence changes how to carry it out.
 
+## Promote historical read-only GraphQL examples safely
+
+- Treat commented GraphQL requests as *unverified discovery material*, not an active
+  provider contract. Preserve their exact named operation, root field, variables,
+  and fragment selections while introducing one independently reviewable public
+  method per query.
+- Require authentication and use the established GraphQL transport rather than
+  adding a second HTTP/session path. Do not print full response bodies, even in
+  DEBUG logs: reward, account, and subscription fields may contain personal data.
+- At the parser boundary, distinguish an explicitly returned `null` from a
+  missing root, malformed response, or GraphQL error. Preserve successful empty
+  collections only when the provider explicitly returned `[]`; never infer them
+  from an error.
+- Use synthetic regression fixtures, especially for nullable nested fields.
+  Two 2026-11-11 `UserSmartCharging` responses confirmed
+  `provider: "ENODE"` and both `isActivated: false` with null
+  `userCreatedAt`/`userId`, and `isActivated: true` with a populated
+  UTC timestamp string and opaque `userId`; `subscription` was null
+  in both. Preserve those distinct states and use synthetic IDs and dates.
+  An `AppVersion` response confirmed `ios: null` and
+  `android: null`, and a `UserRewardsData` response confirmed
+  `rewardPayoutPreference: "DISCOUNT"`, a single active connection,
+  and two explicit empty reward lists. A later response showed
+  one populated `acceptedRewards` record with nullable
+  `awardedTreesAmount`, timestamp strings, flags, nested `InviteLink`,
+  and an explicit empty `AdditionalBonuses` list. Use synthetic values
+  for `me.id`, `UserSettings.id`, `acceptedRewards.id`,
+  `InviteLink.id`, `InviteLink.fromName`, and all dates in tests;
+  do not store actual account or referrer details. A `TreeCertificates` response
+  confirmed an explicit successful empty list (`treeCertificates: []`),
+  but not the shape of nonempty certificate records. An observed
+  `AppNotice` response confirmed `active: true`, a non-empty
+  `message`, and `title: ""`. Preserve the empty title as a string,
+  not `None`, and use an invented notice message in regression fixtures
+  rather than storing an actual provider announcement.
+- Validate both operation name/selection and result handling; preserve request
+  errors, `RateLimitException.retry_after`, and cancellation without retries.
+  Check non-null nested selections and list-valued roots at their parser
+  boundaries; explicit null must remain distinct from malformed records.
+  Ensure the shared HTTP/GraphQL path rejects malformed envelopes *before*
+  accessing error fields and never logs returned private account data.
+  Exercise that path with mocked HTTP responses, not only a mocked `_query`.
+  Keep unverified live support clearly marked in the PR and documentation.
+
 ## Add read-only GraphQL operations with unverified response fields
 
 - When a new GraphQL operation is supplied as a request but no live response

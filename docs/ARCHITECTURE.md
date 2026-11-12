@@ -153,6 +153,10 @@ All operations in this table are async. Most result models come from `models.py`
 | Smart PV | `smart_pv_systems()` | `SmartPvSystems \| None` |
 | Smart PV | `smart_pv_system_summary(device_id)` | `SmartPvSystemSummary \| None` |
 | Smart feed-in | `user_smart_feed_in()` | `UserSmartFeedInStatus \| None` |
+| Smart charging | `user_smart_charging()` | `dict[str, object] \| None` |
+| App metadata | `app_version()`, `app_notice()` | `dict[str, object] \| None` |
+| Rewards | `user_rewards_data()` | `dict[str, dict[str, object] \| None]` |
+| Certificates | `tree_certificates()` | `list[dict[str, object]] \| None` |
 | Controls | `disable_smart_trading()`, `disable_smart_feed_in()`, `disable_smart_hvac()`, `enode_enable_smart_charging()`, `enode_disable_smart_charging()` | `bool` |
 | Settings | `update_user_settings(input_data)`, `enode_update_vehicle_charge_settings(input_data)`, `enode_update_charger_charge_settings(input_data)`, `enode_update_all_vehicle_charge_settings(input_data)`, `smart_hvac_update_settings(device_id, settings)`, `smart_battery_update_settings(device_id, settings)` | `bool` |
 
