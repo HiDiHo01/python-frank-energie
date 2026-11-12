@@ -66,8 +66,12 @@ A successful response must include `data` as an object and the selected root
 fields. **An explicitly returned `null` is retained as `None`**; a missing
 root, malformed record, or malformed `errors` container raises
 `RequestException`. Only `treeCertificates: []` confirms a successful empty
-certificate list. Selected fields must be present, including nullable ones. For non-null
-app-version platforms, `version` must be present and be a string or null.
+certificate list. Selected fields must be present, including nullable ones. A non-null
+Smart Charging subscription must contain `startDate`, `endDate`, `id`, and
+`proposition`; its proposition must contain `product` and `countryCode`.
+A null subscription stays valid. Non-null subscription responses have not been
+observed from the provider, so these shape checks use synthetic fixtures.
+For non-null app-version platforms, `version` must be present and be a string or null.
 For non-null reward data, `acceptedRewards` and `upcomingRewards` must be
 lists; each reward and its non-null selected nested records must have the
 selected keys. `me.UserSettings` must have its selected keys when non-null.
