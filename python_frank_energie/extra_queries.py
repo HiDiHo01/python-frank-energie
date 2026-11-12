@@ -157,6 +157,39 @@ def optional_records(
     return [_validate_record(item, field_name, required_fields) for item in value]
 
 
+def smart_charging_response(response: object) -> dict[str, object] | None:
+    """Validate the selected Smart Charging subscription without changing provider values."""
+    status = optional_record(
+        response,
+        "userSmartCharging",
+        frozenset(
+            {
+                "isActivated",
+                "provider",
+                "userCreatedAt",
+                "userId",
+                "isAvailableInCountry",
+                "needsSubscription",
+                "subscription",
+            }
+        ),
+    )
+    if status is None or status["subscription"] is None:
+        return status
+
+    subscription = _validate_record(
+        status["subscription"],
+        "userSmartCharging.subscription",
+        frozenset({"startDate", "endDate", "id", "proposition"}),
+    )
+    _validate_record(
+        subscription["proposition"],
+        "userSmartCharging.subscription.proposition",
+        frozenset({"product", "countryCode"}),
+    )
+    return status
+
+
 def app_version_response(response: object) -> dict[str, object] | None:
     """Validate nested platform records while preserving null values and versions."""
     app_version = optional_record(response, "appVersion", frozenset({"ios", "android"}))

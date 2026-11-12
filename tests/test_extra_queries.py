@@ -39,6 +39,13 @@ _ACTIVE_SMART_CHARGING = {
     "needsSubscription": False,
     "subscription": None,
 }
+# Synthetic-only populated subscription; non-null provider responses remain unverified.
+_POPULATED_SMART_CHARGING_SUBSCRIPTION = {
+    "startDate": "2026-01-01T00:00:00Z",
+    "endDate": None,
+    "id": "synthetic-subscription",
+    "proposition": {"product": "SYNTHETIC", "countryCode": "NL"},
+}
 _APP_VERSION = {"ios": None, "android": None}
 _CERTIFICATE = {
     "id": "synthetic-certificate",
@@ -149,6 +156,64 @@ async def test_user_smart_charging_preserves_active_status_and_timestamp() -> No
     assert result["isAvailableInCountry"] is True
     assert result["needsSubscription"] is False
     assert result["subscription"] is None
+
+
+@pytest.mark.asyncio
+async def test_user_smart_charging_preserves_populated_subscription() -> None:
+    """Keep a complete synthetic nested subscription and its values unchanged."""
+    status = {**_SMART_CHARGING, "subscription": _POPULATED_SMART_CHARGING_SUBSCRIPTION}
+    client = FrankEnergie(auth_token="synthetic-access-token")
+    with patch.object(
+        client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
+    ):
+        result = await client.user_smart_charging()
+
+    assert result is status
+    assert result["subscription"] is _POPULATED_SMART_CHARGING_SUBSCRIPTION
+    assert result["subscription"]["endDate"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_field", ("startDate", "endDate", "id", "proposition"))
+async def test_user_smart_charging_rejects_missing_subscription_fields(missing_field: str) -> None:
+    """Require all fields selected from a non-null Smart Charging subscription."""
+    subscription = {
+        key: value for key, value in _POPULATED_SMART_CHARGING_SUBSCRIPTION.items() if key != missing_field
+    }
+    status = {**_SMART_CHARGING, "subscription": subscription}
+    client = FrankEnergie(auth_token="synthetic-access-token")
+    with (
+        patch.object(
+            client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
+        ),
+        pytest.raises(RequestException, match=r"Invalid userSmartCharging\\.subscription response"),
+    ):
+        await client.user_smart_charging()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_subscription",
+    (
+        "invalid",
+        [1],
+        {**_POPULATED_SMART_CHARGING_SUBSCRIPTION, "proposition": None},
+        {**_POPULATED_SMART_CHARGING_SUBSCRIPTION, "proposition": []},
+        {**_POPULATED_SMART_CHARGING_SUBSCRIPTION, "proposition": {"product": "SYNTHETIC"}},
+        {**_POPULATED_SMART_CHARGING_SUBSCRIPTION, "proposition": {"countryCode": "NL"}},
+    ),
+)
+async def test_user_smart_charging_rejects_malformed_subscription(invalid_subscription: object) -> None:
+    """Reject malformed subscription and proposition shapes with RequestException."""
+    status = {**_SMART_CHARGING, "subscription": invalid_subscription}
+    client = FrankEnergie(auth_token="synthetic-access-token")
+    with (
+        patch.object(
+            client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
+        ),
+        pytest.raises(RequestException, match=r"Invalid userSmartCharging\\.subscription"),
+    ):
+        await client.user_smart_charging()
 
 
 @pytest.mark.asyncio

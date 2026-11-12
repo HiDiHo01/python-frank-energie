@@ -45,6 +45,7 @@ from .extra_queries import (
     optional_record,
     optional_records,
     rewards_response,
+    smart_charging_response,
 )
 from .models import (
     Authentication,
@@ -2669,21 +2670,7 @@ class FrankEnergie:
         its current provider availability must be independently verified.
         """
         response = await self._extra_read_query("UserSmartCharging", USER_SMART_CHARGING_QUERY)
-        return optional_record(
-            response,
-            "userSmartCharging",
-            frozenset(
-                {
-                    "isActivated",
-                    "provider",
-                    "userCreatedAt",
-                    "userId",
-                    "isAvailableInCountry",
-                    "needsSubscription",
-                    "subscription",
-                }
-            ),
-        )
+        return smart_charging_response(response)
 
     async def app_version(self) -> dict[str, object] | None:
         """Fetch the provider's mobile app version information, if available."""
