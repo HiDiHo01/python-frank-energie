@@ -163,9 +163,8 @@ async def test_user_smart_charging_preserves_populated_subscription() -> None:
     """Keep a complete synthetic nested subscription and its values unchanged."""
     status = {**_SMART_CHARGING, "subscription": _POPULATED_SMART_CHARGING_SUBSCRIPTION}
     client = FrankEnergie(auth_token="synthetic-access-token")
-    with patch.object(
-        client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
-    ):
+    payload = {"data": {"userSmartCharging": status}}
+    with patch.object(client, "_query", new_callable=AsyncMock, return_value=payload):
         result = await client.user_smart_charging()
 
     assert result is status
@@ -178,15 +177,12 @@ async def test_user_smart_charging_preserves_populated_subscription() -> None:
 @pytest.mark.parametrize("missing_field", ("startDate", "endDate", "id", "proposition"))
 async def test_user_smart_charging_rejects_missing_subscription_fields(missing_field: str) -> None:
     """Require all fields selected from a non-null Smart Charging subscription."""
-    subscription = {
-        key: value for key, value in _POPULATED_SMART_CHARGING_SUBSCRIPTION.items() if key != missing_field
-    }
+    subscription = {key: value for key, value in _POPULATED_SMART_CHARGING_SUBSCRIPTION.items() if key != missing_field}
     status = {**_SMART_CHARGING, "subscription": subscription}
     client = FrankEnergie(auth_token="synthetic-access-token")
+    payload = {"data": {"userSmartCharging": status}}
     with (
-        patch.object(
-            client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
-        ),
+        patch.object(client, "_query", new_callable=AsyncMock, return_value=payload),
         pytest.raises(RequestException, match=r"Invalid userSmartCharging\.subscription response"),
     ):
         await client.user_smart_charging()
@@ -208,10 +204,9 @@ async def test_user_smart_charging_rejects_malformed_subscription(invalid_subscr
     """Reject malformed subscription and proposition shapes with RequestException."""
     status = {**_SMART_CHARGING, "subscription": invalid_subscription}
     client = FrankEnergie(auth_token="synthetic-access-token")
+    payload = {"data": {"userSmartCharging": status}}
     with (
-        patch.object(
-            client, "_query", new_callable=AsyncMock, return_value={"data": {"userSmartCharging": status}}
-        ),
+        patch.object(client, "_query", new_callable=AsyncMock, return_value=payload),
         pytest.raises(RequestException, match=r"Invalid userSmartCharging\.subscription"),
     ):
         await client.user_smart_charging()
