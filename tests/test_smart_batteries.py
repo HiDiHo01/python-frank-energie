@@ -276,13 +276,16 @@ def _details_response(trading_algorithm_field: dict) -> str:
     [
         ({"tradingAlgorithm": "T1"}, SmartBatteryTradingAlgorithm.T1),
         ({"tradingAlgorithm": "T2"}, SmartBatteryTradingAlgorithm.T2),
+        ({"tradingAlgorithm": "T3"}, SmartBatteryTradingAlgorithm.T3),
+        ({"tradingAlgorithm": "t3"}, SmartBatteryTradingAlgorithm.T3),
+        ({"tradingAlgorithm": "T4"}, SmartBatteryTradingAlgorithm.UNKNOWN),
         ({"tradingAlgorithm": None}, None),
         ({}, None),
     ],
-    ids=["t1", "t2", "null", "absent"],
+    ids=["t1", "t2", "t3", "t3-lowercase", "unknown", "null", "absent"],
 )
 async def test_smart_battery_details_trading_algorithm(aresponses, trading_algorithm_field, expected):
-    """smart_battery_details parses T1, T2, null and absent tradingAlgorithm values alike."""
+    """smart_battery_details preserves known, future, null, and absent trading algorithms."""
     aresponses.add(
         SIMPLE_DATA_URL,
         "/",

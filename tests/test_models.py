@@ -887,14 +887,16 @@ def test_smart_battery_settings_from_dict_defensive_parsing_unknown_enum_values(
     [
         ("T1", SmartBatteryTradingAlgorithm.T1),
         ("T2", SmartBatteryTradingAlgorithm.T2),
-        ("T3", SmartBatteryTradingAlgorithm.UNKNOWN),
+        ("T3", SmartBatteryTradingAlgorithm.T3),
+        ("t3", SmartBatteryTradingAlgorithm.T3),
+        ("T4", SmartBatteryTradingAlgorithm.UNKNOWN),
         (None, None),
     ],
 )
 def test_smart_battery_settings_from_dict_trading_algorithm(
     raw_algorithm: str | None, expected: SmartBatteryTradingAlgorithm | None
 ) -> None:
-    """The trading algorithm parses known values, falls back to UNKNOWN, and stays None when absent."""
+    """Known algorithms parse case-insensitively; future codes use UNKNOWN and missing codes stay None."""
     settings = SmartBatterySettings.from_dict({"batteryMode": "IMBALANCE_TRADING", "tradingAlgorithm": raw_algorithm})
 
     assert settings is not None
