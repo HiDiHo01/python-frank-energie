@@ -170,6 +170,7 @@ async def test_user_smart_charging_preserves_populated_subscription() -> None:
 
     assert result is status
     assert result["subscription"] is _POPULATED_SMART_CHARGING_SUBSCRIPTION
+    assert isinstance(result["subscription"], dict)
     assert result["subscription"]["endDate"] is None
 
 
