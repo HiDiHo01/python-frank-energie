@@ -35,6 +35,17 @@ from .exceptions import (
     SmartFeedInNotEnabledException,
     SmartTradingNotEnabledException,
 )
+from .extra_queries import (
+    APP_NOTICE_QUERY,
+    APP_VERSION_QUERY,
+    TREE_CERTIFICATES_QUERY,
+    USER_REWARDS_DATA_QUERY,
+    USER_SMART_CHARGING_QUERY,
+    app_version_response,
+    optional_record,
+    optional_records,
+    rewards_response,
+)
 from .models import (
     Authentication,
     ContractPriceResolutionChangeResult,
@@ -85,7 +96,12 @@ _NO_CONNECTIONS_FOUND_FOR_USER = "No connections found for user"
 _SMART_HVAC_QUERY_OPERATIONS = frozenset(
     {"UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"}
 )
-_REDACTED_QUERY_OPERATIONS = _SMART_HVAC_QUERY_OPERATIONS | {"WeightedAveragePrices", "RenewToken"}
+_EXTRA_READ_QUERY_OPERATIONS = frozenset(
+    {"UserSmartCharging", "AppVersion", "UserRewardsData", "TreeCertificates", "AppNotice"}
+)
+_REDACTED_QUERY_OPERATIONS = (
+    _SMART_HVAC_QUERY_OPERATIONS | _EXTRA_READ_QUERY_OPERATIONS | {"WeightedAveragePrices", "RenewToken"}
+)
 
 try:
     VERSION = _pkg_version(_DISTRIBUTION_NAME)
@@ -623,7 +639,7 @@ class FrankEnergie:
                 try:
                     response: dict[str, object] | None = await resp.json()
                 except (aiohttp.ContentTypeError, JSONDecodeError):
-                    if operation_name in {"WeightedAveragePrices", "RenewToken"}:
+                    if operation_name in _REDACTED_QUERY_OPERATIONS:
                         raise RequestException(f"Invalid {operation_name} JSON response") from None
                     raise
                 retry_after_header = resp.headers.get("Retry-After")
@@ -697,6 +713,8 @@ class FrankEnergie:
             raise RequestException("Invalid Smart HVAC GraphQL response: expected an object")
         if operation_name == "WeightedAveragePrices" and not isinstance(response, dict):
             raise RequestException("Invalid WeightedAveragePrices GraphQL response: expected an object")
+        if operation_name in _EXTRA_READ_QUERY_OPERATIONS and not isinstance(response, dict):
+            raise RequestException(f"Invalid {operation_name} GraphQL response: expected an object")
         if not response:
             _LOGGER.debug("Empty API response received for operation [%s]", operation_name)
             return {}
@@ -863,7 +881,7 @@ class FrankEnergie:
         if is_smart_hvac and "errors" in response and not isinstance(errors_obj, list):
             raise RequestException("Invalid Smart HVAC GraphQL error structure")
         if (
-            operation_name in {"WeightedAveragePrices", "RenewToken"}
+            operation_name in {"WeightedAveragePrices", "RenewToken"} | _EXTRA_READ_QUERY_OPERATIONS
             and "errors" in response
             and not isinstance(errors_obj, list)
         ):
@@ -971,6 +989,12 @@ class FrankEnergie:
         if message == _REQUEST_NOT_SUPPORTED_IN_COUNTRY:
             raise FrankEnergieException("Request not supported in the user's country") from None
 
+    def _handle_operation_specific_graphql_error(self, message: str, operation_name: str) -> bool:
+        """Raise specialized errors or defer private read-only errors to the response parser."""
+        if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
+            self._raise_smart_hvac_graphql_error(message, operation_name)
+        return operation_name in _EXTRA_READ_QUERY_OPERATIONS and message != _GRAPHQL_VALIDATION_MESSAGE
+
     def _handle_graphql_error(
         self,
         error_obj: dict[str, object],
@@ -1010,8 +1034,8 @@ class FrankEnergie:
             exception_type, exception_message = exception_spec
             raise exception_type(exception_message)
 
-        if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
-            self._raise_smart_hvac_graphql_error(message, operation_name)
+        if self._handle_operation_specific_graphql_error(message, operation_name):
+            return
 
         if message == _GRAPHQL_VALIDATION_MESSAGE:
             self._raise_graphql_validation_error(
@@ -2632,12 +2656,58 @@ class FrankEnergie:
 
         return ContractPriceResolutionChangeResult.from_dict(result)
 
-    # query UserCountry {\\n  me {\\n    countryCode\\n  }\\n}\\n\",\"operationName\":\"UserCountry\"}
-    # query UserSmartCharging {\\n  userSmartCharging {\\n    isActivated\\n    provider\\n    userCreatedAt\\n    userId\\n    isAvailableInCountry\\n    needsSubscription\\n    subscription {\\n      startDate\\n      endDate\\n      id\\n      proposition {\\n        product\\n        countryCode\\n      }\\n    }\\n  }\\n}\\n\",\"operationName\":\"UserSmartCharging\"}
-    # {\"query\":\"query AppVersion {\\n  appVersion {\\n    ios {\\n      version\\n    }\\n    android {\\n      version\\n    }\\n  }\\n}\\n\",\"operationName\":\"AppVersion\"}"
-    # \"query UserRewardsData {\\n  me {\\n    id\\n    UserSettings {\\n      id\\n      rewardPayoutPreference\\n    }\\n  }\\n  userRewardsData {\\n    activeConnectionsCount\\n    activeFriendsCount\\n    acceptedRewards {\\n      ...UserRewardV2Fields\\n    }\\n    upcomingRewards {\\n      ...UserRewardV2Fields\\n    }\\n  }\\n}\\n\\nfragment UserRewardV2Fields on UserRewardV2 {\\n  id\\n  awardedDiscount\\n  awardedTreesAmount\\n  availableForAcceptanceOn\\n  treesAmountPerConnection\\n  discountPerConnection\\n  acceptedOn\\n  isRewardForOwnSignup\\n  hasPossibleSmartChargingBonus\\n  coolingDownPeriod\\n  InviteLink {\\n    id\\n    type\\n    fromName\\n    templateType\\n    awardRewardType\\n    treesAmountPerConnection\\n    discountPerConnection\\n  }\\n  AdditionalBonuses {\\n    discountAmountPerConnection\\n    treesAmountPerConnection\\n    type\\n  }\\n}\\n\",\"operationName\":\"UserRewardsData\"}"
-    # \"query TreeCertificates {\\n  treeCertificates {\\n    id\\n    imageUrl\\n    imagePath\\n    createdAt\\n    treesAmount\\n  }\\n}\\n\",\"operationName\":\"TreeCertificates\"}"
-    # \"query AppNotice {\\n  appNotice {\\n    active\\n    message\\n    title\\n  }\\n}\\n\",\"operationName\":\"AppNotice\"}"
+    async def _extra_read_query(self, operation_name: str, query_text: str) -> dict[str, object]:
+        """Execute one historical read-only operation through the normal authenticated transport."""
+        if not self.is_authenticated:
+            raise AuthRequiredException("Authentication is required.")
+        return await self._query(FrankEnergieQuery(query_text, operation_name, {}))
+
+    async def user_smart_charging(self) -> dict[str, object] | None:
+        """Fetch Smart Charging enrollment details, preserving explicitly null results.
+
+        The GraphQL selection was observed in historical source comments;
+        its current provider availability must be independently verified.
+        """
+        response = await self._extra_read_query("UserSmartCharging", USER_SMART_CHARGING_QUERY)
+        return optional_record(
+            response,
+            "userSmartCharging",
+            frozenset(
+                {
+                    "isActivated",
+                    "provider",
+                    "userCreatedAt",
+                    "userId",
+                    "isAvailableInCountry",
+                    "needsSubscription",
+                    "subscription",
+                }
+            ),
+        )
+
+    async def app_version(self) -> dict[str, object] | None:
+        """Fetch the provider's mobile app version information, if available."""
+        response = await self._extra_read_query("AppVersion", APP_VERSION_QUERY)
+        return app_version_response(response)
+
+    async def user_rewards_data(self) -> dict[str, dict[str, object] | None]:
+        """Fetch reward data and the selected account settings without changing their values."""
+        response = await self._extra_read_query("UserRewardsData", USER_REWARDS_DATA_QUERY)
+        return rewards_response(response)
+
+    async def tree_certificates(self) -> list[dict[str, object]] | None:
+        """Fetch the user's tree certificates, keeping null distinct from an empty list."""
+        response = await self._extra_read_query("TreeCertificates", TREE_CERTIFICATES_QUERY)
+        return optional_records(
+            response,
+            "treeCertificates",
+            frozenset({"id", "imageUrl", "imagePath", "createdAt", "treesAmount"}),
+        )
+
+    async def app_notice(self) -> dict[str, object] | None:
+        """Fetch the current app notice, preserving an explicit null response."""
+        response = await self._extra_read_query("AppNotice", APP_NOTICE_QUERY)
+        return optional_record(response, "appNotice", frozenset({"active", "message", "title"}))
 
     async def user_country(self) -> Me:
         """Fetch a minimal Me payload containing authenticated user countryCode."""
