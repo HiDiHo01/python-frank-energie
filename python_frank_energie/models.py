@@ -2371,7 +2371,11 @@ class MonthSummary:
         else:
             expected_costs_per_day = None
 
-        costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(actual_costs, last_reading)
+        costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(
+            actual_costs,
+            last_reading,
+            _safe_float(payload.get("meterReadingDayCompleteness"), default=0.0),
+        )
 
         return MonthSummary(
             _id=str(payload.get("_id", "")),
@@ -2474,6 +2478,7 @@ class MonthSummary:
         costs_per_day_till_now = MonthSummary.calculate_costs_per_day_till_now(
             float(actual_costs),
             last_reading,
+            completeness,
         )
 
         return MonthSummary(
@@ -2499,13 +2504,34 @@ class MonthSummary:
         return expected_costs / days_in_month
 
     @staticmethod
-    def calculate_costs_per_day_till_now(costs_till_now: float, lastMeterReadingDate: str) -> float:
-        """Calculate the costs per day this month till now."""
+    def _elapsed_meter_reading_days(
+        last_meter_reading_date: datetime,
+        meter_reading_day_completeness: float | None,
+    ) -> int:
+        """Include the last meter-reading day only when the provider reports it complete."""
+        last_day_complete = meter_reading_day_completeness is not None and math.isclose(
+            meter_reading_day_completeness, 1.0
+        )
+        return last_meter_reading_date.day if last_day_complete else last_meter_reading_date.day - 1
+
+    @staticmethod
+    def calculate_costs_per_day_till_now(
+        costs_till_now: float,
+        lastMeterReadingDate: str,
+        meter_reading_day_completeness: float | None = None,
+    ) -> float:
+        """Calculate average daily costs, accounting for the last meter-reading day's completeness.
+
+        Omitted completeness retains the legacy exclusive-last-day calculation.
+        """
         last_meter_reading_date = datetime.strptime(lastMeterReadingDate, "%Y-%m-%d").replace(tzinfo=UTC)
-        days_elapsed = last_meter_reading_date.day - 1  # reading covers completed days
+        days_elapsed = MonthSummary._elapsed_meter_reading_days(
+            last_meter_reading_date,
+            meter_reading_day_completeness,
+        )
         if days_elapsed > 0:
             return costs_till_now / days_elapsed
-        return costs_till_now  # day 1: no completed days yet
+        return costs_till_now  # Preserve the legacy first-day behavior.
 
     @property
     def differenceUntilLastMeterReadingDate(self) -> float:
@@ -2514,8 +2540,12 @@ class MonthSummary:
 
     @property
     def differenceUntilLastMeterReadingDateAvg(self) -> float:
+        """Calculate the daily cost difference over fully processed meter-reading days."""
         last_meter_reading_date = datetime.strptime(self.lastMeterReadingDate, "%Y-%m-%d").replace(tzinfo=UTC)
-        days_elapsed = last_meter_reading_date.day - 1
+        days_elapsed = self._elapsed_meter_reading_days(
+            last_meter_reading_date,
+            self.meterReadingDayCompleteness,
+        )
         if days_elapsed > 0:
             return self.differenceUntilLastMeterReadingDate / days_elapsed
         return self.differenceUntilLastMeterReadingDate
