@@ -447,6 +447,53 @@ def test_month_summary_non_dict_payload_raises(bad_payload):
     assert "Unexpected monthSummary payload type" in str(excinfo.value)
 
 
+
+@pytest.mark.parametrize(
+    ("last_reading", "completeness", "processed_days"),
+    [
+        ("2026-11-12", 1.0, 12),
+        ("2026-11-12", 0.5, 11),
+        ("2026-11-12", 0.0, 11),
+        ("2026-12-31", 1.0, 31),
+        ("2027-01-01", 1.0, 1),
+        ("2027-01-01", 0.5, 0),
+    ],
+)
+def test_month_summary_daily_averages_respect_meter_reading_completeness(
+    last_reading: str,
+    completeness: float,
+    processed_days: int,
+) -> None:
+    """Include the last meter-reading day only when fully processed."""
+    payload = {
+        "data": {
+            "monthSummary": {
+                "_id": "synthetic-month-summary",
+                "actualCostsUntilLastMeterReadingDate": 48.0,
+                "expectedCostsUntilLastMeterReadingDate": 36.0,
+                "expectedCosts": 90.0,
+                "lastMeterReadingDate": last_reading,
+                "meterReadingDayCompleteness": completeness,
+                "gasExcluded": False,
+                "__typename": "MonthSummaryPayload",
+            }
+        }
+    }
+
+    summary = MonthSummary.from_dict(payload)
+
+    assert summary is not None
+    divisor = processed_days if processed_days > 0 else 1
+    assert summary.costs_per_day_till_now == pytest.approx(48.0 / divisor)
+    assert summary.differenceUntilLastMeterReadingDateAvg == pytest.approx(12.0 / divisor)
+
+
+def test_month_summary_legacy_daily_average_without_completeness() -> None:
+    """Keep two-argument callers compatible with the historic day-minus-one behavior."""
+    assert MonthSummary.calculate_costs_per_day_till_now(48.0, "2026-11-12") == pytest.approx(48.0 / 11)
+
+
+
 #
 # Tests for MarketPrices Model.
 #
