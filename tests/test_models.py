@@ -447,12 +447,12 @@ def test_month_summary_non_dict_payload_raises(bad_payload):
     assert "Unexpected monthSummary payload type" in str(excinfo.value)
 
 
-
 @pytest.mark.parametrize(
     ("last_reading", "completeness", "processed_days"),
     [
         ("2026-11-12", 1.0, 12),
         ("2026-11-12", 0.5, 11),
+        ("2026-11-12", 0.9999999999, 11),
         ("2026-11-12", 0.0, 11),
         ("2026-12-31", 1.0, 31),
         ("2027-01-01", 1.0, 1),
@@ -491,7 +491,6 @@ def test_month_summary_daily_averages_respect_meter_reading_completeness(
 def test_month_summary_legacy_daily_average_without_completeness() -> None:
     """Keep two-argument callers compatible with the historic day-minus-one behavior."""
     assert MonthSummary.calculate_costs_per_day_till_now(48.0, "2026-11-12") == pytest.approx(48.0 / 11)
-
 
 
 #
