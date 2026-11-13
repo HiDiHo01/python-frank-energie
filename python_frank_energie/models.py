@@ -2510,7 +2510,7 @@ class MonthSummary:
     ) -> int:
         """Include the last meter-reading day only when the provider reports it complete."""
         last_day_complete = meter_reading_day_completeness is not None and math.isclose(
-            meter_reading_day_completeness, 1.0
+            meter_reading_day_completeness, 1.0, rel_tol=0.0, abs_tol=0.0
         )
         return last_meter_reading_date.day if last_day_complete else last_meter_reading_date.day - 1
 
