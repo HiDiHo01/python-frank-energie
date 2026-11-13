@@ -1,5 +1,6 @@
 """Tests for Frank Energie Models."""
 
+import inspect
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -491,6 +492,37 @@ def test_month_summary_daily_averages_respect_meter_reading_completeness(
 def test_month_summary_legacy_daily_average_without_completeness() -> None:
     """Keep two-argument callers compatible with the historic day-minus-one behavior."""
     assert MonthSummary.calculate_costs_per_day_till_now(48.0, "2026-11-12") == pytest.approx(48.0 / 11)
+
+
+def test_month_summary_daily_average_preserves_public_signature() -> None:
+    """Do not add public arguments when passing completeness through internal parsers."""
+    parameters = inspect.signature(MonthSummary.calculate_costs_per_day_till_now).parameters
+
+    assert tuple(parameters) == ("costs_till_now", "lastMeterReadingDate")
+
+
+@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
+def test_month_summary_observed_delayed_meter_reading(parser_name: str) -> None:
+    """Use a sanitized November 13 observation with a complete November 12 reading.
+
+    The returned cost amounts and cutoff were observed in the provider response.
+    Inclusion of the completed day follows the maintainer-specified calculation
+    rule, not an independently documented upstream provider contract.
+    """
+    retrieved_at = datetime(2026, 11, 13, tzinfo=UTC)
+    response = json.loads(load_fixtures("month_summary_observed_2026_11.json"))
+
+    summary = getattr(MonthSummary, parser_name)(response)
+
+    assert summary is not None
+    reading_date = datetime.strptime(summary.lastMeterReadingDate, "%Y-%m-%d").date()
+    assert retrieved_at.date() - reading_date == timedelta(days=1)
+    assert summary.meterReadingDayCompleteness == 1
+    assert summary.actualCostsUntilLastMeterReadingDate == pytest.approx(50.79)
+    assert summary.expectedCostsUntilLastMeterReadingDate == pytest.approx(43.40)
+    assert summary.expectedCosts == pytest.approx(108.51)
+    assert summary.costs_per_day_till_now == pytest.approx(50.79 / 12)
+    assert summary.differenceUntilLastMeterReadingDateAvg == pytest.approx((50.79 - 43.40) / 12)
 
 
 #
