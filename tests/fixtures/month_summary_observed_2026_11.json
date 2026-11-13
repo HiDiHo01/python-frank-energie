@@ -1,0 +1,14 @@
+{
+    "data": {
+        "monthSummary": {
+            "_id": "sanitized-month-summary-example",
+            "actualCostsUntilLastMeterReadingDate": 50.79,
+            "expectedCostsUntilLastMeterReadingDate": 43.4,
+            "expectedCosts": 108.51,
+            "lastMeterReadingDate": "2026-11-12",
+            "meterReadingDayCompleteness": 1,
+            "gasExcluded": false,
+            "__typename": "MonthSummaryPayload"
+        }
+    }
+}
