@@ -226,7 +226,7 @@ def test_invalid_date_is_sanitized(invalid: object) -> None:
     """Reject invalid timestamps without embedding user-provided values."""
     with pytest.raises(RequestException, match="Invalid MonthInsights lastMeterReadingDate") as error:
         _parse_month(lastMeterReadingDate=invalid)
-    assert str(invalid) not in str(error.value)
+    assert str(error.value) == "Invalid MonthInsights lastMeterReadingDate"
 
 
 def test_constructor_retains_field_order_and_nullable_date() -> None:
