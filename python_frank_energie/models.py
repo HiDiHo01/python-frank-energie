@@ -50,7 +50,7 @@ FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
 _ERROR_NO_MARKET_PRICES = "No marketprices found"
-_MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}-(?:0[1-9]|1[0-2]))")
+_MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}(?:-(?:0[1-9]|1[0-2]))?)")
 
 
 @overload
@@ -2320,11 +2320,12 @@ class MonthSummary:
 
     @property
     def period(self) -> str | None:
-        """Return a validated month suffix if the opaque source ID contains one.
+        """Return a validated year or year-month suffix from the opaque ID.
 
-        A single observed upstream ID ended with |YYYY-MM; this convention
-        is not guaranteed by the provider. Unsupported, ambiguous or malformed
-        IDs produce None. The meter-reading date is deliberately ignored.
+        Confirmed source formats end in `|YYYY` or `|YYYY-MM`. Return
+        the suffix unchanged; a year-only value does not imply a month.
+        Unsupported, ambiguous or malformed IDs return None. Never infer
+        the period from the meter-reading date or the current date.
         """
         if not isinstance(self._id, str):
             return None
@@ -2333,7 +2334,7 @@ class MonthSummary:
             return None
         period = match.group("period")
         try:
-            date.fromisoformat(f"{period}-01")
+            date.fromisoformat(f"{period}-01" if "-" in period else f"{period}-01-01")
         except ValueError:
             return None
         return period
