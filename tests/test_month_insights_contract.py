@@ -311,9 +311,11 @@ async def test_invalid_site_is_rejected_without_request(site_reference: object) 
 async def test_typed_errors_and_cancellation_are_not_wrapped(failure: BaseException) -> None:
     """Preserve exception type, rate-limit delay and cancellation."""
     api = FrankEnergie(auth_token="synthetic-token")
-    with patch.object(api, "_query", new_callable=AsyncMock, side_effect=failure):
-        with pytest.raises(type(failure)) as exc_info:
-            await api.month_insights("site", "2026-11")
+    with (
+        patch.object(api, "_query", new_callable=AsyncMock, side_effect=failure),
+        pytest.raises(type(failure)) as exc_info,
+    ):
+        await api.month_insights("site", "2026-11")
     assert exc_info.value is failure
     if isinstance(failure, RateLimitException):
         assert failure.retry_after == 20
