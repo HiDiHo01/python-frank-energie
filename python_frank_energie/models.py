@@ -2193,115 +2193,160 @@ class User:
         return site_dict
 
 
+def _month_insights_number(data: Mapping[str, object], field_name: str) -> float | None:
+    """Keep API null/missing numbers unavailable and reject malformed non-null values."""
+    raw_value = data.get(field_name)
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float, str)):
+        raise RequestException(f"Invalid MonthInsights numeric field: {field_name}")
+    try:
+        value = float(raw_value)
+    except (ValueError, TypeError, OverflowError):
+        raise RequestException(f"Invalid MonthInsights numeric field: {field_name}") from None
+    if not math.isfinite(value):
+        raise RequestException(f"Invalid MonthInsights numeric field: {field_name}")
+    return value
+
+
+def _month_insights_unit(data: Mapping[str, object]) -> str | None:
+    """Preserve an explicit empty unit while keeping absent/null units unavailable."""
+    value = data.get("unit")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise RequestException("Invalid MonthInsights unit")
+    return value
+
+
+def _month_insights_difference(data: Mapping[str, object], field_name: str) -> Difference | None:
+    """Parse a present comparison block without fabricating an absent one."""
+    value = data.get(field_name)
+    if value is None:
+        return None
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise RequestException(f"Invalid MonthInsights difference block: {field_name}")
+    return Difference.from_dict(value)
+
+
+def _month_insights_reading_date(data: Mapping[str, object]) -> datetime | None:
+    """Normalize a provider reading date to aware UTC, preserving null/missing."""
+    value = data.get("lastMeterReadingDate")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise RequestException("Invalid MonthInsights lastMeterReadingDate")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (TypeError, ValueError, OverflowError):
+        raise RequestException("Invalid MonthInsights lastMeterReadingDate") from None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _month_insights_gas_excluded(data: Mapping[str, object]) -> bool | None:
+    """Preserve unknown gas exclusion independently of the gas difference block."""
+    value = data.get("gasExcluded")
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise RequestException("Invalid MonthInsights gasExcluded")
+    return value
+
+
 @dataclass
 class Difference:
-    """Difference block for gas, electricity, or feed-in."""
+    """Optional numeric gas, electricity, or feed-in comparison fields."""
 
-    actualUsage: float
-    actualAverageUnitPrice: float
-    actualCosts: float
-    expectedUsage: float
-    expectedAverageUnitPrice: float
-    expectedCosts: float
-    unit: str
+    actualUsage: float | None
+    actualAverageUnitPrice: float | None
+    actualCosts: float | None
+    expectedUsage: float | None
+    expectedAverageUnitPrice: float | None
+    expectedCosts: float | None
+    unit: str | None
 
     @staticmethod
-    def from_dict(data: dict) -> Difference:
+    def from_dict(data: Mapping[str, object]) -> Difference:
+        """Parse a present difference, without replacing missing values with zeros."""
         return Difference(
-            actualUsage=_safe_float(data.get("actualUsage"), default=0.0),
-            actualAverageUnitPrice=_safe_float(data.get("actualAverageUnitPrice"), default=0.0),
-            actualCosts=_safe_float(data.get("actualCosts"), default=0.0),
-            expectedUsage=_safe_float(data.get("expectedUsage"), default=0.0),
-            expectedAverageUnitPrice=_safe_float(data.get("expectedAverageUnitPrice"), default=0.0),
-            expectedCosts=_safe_float(data.get("expectedCosts"), default=0.0),
-            unit=str(data.get("unit", "")),
+            actualUsage=_month_insights_number(data, "actualUsage"),
+            actualAverageUnitPrice=_month_insights_number(data, "actualAverageUnitPrice"),
+            actualCosts=_month_insights_number(data, "actualCosts"),
+            expectedUsage=_month_insights_number(data, "expectedUsage"),
+            expectedAverageUnitPrice=_month_insights_number(data, "expectedAverageUnitPrice"),
+            expectedCosts=_month_insights_number(data, "expectedCosts"),
+            unit=_month_insights_unit(data),
         )
 
 
 @dataclass
 class MonthInsights:
-    """Month summary including expected and actual costs and usage differences."""
+    """Month insights with faithful nullable costs, comparisons and metadata."""
 
     _id: str
-    expectedCosts: float
-    expectedCostsGas: float
-    expectedCostsFixed: float
-    expectedCostsElectricity: float
-    expectedCostsFeedIn: float
-    expectedCostsUntilLastMeterReading: float
-    actualCostsUntilLastMeterReading: float
-    lastMeterReadingDate: datetime
+    expectedCosts: float | None
+    expectedCostsGas: float | None
+    expectedCostsFixed: float | None
+    expectedCostsElectricity: float | None
+    expectedCostsFeedIn: float | None
+    expectedCostsUntilLastMeterReading: float | None
+    actualCostsUntilLastMeterReading: float | None
+    lastMeterReadingDate: datetime | None
     invoiceId: str | None
-    gasDifference: Difference
-    electricityDifference: Difference
-    feedInDifference: Difference
-    meterReadingDayCompleteness: float
-    gasExcluded: bool
+    gasDifference: Difference | None
+    electricityDifference: Difference | None
+    feedInDifference: Difference | None
+    meterReadingDayCompleteness: float | None
+    gasExcluded: bool | None
 
     def __post_init__(self) -> None:
-        """Ensure datetime is timezone-aware."""
+        """Ensure a supplied reading date is timezone-aware and normalized to UTC."""
+        if self.lastMeterReadingDate is None:
+            return
         if self.lastMeterReadingDate.tzinfo is None:
             self.lastMeterReadingDate = self.lastMeterReadingDate.replace(tzinfo=UTC)
+        else:
+            self.lastMeterReadingDate = self.lastMeterReadingDate.astimezone(UTC)
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> MonthInsights | None:
-        """Parse the response from the monthSummary query."""
-        _LOGGER.debug("MonthInsights %s", data)
-
-        if data is None:
-            return None
-
+        """Parse the MonthInsights GraphQL envelope, keeping explicit null distinct from errors."""
+        if not isinstance(data, dict):
+            raise RequestException("Invalid MonthInsights response envelope")
         errors = data.get("errors")
-        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
-            raise RequestException(errors[0].get("message", "Unknown error"))
+        if "errors" in data and not isinstance(errors, list):
+            raise RequestException("Invalid MonthInsights GraphQL errors")
+        if errors:
+            raise RequestException("MonthInsights GraphQL request failed") from None
 
         inner = data.get("data")
-        payload = inner.get("monthInsights") if isinstance(inner, dict) else None
+        if not isinstance(inner, dict) or "monthInsights" not in inner:
+            raise RequestException("Missing MonthInsights response data")
+        payload = inner["monthInsights"]
         if payload is None:
-            raise RequestException("Unexpected response")
+            return None
         if not isinstance(payload, dict):
-            raise RequestException("Unexpected response shape")
-        _LOGGER.debug("MonthInsights %s", payload)
-
-        # Parse ISO8601 with timezone handling
-        last_date_raw = payload.get("lastMeterReadingDate")
-        if not isinstance(last_date_raw, str):
-            raise ValueError("Invalid lastMeterReadingDate format.")
-        try:
-            dt = datetime.fromisoformat(last_date_raw)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=UTC)
-        except Exception as exc:
-            raise ValueError("Invalid lastMeterReadingDate format.") from exc
-
-        gas_difference_raw = payload.get("gasDifference")
-        electricity_difference_raw = payload.get("electricityDifference")
-        feed_in_difference_raw = payload.get("feedInDifference")
+            raise RequestException("Invalid MonthInsights response payload")
 
         return MonthInsights(
             _id=str(payload.get("_id", "")),
-            expectedCosts=_safe_float(payload.get("expectedCosts"), default=0.0),
-            expectedCostsGas=_safe_float(payload.get("expectedCostsGas"), default=0.0),
-            expectedCostsFixed=_safe_float(payload.get("expectedCostsFixed"), default=0.0),
-            expectedCostsElectricity=_safe_float(payload.get("expectedCostsElectricity"), default=0.0),
-            expectedCostsFeedIn=_safe_float(payload.get("expectedCostsFeedIn"), default=0.0),
-            expectedCostsUntilLastMeterReading=_safe_float(
-                payload.get("expectedCostsUntilLastMeterReading"), default=0.0
-            ),
-            actualCostsUntilLastMeterReading=_safe_float(payload.get("actualCostsUntilLastMeterReading"), default=0.0),
-            lastMeterReadingDate=dt,
+            expectedCosts=_month_insights_number(payload, "expectedCosts"),
+            expectedCostsGas=_month_insights_number(payload, "expectedCostsGas"),
+            expectedCostsFixed=_month_insights_number(payload, "expectedCostsFixed"),
+            expectedCostsElectricity=_month_insights_number(payload, "expectedCostsElectricity"),
+            expectedCostsFeedIn=_month_insights_number(payload, "expectedCostsFeedIn"),
+            expectedCostsUntilLastMeterReading=_month_insights_number(payload, "expectedCostsUntilLastMeterReading"),
+            actualCostsUntilLastMeterReading=_month_insights_number(payload, "actualCostsUntilLastMeterReading"),
+            lastMeterReadingDate=_month_insights_reading_date(payload),
             invoiceId=_as_str(payload.get("invoiceId")),
-            gasDifference=Difference.from_dict(gas_difference_raw if isinstance(gas_difference_raw, dict) else {}),
-            electricityDifference=Difference.from_dict(
-                electricity_difference_raw if isinstance(electricity_difference_raw, dict) else {}
-            ),
-            feedInDifference=Difference.from_dict(
-                feed_in_difference_raw if isinstance(feed_in_difference_raw, dict) else {}
-            ),
-            meterReadingDayCompleteness=_safe_float(payload.get("meterReadingDayCompleteness"), default=0.0),
-            gasExcluded=bool(payload.get("gasExcluded", False)),
+            gasDifference=_month_insights_difference(payload, "gasDifference"),
+            electricityDifference=_month_insights_difference(payload, "electricityDifference"),
+            feedInDifference=_month_insights_difference(payload, "feedInDifference"),
+            meterReadingDayCompleteness=_month_insights_number(payload, "meterReadingDayCompleteness"),
+            gasExcluded=_month_insights_gas_excluded(payload),
         )
-
 
 @dataclass(slots=True)
 class MonthSummary:
