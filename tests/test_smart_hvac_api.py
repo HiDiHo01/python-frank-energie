@@ -586,8 +586,8 @@ def test_smart_hvac_http_status_redacts_provider_reason(
     [
         ("SmartHvacs", aiohttp.ClientConnectionError, "Frank Energie Smart HVAC HTTP client error", True),
         ("SmartHvacs", KeyError, "Invalid Smart HVAC API response", True),
-        ("MonthInsights", aiohttp.ClientConnectionError, "Frank Energie HTTP error", False),
-        ("MonthInsights", KeyError, "Invalid API response: missing", False),
+        ("MonthInsights", aiohttp.ClientConnectionError, "Frank Energie HTTP client error", True),
+        ("MonthInsights", KeyError, "Invalid MonthInsights API response", True),
     ],
 )
 @pytest.mark.asyncio
@@ -599,7 +599,7 @@ async def test_query_error_mapping_preserves_privacy_and_exception_causes(
     expected_message: str,
     sanitized: bool,
 ) -> None:
-    """Keep error categories, exception chaining and HVAC redaction unchanged."""
+    """Keep the legacy HVAC and newly redacted MonthInsights transport contracts."""
     secret = "synthetic-private-request-reference"
     upstream_error = error_type(secret)
     mocked_session = MagicMock()
