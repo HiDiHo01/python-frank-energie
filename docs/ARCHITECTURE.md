@@ -160,6 +160,31 @@ All operations in this table are async. Most result models come from `models.py`
 | Controls | `disable_smart_trading()`, `disable_smart_feed_in()`, `disable_smart_hvac()`, `enode_enable_smart_charging()`, `enode_disable_smart_charging()` | `bool` |
 | Settings | `update_user_settings(input_data)`, `enode_update_vehicle_charge_settings(input_data)`, `enode_update_charger_charge_settings(input_data)`, `enode_update_all_vehicle_charge_settings(input_data)`, `smart_hvac_update_settings(device_id, settings)`, `smart_battery_update_settings(device_id, settings)` | `bool` |
 
+### Optional MonthSummary source period
+
+The `MonthSummary.period: str | None` property provides a **validated,
+read-only hint** extracted from the existing opaque `_id`. Confirmed observed
+source-ID suffix shapes are `|YYYY` and `|YYYY-MM`; when the entire ID
+matches a single nonempty opaque prefix and one of these exact suffixes, the
+property returns the year (`"2026"`) or year-month (`"2026-11"`) unchanged.
+
+The parser rejects invalid calendar years/months, extra separators, trailing
+characters, embedded whitespace and unsupported legacy IDs (`summary_123`)
+by returning `None`. It does not expose the private prefix of the source ID,
+modify the dataclass fields or constructor, alter the GraphQL query, or create
+any additional API requests. Both `from_dict()` and `old_from_dict()` return
+the same unchanged `MonthSummary` model, including `_id`.
+
+**Evidence limit:** Although both suffix shapes were confirmed in provider
+observations, their long-term stability and exact accounting meaning are not
+independently documented. A year-only suffix is **not** assumed to identify
+a month; a returned suffix is not proof that costs cover a complete billing
+period. Consumers must tolerate `None` and must not substitute the
+current month or `lastMeterReadingDate`. The latter can lag the API
+request, and `meterReadingDayCompleteness == 1` establishes only that
+the most recent meter-reading day is complete, not the entire month.
+Fetching timestamps and caching belong to the consuming integration.
+
 Public operations apply their own validation, response parsing, and failure behavior.
 
 - Public price methods can run without credentials. `country_prices()` uses
