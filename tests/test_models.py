@@ -454,9 +454,7 @@ def test_month_summary_period_preserves_dataclass_contract(parser_name: str) -> 
         {"data": {}},
     ),
 )
-def test_month_summary_period_absent_payload_stays_absent(
-    parser_name: str, response: dict[str, object]
-) -> None:
+def test_month_summary_period_absent_payload_stays_absent(parser_name: str, response: dict[str, object]) -> None:
     """An absent source summary has no period; do not invent a current month."""
     assert getattr(MonthSummary, parser_name)(response) is None
 
