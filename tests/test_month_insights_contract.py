@@ -4,8 +4,8 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict, fields, replace
-from inspect import signature
 from datetime import UTC, datetime
+from inspect import signature
 from unittest.mock import AsyncMock, patch
 
 import aiohttp
