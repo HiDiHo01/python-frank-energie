@@ -496,6 +496,35 @@ def test_month_summary_with_empty_payload():
     assert MonthSummary.from_dict({"data": {"monthSummary": {}}}) is None
 
 
+@pytest.mark.parametrize(
+    ("response", "expected_message"),
+    [
+        ({"errors": [{"message": "Upstream failure"}], "data": None}, "Upstream failure"),
+        ({"data": None}, "Missing data payload"),
+        ({"data": {}}, None),
+        ({"data": {"monthSummary": None}}, None),
+        ({"data": {"monthSummary": ["invalid"]}}, "Unexpected monthSummary payload type"),
+    ],
+)
+def test_month_summary_response_envelope_preserves_behavior(
+    response: dict[str, object], expected_message: str | None
+) -> None:
+    """Preserve response-error precedence, absent payloads, and malformed-response handling."""
+    if expected_message is None:
+        assert MonthSummary.from_dict(response) is None
+        return
+
+    with pytest.raises(RequestException) as exc_info:
+        MonthSummary.from_dict(response)
+
+    assert str(exc_info.value) == expected_message
+
+
+def test_month_summary_none_input_still_returns_none() -> None:
+    """An entirely absent response must not become a parsing error."""
+    assert MonthSummary.from_dict(None) is None
+
+
 def test_month_summary_with_all_null_fields():
     """All summary fields null -> ``None`` (defense-in-depth)."""
     payload = {
