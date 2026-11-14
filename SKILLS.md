@@ -29,6 +29,12 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   conversion in guarded date validation, test both Python datetime boundaries,
   and lock dataclass positional field order with distinct argument values.
 
+- Reuse stable constants for sanitized missing-reading messages and UTC
+  suffixes. When Sonar suggests `\d` for a strict year-month pattern, use
+  `re.ASCII` so Unicode numerals remain invalid. Existing GraphQL-style
+  public model attributes are compatibility constraints: do not rename them
+  solely to satisfy generic naming rules; document the exception for review.
+
 ## Expose optional periods from opaque model IDs without leaking identifiers
 
 - Preserve existing opaque ID fields, dataclass constructors, parser return

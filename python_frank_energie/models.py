@@ -49,6 +49,7 @@ DEFAULT_ROUND = 6
 FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
+_INVALID_MONTH_INSIGHTS_READING_DATE = "Invalid MonthInsights lastMeterReadingDate"
 _ERROR_NO_MARKET_PRICES = "No marketprices found"
 _MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}-(?:0[1-9]|1[0-2]))")
 
@@ -1785,7 +1786,7 @@ def _smart_hvac_datetime(data: Mapping[str, object], field_name: str) -> datetim
     if value is None:
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX))
     except ValueError:
         raise RequestException(f"Invalid Smart HVAC timestamp field '{field_name}'") from None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
@@ -2235,16 +2236,16 @@ def _month_insights_reading_date(data: Mapping[str, object]) -> datetime | None:
     if value is None:
         return None
     if not isinstance(value, str) or not value.strip():
-        raise RequestException("Invalid MonthInsights lastMeterReadingDate")
+        raise RequestException(_INVALID_MONTH_INSIGHTS_READING_DATE)
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", _UTC_SUFFIX))
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=UTC)
         return parsed.astimezone(UTC)
     except OverflowError as exc:
-        raise RequestException("Invalid MonthInsights lastMeterReadingDate") from exc
+        raise RequestException(_INVALID_MONTH_INSIGHTS_READING_DATE) from exc
     except (TypeError, ValueError):
-        raise RequestException("Invalid MonthInsights lastMeterReadingDate") from None
+        raise RequestException(_INVALID_MONTH_INSIGHTS_READING_DATE) from None
 
 
 def _month_insights_gas_excluded(data: Mapping[str, object]) -> bool | None:
@@ -2259,7 +2260,7 @@ def _month_insights_gas_excluded(data: Mapping[str, object]) -> bool | None:
 
 @dataclass
 class Difference:
-    """Optional numeric gas, electricity, or feed-in comparison fields."""
+    """Optional comparison fields with established public GraphQL-style attribute names."""
 
     actualUsage: float | None
     actualAverageUnitPrice: float | None
@@ -2285,7 +2286,7 @@ class Difference:
 
 @dataclass
 class MonthInsights:
-    """Month insights with faithful nullable costs, comparisons and metadata."""
+    """Nullable month insights with established public GraphQL-style attribute names."""
 
     _id: str
     expectedCosts: float | None
