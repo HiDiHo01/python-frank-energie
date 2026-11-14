@@ -2,6 +2,29 @@
 
 Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI_POLICY.md). Update a practice when new evidence changes how to carry it out.
 
+## Preserve nullable provider billing data without inventing zeros
+
+- Inspect **raw JSON before model parsing** when provider zero and missing
+  values differ. Observed November 2026 MonthInsights responses have
+  `expectedCostsGas: 0` with `gasDifference: null`, sometimes
+  `expectedCostsFeedIn: 0` with `feedInDifference: null`, while other
+  accounts have real negative feed-in usage and costs. Preserve independent
+  optional blocks and genuine numeric zeros; do not turn null blocks into
+  zero-filled objects.
+- Reject malformed non-null numbers, flags, units, and nested objects using
+  sanitized field names, without including private IDs or financial values
+  in exceptions or DEBUG logging. Retain null/missing as unavailable and
+  validate the Home Assistant consumer against newly optional model types.
+- A real future-month MonthInsights request returned `monthInsights: null`
+  with a **single missing-meter-readings error** at path
+  `["monthInsights"]`. Classify this exact shape before parsing and return
+  `None` without exposing the opaque identifier. Reject other/mixed
+  GraphQL errors. Preserve rate-limit retry information and cancellation.
+- Keep requested `YYYY-MM` month separate from the reading date and the
+  source ID suffix. Year-only API support has not been established.
+  Exercise the shared HTTP transport with synthetic account identifiers,
+  including malformed and ambiguous missing-data responses.
+
 ## Expose optional periods from opaque model IDs without leaking identifiers
 
 - Preserve existing opaque ID fields, dataclass constructors, parser return
