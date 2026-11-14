@@ -374,6 +374,98 @@ def test_month_summary_with_expected_parameters(snapshot: SnapshotAssertion):
     assert month_summary == snapshot
 
 
+@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
+@pytest.mark.parametrize(
+    ("source_id", "expected_period"),
+    [
+        ("synthetic-site|2026-11", "2026-11"),
+        ("synthetic-site|2026-12", "2026-12"),
+        ("synthetic-site|2027-01", "2027-01"),
+        ("summary_123", None),
+        ("", None),
+        ("synthetic-site", None),
+        ("synthetic-site-2026-11", None),
+        ("synthetic-site|2026-00", None),
+        ("synthetic-site|2026-13", None),
+        ("synthetic-site|0000-01", None),
+        ("synthetic-site|2026-1", None),
+        ("synthetic-site|2026-011", None),
+        ("synthetic-site|2026-11x", None),
+        ("synthetic-site|2026-11 ", None),
+        ("synthetic-site|2026-11\n", None),
+        ("synthetic-site|2026-11|2027-01", None),
+        ("synthetic-site||2026-11", None),
+        ("|2026-11", None),
+        ("synthetic site|2026-11", None),
+        ("synthetic-site|２０２６-１１", None),
+    ],
+)
+def test_month_summary_period_is_strictly_validated(
+    parser_name: str, source_id: str, expected_period: str | None
+) -> None:
+    """Read only exact valid month suffixes; reject unsupported or ambiguous IDs."""
+    payload = json.loads(load_fixtures("month_summary.json"))
+    payload["data"]["monthSummary"]["_id"] = source_id
+    # Deliberately different from the source ID's period, including year rollover.
+    payload["data"]["monthSummary"]["lastMeterReadingDate"] = "2027-01-01"
+
+    summary = getattr(MonthSummary, parser_name)(payload)
+
+    assert summary is not None
+    assert summary._id == source_id
+    assert summary.period == expected_period
+    assert summary.lastMeterReadingDate == "2027-01-01"
+
+
+@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
+def test_month_summary_period_preserves_dataclass_contract(parser_name: str) -> None:
+    """Adding a read-only derived property must not change fields or constructors."""
+    payload = json.loads(load_fixtures("month_summary.json"))
+    payload["data"]["monthSummary"]["_id"] = "synthetic-site|2026-11"
+    summary = getattr(MonthSummary, parser_name)(payload)
+    assert summary is not None
+
+    assert "period" not in MonthSummary.__dataclass_fields__
+    assert "period" not in inspect.signature(MonthSummary).parameters
+    assert summary.period == "2026-11"
+    with pytest.raises(AttributeError):
+        summary.period = "2027-01"
+
+
+@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
+@pytest.mark.parametrize(
+    "response",
+    (
+        {"data": {"monthSummary": None}},
+        {"data": {"monthSummary": {}}},
+        {"data": {}},
+    ),
+)
+def test_month_summary_period_absent_payload_stays_absent(
+    parser_name: str, response: dict[str, object]
+) -> None:
+    """An absent source summary has no period; do not invent a current month."""
+    assert getattr(MonthSummary, parser_name)(response) is None
+
+
+@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
+def test_month_summary_source_id_never_appears_in_parser_logs(
+    parser_name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Do not log opaque source identifiers that may include customer references."""
+    private_id = "synthetic-private-account-reference|2026-11"
+    payload = json.loads(load_fixtures("month_summary.json"))
+    payload["data"]["monthSummary"]["_id"] = private_id
+
+    with caplog.at_level(logging.DEBUG, logger="python_frank_energie.models"):
+        summary = getattr(MonthSummary, parser_name)(payload)
+
+    assert summary is not None
+    assert summary.period == "2026-11"
+    assert private_id not in caplog.text
+    assert "synthetic-private-account-reference" not in caplog.text
+
+
 def test_month_summary_with_missing_parameters():
     """Empty payload (no summary yet) should resolve to ``None`` rather than raise.
 
