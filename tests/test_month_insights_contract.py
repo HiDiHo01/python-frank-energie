@@ -238,12 +238,109 @@ def test_invalid_date_is_sanitized(invalid: object) -> None:
     assert str(error.value) == "Invalid MonthInsights lastMeterReadingDate"
 
 
-def test_constructor_retains_field_order_and_nullable_date() -> None:
-    """Keep positional model construction while permitting optional reading dates."""
+def test_constructor_accepts_nullable_date() -> None:
+    """Permit an optional reading date in an existing MonthInsights instance."""
     insights = _parse_month()
     insights.lastMeterReadingDate = None
     insights.__post_init__()
     assert insights.lastMeterReadingDate is None
+
+
+@pytest.mark.parametrize(
+    "invalid_date",
+    ("0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"),
+)
+def test_out_of_bounds_utc_normalization_is_sanitized(invalid_date: str) -> None:
+    """Map UTC datetime boundary overflow to RequestException with the original cause."""
+    with pytest.raises(RequestException, match="Invalid MonthInsights lastMeterReadingDate") as error:
+        _parse_month(lastMeterReadingDate=invalid_date)
+    assert isinstance(error.value.__cause__, OverflowError)
+    assert str(error.value) == "Invalid MonthInsights lastMeterReadingDate"
+
+
+@pytest.mark.parametrize(
+    ("source_date", "expected_date"),
+    (
+        ("0001-01-01T00:00:00-01:00", datetime(1, 1, 1, 1, tzinfo=UTC)),
+        ("9999-12-31T23:59:59+01:00", datetime(9999, 12, 31, 22, 59, 59, tzinfo=UTC)),
+    ),
+)
+def test_representable_utc_datetime_boundaries(source_date: str, expected_date: datetime) -> None:
+    """Accept extreme aware provider timestamps when UTC conversion remains representable."""
+    assert _parse_month(lastMeterReadingDate=source_date).lastMeterReadingDate == expected_date
+
+
+@pytest.mark.parametrize("invalid_id", (None, "", "  ", 0, True, [], {}))
+def test_month_insights_rejects_invalid_record_id(invalid_id: object) -> None:
+    """Do not construct a successful record from an absent or malformed opaque ID."""
+    with pytest.raises(RequestException, match="Invalid MonthInsights _id") as error:
+        _parse_month(_id=invalid_id)
+    assert str(error.value) == "Invalid MonthInsights _id"
+
+
+def test_month_insights_rejects_missing_id_and_empty_payload() -> None:
+    """Reject malformed non-null data instead of returning an all-unavailable record."""
+    payload = _month_payload()
+    del payload["_id"]
+    for invalid_payload in (payload, {}):
+        with pytest.raises(RequestException, match="Invalid MonthInsights _id"):
+            MonthInsights.from_dict({"data": {"monthInsights": invalid_payload}})
+
+
+def test_difference_positional_constructor_keeps_field_order() -> None:
+    """Lock the public Difference positional argument order with distinct values."""
+    difference = Difference(1.1, 2.2, 3.3, 4.4, 5.5, 6.6, "KWH")
+    assert (
+        difference.actualUsage,
+        difference.actualAverageUnitPrice,
+        difference.actualCosts,
+        difference.expectedUsage,
+        difference.expectedAverageUnitPrice,
+        difference.expectedCosts,
+        difference.unit,
+    ) == (1.1, 2.2, 3.3, 4.4, 5.5, 6.6, "KWH")
+
+
+def test_month_insights_positional_constructor_keeps_field_order() -> None:
+    """Lock all public MonthInsights positional fields without changing constructor arity."""
+    reading_date = datetime(2026, 11, 13, tzinfo=UTC)
+    gas_difference = Difference.from_dict({"actualCosts": 11.0})
+    electricity_difference = Difference.from_dict({"actualCosts": 22.0})
+    feed_in_difference = Difference.from_dict({"actualCosts": -33.0})
+    insights = MonthInsights(
+        "synthetic-site|2026-11",
+        1.0,
+        2.0,
+        3.0,
+        4.0,
+        5.0,
+        6.0,
+        7.0,
+        reading_date,
+        "synthetic-invoice",
+        gas_difference,
+        electricity_difference,
+        feed_in_difference,
+        0.875,
+        False,
+    )
+    assert insights._id == "synthetic-site|2026-11"
+    assert (
+        insights.expectedCosts,
+        insights.expectedCostsGas,
+        insights.expectedCostsFixed,
+        insights.expectedCostsElectricity,
+        insights.expectedCostsFeedIn,
+        insights.expectedCostsUntilLastMeterReading,
+        insights.actualCostsUntilLastMeterReading,
+    ) == (1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
+    assert insights.lastMeterReadingDate == reading_date
+    assert insights.invoiceId == "synthetic-invoice"
+    assert insights.gasDifference is gas_difference
+    assert insights.electricityDifference is electricity_difference
+    assert insights.feedInDifference is feed_in_difference
+    assert insights.meterReadingDayCompleteness == 0.875
+    assert insights.gasExcluded is False
 
 
 @pytest.mark.parametrize(

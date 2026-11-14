@@ -24,6 +24,10 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   source ID suffix. Year-only API support has not been established.
   Exercise the shared HTTP transport with synthetic account identifiers,
   including malformed and ambiguous missing-data responses.
+- Reject malformed non-null MonthInsights records with a missing/blank opaque
+  `_id`; do not treat an empty object as usable billing data. Include timezone
+  conversion in guarded date validation, test both Python datetime boundaries,
+  and lock dataclass positional field order with distinct argument values.
 
 ## Expose optional periods from opaque model IDs without leaking identifiers
 
