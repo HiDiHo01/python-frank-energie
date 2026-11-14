@@ -101,7 +101,7 @@ _EXTRA_READ_QUERY_OPERATIONS = frozenset(
     {"UserSmartCharging", "AppVersion", "UserRewardsData", "TreeCertificates", "AppNotice"}
 )
 _REDACTED_QUERY_OPERATIONS = (
-    _SMART_HVAC_QUERY_OPERATIONS | _EXTRA_READ_QUERY_OPERATIONS | {"WeightedAveragePrices", "RenewToken"}
+    _SMART_HVAC_QUERY_OPERATIONS | _EXTRA_READ_QUERY_OPERATIONS | {"WeightedAveragePrices", "RenewToken", "MonthInsights"}
 )
 
 try:
@@ -371,6 +371,10 @@ def _is_smart_pv_feed_in_disabled(response: object) -> bool:
 
 class _MonthSummaryReadingsUnavailable(FrankEnergieException):
     """Signal that the API cannot calculate a month summary without meter readings."""
+
+
+class _MonthInsightsReadingsUnavailable(FrankEnergieException):
+    """Signal that the API explicitly reported missing MonthInsights meter readings."""
 
 
 class FrankEnergieQuery:
@@ -690,7 +694,7 @@ class FrankEnergie:
         if operation_name in _SMART_HVAC_QUERY_OPERATIONS:
             _LOGGER.error("Invalid Smart HVAC API response during [%s]", operation_name)
             raise NetworkError("Invalid Smart HVAC API response") from None
-        if operation_name in {"WeightedAveragePrices", "RenewToken"}:
+        if operation_name in {"WeightedAveragePrices", "RenewToken", "MonthInsights"}:
             _LOGGER.error("Invalid API response during [%s]", operation_name)
             raise NetworkError(f"Invalid {operation_name} API response") from None
         _LOGGER.error(
@@ -716,6 +720,8 @@ class FrankEnergie:
             raise RequestException("Invalid WeightedAveragePrices GraphQL response: expected an object")
         if operation_name in _EXTRA_READ_QUERY_OPERATIONS and not isinstance(response, dict):
             raise RequestException(f"Invalid {operation_name} GraphQL response: expected an object")
+        if operation_name == "MonthInsights" and not isinstance(response, dict):
+            raise RequestException("Invalid MonthInsights GraphQL response: expected an object")
         if not response:
             _LOGGER.debug("Empty API response received for operation [%s]", operation_name)
             return {}
@@ -802,6 +808,28 @@ class FrankEnergie:
         return isinstance(data, dict) and "monthSummary" in data and data["monthSummary"] is None
 
     @staticmethod
+    def _is_month_insights_reading_error(
+        response: dict[str, object],
+        errors: list[object],
+        operation_name: str,
+    ) -> bool:
+        """Match only the observed null MonthInsights plus one missing-readings error."""
+        if operation_name != "MonthInsights" or len(errors) != 1:
+            return False
+        data = response.get("data")
+        if not isinstance(data, dict) or "monthInsights" not in data or data["monthInsights"] is not None:
+            return False
+        error = errors[0]
+        if not isinstance(error, dict):
+            return False
+        message = error.get("message")
+        return (
+            isinstance(message, str)
+            and message.startswith("Could not find a first or last meter reading for ")
+            and error.get("path") == ["monthInsights"]
+        )
+
+    @staticmethod
     def _redact_meter_reading_errors(response: dict[str, object]) -> dict[str, object]:
         """Remove connection details from known meter-reading errors without mutating the API response."""
         errors = response.get("errors")
@@ -882,7 +910,7 @@ class FrankEnergie:
         if is_smart_hvac and "errors" in response and not isinstance(errors_obj, list):
             raise RequestException("Invalid Smart HVAC GraphQL error structure")
         if (
-            operation_name in {"WeightedAveragePrices", "RenewToken"} | _EXTRA_READ_QUERY_OPERATIONS
+            operation_name in {"WeightedAveragePrices", "RenewToken", "MonthInsights"} | _EXTRA_READ_QUERY_OPERATIONS
             and "errors" in response
             and not isinstance(errors_obj, list)
         ):
@@ -937,6 +965,8 @@ class FrankEnergie:
 
         if self._is_month_summary_reading_error(response, errors_obj, active_query):
             raise _MonthSummaryReadingsUnavailable("Required meter readings for the month summary are unavailable")
+        if self._is_month_insights_reading_error(response, errors_obj, active_query):
+            raise _MonthInsightsReadingsUnavailable("Required MonthInsights meter readings are unavailable")
 
         safe_response = self._redact_meter_reading_errors(response)
         safe_errors = safe_response.get("errors")
@@ -1046,7 +1076,7 @@ class FrankEnergie:
                 suppress_response_logging=suppress_unhandled_logging,
             )
 
-        if operation_name in {"WeightedAveragePrices", "RenewToken"}:
+        if operation_name in {"WeightedAveragePrices", "RenewToken", "MonthInsights"}:
             self._handle_redacted_graphql_error(message, operation_name)
             # Unknown weighted-price errors are rejected by the result parser,
             # after earlier recognized errors retain their response-order precedence.
@@ -1302,17 +1332,20 @@ class FrankEnergie:
             raise FrankEnergieException(f"Failed to fetch month summary: {e}") from e
 
     async def month_insights(self, site_reference: str, date: str) -> MonthInsights | None:
-        """Retrieve the month insights for the specified month.
+        """Retrieve month insights for one strictly validated YYYY-MM period.
 
         Args:
-            month: The month for which to retrieve the insights. Defaults to the current month.
+            site_reference: Nonempty delivery-site reference.
+            date: Calendar month, using four ASCII year digits and a two-digit month.
 
         Returns:
-            The month insights information.
+            The parsed insights or None for an explicit null response or recognized
+            missing-meter-readings error.
 
         Raises:
-            AuthRequiredException: If the client is not authenticated.
-            FrankEnergieException: If the request fails.
+            AuthRequiredException: When authentication is missing.
+            FrankEnergieException: When input is invalid or the request fails.
+            RequestException: When the GraphQL response is malformed.
         """
         if not self.is_authenticated:
             raise AuthRequiredException("Authentication is required.")
@@ -1320,17 +1353,12 @@ class FrankEnergie:
         if not isinstance(site_reference, str) or not site_reference.strip():
             raise FrankEnergieException("A valid non-empty site_reference must be provided.")
 
-        if not isinstance(date, str) or not date.strip():
-            raise FrankEnergieException("date must be a non-empty string in 'YYYY-MM' format.")
-
-        #        # YYYY-MM validation (strict, zero-padded, 4-digit year)
-        #        try:
-        #            # datetime.strptime ensures exact format correctness
-        #            _ = datetime.strptime(start_date, "%Y-%m")
-        #        except ValueError as exc:
-        #            raise FrankEnergieException(
-        #                "start_date must follow the 'YYYY-MM' format, for example '2025-03'."
-        #            ) from exc
+        if (
+            not isinstance(date, str)
+            or re.fullmatch(r"[0-9]{4}-(?:0[1-9]|1[0-2])", date) is None
+            or date.startswith("0000")
+        ):
+            raise FrankEnergieException("date must be a valid year-month in 'YYYY-MM' format.")
 
         query = FrankEnergieQuery(
             """
@@ -1381,15 +1409,14 @@ class FrankEnergie:
             "MonthInsights",
             {"siteReference": site_reference, "date": str(date)},
         )
-        try:
-            response_dict = await self._query(query)
-        except Exception as exc:
-            raise FrankEnergieException(f"Failed to fetch MonthInsights: {exc}") from exc
 
         try:
-            return MonthInsights.from_dict(response_dict)
-        except Exception as exc:
-            raise FrankEnergieException(f"Failed to parse MonthInsights response: {exc}") from exc
+            response_dict = await self._query(query)
+        except _MonthInsightsReadingsUnavailable:
+            _LOGGER.debug("MonthInsights unavailable because required meter readings are missing")
+            return None
+
+        return MonthInsights.from_dict(response_dict)
 
     async def enode_chargers(self, site_reference: str, start_date: date) -> EnodeChargers:
         """Retrieve the enode charger information for the specified site reference.
