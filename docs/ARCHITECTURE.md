@@ -163,27 +163,27 @@ All operations in this table are async. Most result models come from `models.py`
 ### Optional MonthSummary source period
 
 The `MonthSummary.period: str | None` property provides a **validated,
-read-only hint** extracted from the existing opaque `_id`. Confirmed observed
-source-ID suffix shapes are `|YYYY` and `|YYYY-MM`; when the entire ID
-matches a single nonempty opaque prefix and one of these exact suffixes, the
-property returns the year (`"2026"`) or year-month (`"2026-11"`) unchanged.
+read-only hint** extracted from the existing opaque `_id`. Only the exact
+source-ID suffix `|YYYY-MM` is accepted, provided the full identifier has a
+single nonempty opaque prefix and a valid four-digit calendar year/month.
+For example, `synthetic-site|2026-11` returns `"2026-11"`.
 
-The parser rejects invalid calendar years/months, extra separators, trailing
-characters, embedded whitespace and unsupported legacy IDs (`summary_123`)
-by returning `None`. It does not expose the private prefix of the source ID,
-modify the dataclass fields or constructor, alter the GraphQL query, or create
-any additional API requests. Both `from_dict()` and `old_from_dict()` return
-the same unchanged `MonthSummary` model, including `_id`.
+A year-only suffix such as `synthetic-site|2026` returns `None`, as do
+invalid calendar years/months, extra separators, trailing characters,
+embedded whitespace and unsupported legacy IDs (`summary_123`). The parser
+does not expose the private prefix of the source ID, modify the dataclass
+fields or constructor, alter the GraphQL query, or create additional API
+requests. Both `from_dict()` and `old_from_dict()` return the same
+unchanged `MonthSummary` model, including `_id`.
 
-**Evidence limit:** Although both suffix shapes were confirmed in provider
-observations, their long-term stability and exact accounting meaning are not
-independently documented. A year-only suffix is **not** assumed to identify
-a month; a returned suffix is not proof that costs cover a complete billing
-period. Consumers must tolerate `None` and must not substitute the
-current month or `lastMeterReadingDate`. The latter can lag the API
-request, and `meterReadingDayCompleteness == 1` establishes only that
-the most recent meter-reading day is complete, not the entire month.
-Fetching timestamps and caching belong to the consuming integration.
+**Evidence limit:** The source-ID suffix shape is based on provider
+observations, not an independently documented long-term API contract. A
+validated month suffix does not prove complete billing coverage. Consumers
+must tolerate `None` and must not substitute the current month or
+`lastMeterReadingDate`. The latter can lag the API request, and
+`meterReadingDayCompleteness == 1` establishes only that the most recent
+meter-reading day is complete, not the entire month. Fetch timestamps
+and caching belong to the consuming integration.
 
 Public operations apply their own validation, response parsing, and failure behavior.
 
