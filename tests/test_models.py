@@ -381,6 +381,8 @@ def test_month_summary_with_expected_parameters(snapshot: SnapshotAssertion):
         ("synthetic-site|2026-11", "2026-11"),
         ("synthetic-site|2026-12", "2026-12"),
         ("synthetic-site|2027-01", "2027-01"),
+        ("synthetic-site|2026", "2026"),
+        ("synthetic-site|2027", "2027"),
         ("summary_123", None),
         ("", None),
         ("synthetic-site", None),
@@ -388,6 +390,12 @@ def test_month_summary_with_expected_parameters(snapshot: SnapshotAssertion):
         ("synthetic-site|2026-00", None),
         ("synthetic-site|2026-13", None),
         ("synthetic-site|0000-01", None),
+        ("synthetic-site|0000", None),
+        ("synthetic-site|202", None),
+        ("synthetic-site|20260", None),
+        ("synthetic-site|2026x", None),
+        ("synthetic-site|2026 ", None),
+        ("synthetic-site|2026|2027", None),
         ("synthetic-site|2026-1", None),
         ("synthetic-site|2026-011", None),
         ("synthetic-site|2026-11x", None),
@@ -430,6 +438,11 @@ def test_month_summary_period_preserves_dataclass_contract(parser_name: str) -> 
     assert summary.period == "2026-11"
     with pytest.raises(AttributeError):
         summary.period = "2027-01"
+
+    summary._id = "synthetic-site|2027"
+    assert summary.period == "2027"
+    with pytest.raises(AttributeError):
+        summary.period = "2026"
 
 
 @pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
