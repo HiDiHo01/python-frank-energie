@@ -126,10 +126,19 @@ def test_genuine_all_zero_difference_is_preserved() -> None:
     assert insights.gasDifference.unit == ""
 
 
-@pytest.mark.parametrize("field_name", ("expectedCosts", "expectedCostsGas", "expectedCostsFixed",
-                                        "expectedCostsElectricity", "expectedCostsFeedIn",
-                                        "expectedCostsUntilLastMeterReading", "actualCostsUntilLastMeterReading",
-                                        "meterReadingDayCompleteness"))
+@pytest.mark.parametrize(
+    "field_name",
+    (
+        "expectedCosts",
+        "expectedCostsGas",
+        "expectedCostsFixed",
+        "expectedCostsElectricity",
+        "expectedCostsFeedIn",
+        "expectedCostsUntilLastMeterReading",
+        "actualCostsUntilLastMeterReading",
+        "meterReadingDayCompleteness",
+    ),
+)
 def test_null_and_omitted_month_numbers_are_unavailable(field_name: str) -> None:
     """Both explicit null and absent number fields map to None, not zero."""
     assert getattr(_parse_month(**{field_name: None}), field_name) is None
@@ -263,9 +272,24 @@ def test_explicit_null_without_errors_returns_none() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("period", ("2026", "2026-00", "2026-13", "2026-1", "2026-011",
-                                    "0000-01", "2026-01 ", " 2026-01", "2026-０１",
-                                    "2026-٠١", "", "junk", "2026-12\n"))
+@pytest.mark.parametrize(
+    "period",
+    (
+        "2026",
+        "2026-00",
+        "2026-13",
+        "2026-1",
+        "2026-011",
+        "0000-01",
+        "2026-01 ",
+        " 2026-01",
+        "2026-０１",
+        "2026-٠١",
+        "",
+        "junk",
+        "2026-12\n",
+    ),
+)
 async def test_period_validation_does_not_call_api(period: str) -> None:
     """Reject non-YYYY-MM periods before any GraphQL call."""
     api = FrankEnergie(auth_token="synthetic-token")
