@@ -7,14 +7,13 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Preserve existing opaque ID fields, dataclass constructors, parser return
   types, and snapshots. Add a read-only computed property rather than a new
   serialized or positional dataclass field.
-- Accept only directly confirmed suffix shapes (currently `|YYYY` and
-  `|YYYY-MM` for `MonthSummary`) using exact full-string matches, ASCII
-  digits, valid calendar years and months, and a single nonempty prefix.
-  Return `None` for missing, legacy, ambiguous, malformed or unsupported
-  identifiers rather than inventing a date from another field.
-- Return a year-only suffix **as a year**, not a fabricated January or
-  arbitrary month. Do not claim a billing period is complete from a
-  source ID, the last meter-reading date or day completeness.
+- Accept only the explicitly supported `|YYYY-MM` suffix for
+  `MonthSummary`, using exact full-string matches, ASCII digits, a valid
+  calendar year and month, and a single nonempty prefix.
+  Return `None` for year-only (`|YYYY`), missing, legacy, ambiguous,
+  malformed or unsupported identifiers rather than inventing a month.
+- Do not claim a billing period is complete from a source ID,
+  the last meter-reading date or day completeness.
 - Never log or newly expose the private prefix of an upstream ID; inspect
   existing model debug logging while touching ID parsing. Validate both
   standard and legacy parser methods, sanitization, and year rollovers
