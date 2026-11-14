@@ -7,6 +7,7 @@ from __future__ import annotations
 import calendar
 import logging
 import math
+import re
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
@@ -49,6 +50,7 @@ FETCH_TOMORROW_HOUR_UTC = 11
 LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
 _ERROR_NO_MARKET_PRICES = "No marketprices found"
+_MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}-(?:0[1-9]|1[0-2]))")
 
 
 @overload
@@ -2316,6 +2318,26 @@ class MonthSummary:
     expectedCosts: float | None = None
     expectedCostsPerDay: float | None = None
 
+    @property
+    def period(self) -> str | None:
+        """Return a validated month suffix if the opaque source ID contains one.
+
+        A single observed upstream ID ended with |YYYY-MM; this convention
+        is not guaranteed by the provider. Unsupported, ambiguous or malformed
+        IDs produce None. The meter-reading date is deliberately ignored.
+        """
+        if not isinstance(self._id, str):
+            return None
+        match = _MONTH_SUMMARY_PERIOD_ID_PATTERN.fullmatch(self._id)
+        if match is None:
+            return None
+        period = match.group("period")
+        try:
+            date.fromisoformat(f"{period}-01")
+        except ValueError:
+            return None
+        return period
+
     @staticmethod
     def old_from_dict(data: Mapping[str, object]) -> MonthSummary | None:
         """Parse the response from the monthSummary query.
@@ -2328,7 +2350,7 @@ class MonthSummary:
         Only raises when the FE response is *malformed-but-present*: schema
         drift, mixed-type fields on a populated summary, etc.
         """
-        _LOGGER.debug("MonthSummary model %s", data)
+        _LOGGER.debug("Parsing MonthSummary response")
 
         if data is None:
             return None
@@ -2405,7 +2427,7 @@ class MonthSummary:
 
         Only raises when the FE response is malformed-but-present.
         """
-        _LOGGER.debug("MonthSummary model %s", data)
+        _LOGGER.debug("Parsing MonthSummary response")
 
         if data is None:
             return None
