@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+from dataclasses import asdict, fields, replace
+from inspect import signature
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
@@ -341,6 +343,123 @@ def test_month_insights_positional_constructor_keeps_field_order() -> None:
     assert insights.feedInDifference is feed_in_difference
     assert insights.meterReadingDayCompleteness == 0.875
     assert insights.gasExcluded is False
+
+
+@pytest.mark.parametrize(
+    ("snake_name", "legacy_name", "updated_value"),
+    (
+        ("actual_usage", "actualUsage", 101.1),
+        ("actual_average_unit_price", "actualAverageUnitPrice", 102.2),
+        ("actual_costs", "actualCosts", 103.3),
+        ("expected_usage", "expectedUsage", 104.4),
+        ("expected_average_unit_price", "expectedAverageUnitPrice", 105.5),
+        ("expected_costs", "expectedCosts", 106.6),
+    ),
+)
+def test_difference_snake_case_aliases_keep_bidirectional_access(
+    snake_name: str, legacy_name: str, updated_value: float
+) -> None:
+    """Use the same storage for both names without changing dataclass serialization."""
+    difference = Difference.from_dict(_DIFFERENCE)
+    assert getattr(difference, snake_name) == getattr(difference, legacy_name)
+
+    setattr(difference, snake_name, updated_value)
+    assert getattr(difference, legacy_name) == updated_value
+
+    setattr(difference, legacy_name, None)
+    assert getattr(difference, snake_name) is None
+
+    serialized = asdict(difference)
+    assert legacy_name in serialized
+    assert snake_name not in serialized
+
+
+@pytest.mark.parametrize(
+    ("snake_name", "legacy_name", "updated_value"),
+    (
+        ("expected_costs", "expectedCosts", 201.1),
+        ("expected_costs_gas", "expectedCostsGas", 202.2),
+        ("expected_costs_fixed", "expectedCostsFixed", 203.3),
+        ("expected_costs_electricity", "expectedCostsElectricity", 204.4),
+        ("expected_costs_feed_in", "expectedCostsFeedIn", -205.5),
+        ("expected_costs_until_last_meter_reading", "expectedCostsUntilLastMeterReading", 206.6),
+        ("actual_costs_until_last_meter_reading", "actualCostsUntilLastMeterReading", 207.7),
+        ("last_meter_reading_date", "lastMeterReadingDate", datetime(2026, 12, 1, tzinfo=UTC)),
+        ("invoice_id", "invoiceId", "synthetic-invoice-updated"),
+        ("gas_difference", "gasDifference", Difference.from_dict({"actualCosts": 11.0})),
+        ("electricity_difference", "electricityDifference", Difference.from_dict({"actualCosts": 22.0})),
+        ("feed_in_difference", "feedInDifference", Difference.from_dict({"actualCosts": -33.0})),
+        ("meter_reading_day_completeness", "meterReadingDayCompleteness", 0.5),
+        ("gas_excluded", "gasExcluded", True),
+    ),
+)
+def test_month_insights_snake_case_aliases_keep_bidirectional_access(
+    snake_name: str, legacy_name: str, updated_value: object
+) -> None:
+    """Keep every snake_case alias in sync with its original public field."""
+    insights = _parse_month()
+    assert getattr(insights, snake_name) == getattr(insights, legacy_name)
+
+    setattr(insights, snake_name, updated_value)
+    assert getattr(insights, legacy_name) == updated_value
+
+    setattr(insights, legacy_name, None)
+    assert getattr(insights, snake_name) is None
+
+    serialized = asdict(insights)
+    assert legacy_name in serialized
+    assert snake_name not in serialized
+
+
+def test_snake_case_aliases_preserve_public_dataclass_constructors() -> None:
+    """Retain existing keyword/positional constructor names and dataclass shapes."""
+    difference_field_names = (
+        "actualUsage",
+        "actualAverageUnitPrice",
+        "actualCosts",
+        "expectedUsage",
+        "expectedAverageUnitPrice",
+        "expectedCosts",
+        "unit",
+    )
+    month_field_names = (
+        "_id",
+        "expectedCosts",
+        "expectedCostsGas",
+        "expectedCostsFixed",
+        "expectedCostsElectricity",
+        "expectedCostsFeedIn",
+        "expectedCostsUntilLastMeterReading",
+        "actualCostsUntilLastMeterReading",
+        "lastMeterReadingDate",
+        "invoiceId",
+        "gasDifference",
+        "electricityDifference",
+        "feedInDifference",
+        "meterReadingDayCompleteness",
+        "gasExcluded",
+    )
+    assert tuple(field.name for field in fields(Difference)) == difference_field_names
+    assert tuple(field.name for field in fields(MonthInsights)) == month_field_names
+    assert tuple(signature(Difference).parameters) == difference_field_names
+    assert tuple(signature(MonthInsights).parameters) == month_field_names
+
+    difference = Difference(
+        actualUsage=1.0,
+        actualAverageUnitPrice=2.0,
+        actualCosts=3.0,
+        expectedUsage=4.0,
+        expectedAverageUnitPrice=5.0,
+        expectedCosts=6.0,
+        unit="KWH",
+    )
+    assert difference.actual_usage == 1.0
+    assert replace(difference, actualCosts=0.0).actual_costs == 0.0
+
+    insights = _parse_month(expectedCostsGas=0, gasDifference=None)
+    assert insights.expected_costs_gas == 0.0
+    assert insights.gas_difference is None
+    assert replace(insights, expectedCostsGas=3.5).expected_costs_gas == 3.5
 
 
 @pytest.mark.parametrize(

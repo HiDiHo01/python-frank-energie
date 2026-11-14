@@ -409,6 +409,18 @@ but consumers must now handle `float | None`, `Difference | None`,
 migration for data fidelity, and consumers such as the Home Assistant
 integration must be audited and updated before release.
 
+Both `MonthInsights` and `Difference` expose **writable, typed `snake_case`
+property aliases** for their existing camelCase model fields (for example,
+`expected_costs_gas`/`expectedCostsGas`, `actual_usage`/`actualUsage`,
+and `invoice_id`/`invoiceId`). Both names read and write the same value.
+The original camelCase names remain the stored dataclass fields, preserving
+existing keyword and positional constructors, `dataclasses.fields()`,
+`dataclasses.asdict()`, and `dataclasses.replace()`. The aliases are
+properties, not additional serialized fields. Consumers can incrementally
+adopt `snake_case` without migrating existing persistence or API call sites.
+The SonarQube S116 reports on the legacy fields therefore remain public-API
+compatibility exceptions rather than grounds for a breaking rename.
+
 A real `2026-12` query produced `data.monthInsights=null` alongside a single
 GraphQL error indicating first/last meter readings were missing, on
 `path=["monthInsights"]`. The transport recognizes **only** this observed
