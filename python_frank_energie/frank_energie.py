@@ -94,6 +94,7 @@ _GRAPHQL_VALIDATION_MESSAGE = "Graphql validation error"
 _INVALID_GRAPHQL_ERROR_STRUCTURE = "Invalid GraphQL error structure"
 _REQUEST_NOT_SUPPORTED_IN_COUNTRY = "request-error:request-not-supported-in-country"
 _NO_CONNECTIONS_FOUND_FOR_USER = "No connections found for user"
+_MISSING_METER_READING_PREFIX = "Could not find a first or last meter reading for "
 _SMART_HVAC_QUERY_OPERATIONS = frozenset(
     {"UserSmartHvac", "SmartHvacs", "SmartHvac", "SmartHvacSummary", "SmartHvacGetConnectRequests"}
 )
@@ -798,7 +799,7 @@ class FrankEnergie:
         message = error.get("message")
         if (
             not isinstance(message, str)
-            or not message.startswith("Could not find a first or last meter reading for ")
+            or not message.startswith(_MISSING_METER_READING_PREFIX)
             or error.get("path") != ["monthSummary"]
         ):
             return False
@@ -827,7 +828,7 @@ class FrankEnergie:
         message = error.get("message")
         return (
             isinstance(message, str)
-            and message.startswith("Could not find a first or last meter reading for ")
+            and message.startswith(_MISSING_METER_READING_PREFIX)
             and error.get("path") == ["monthInsights"]
         )
 
@@ -846,7 +847,7 @@ class FrankEnergie:
                 continue
 
             message = error.get("message")
-            if isinstance(message, str) and message.startswith("Could not find a first or last meter reading for "):
+            if isinstance(message, str) and message.startswith(_MISSING_METER_READING_PREFIX):
                 redacted_errors.append(
                     {
                         "message": "Could not find a first or last meter reading (connection details redacted)",
@@ -1357,7 +1358,7 @@ class FrankEnergie:
 
         if (
             not isinstance(date, str)
-            or re.fullmatch(r"[0-9]{4}-(?:0[1-9]|1[0-2])", date) is None
+            or re.fullmatch(r"\d{4}-(?:0[1-9]|1[0-2])", date, flags=re.ASCII) is None
             or date.startswith("0000")
         ):
             raise FrankEnergieException("date must be a valid year-month in 'YYYY-MM' format.")

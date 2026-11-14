@@ -382,6 +382,8 @@ def test_explicit_null_without_errors_returns_none() -> None:
         " 2026-01",
         "2026-０１",
         "2026-٠١",
+        "２０２６-11",
+        "٢٠٢٦-11",
         "",
         "junk",
         "2026-12\n",
