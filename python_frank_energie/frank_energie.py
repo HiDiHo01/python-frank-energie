@@ -101,7 +101,9 @@ _EXTRA_READ_QUERY_OPERATIONS = frozenset(
     {"UserSmartCharging", "AppVersion", "UserRewardsData", "TreeCertificates", "AppNotice"}
 )
 _REDACTED_QUERY_OPERATIONS = (
-    _SMART_HVAC_QUERY_OPERATIONS | _EXTRA_READ_QUERY_OPERATIONS | {"WeightedAveragePrices", "RenewToken", "MonthInsights"}
+    _SMART_HVAC_QUERY_OPERATIONS
+    | _EXTRA_READ_QUERY_OPERATIONS
+    | {"WeightedAveragePrices", "RenewToken", "MonthInsights"}
 )
 
 try:
