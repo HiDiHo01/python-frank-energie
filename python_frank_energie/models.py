@@ -2416,6 +2416,27 @@ class MonthSummary:
         )
 
     @staticmethod
+    def _response_payload(data: Mapping[str, object] | None) -> Mapping[str, object] | None:
+        """Return a validated MonthSummary payload while preserving error precedence."""
+        if data is None:
+            return None
+
+        errors = data.get("errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            raise RequestException(errors[0].get("message", "Unknown error"))
+
+        root = data.get("data")
+        if not isinstance(root, Mapping):
+            raise RequestException("Missing data payload")
+
+        payload = root.get("monthSummary")
+        if payload is None:
+            return None
+        if not isinstance(payload, Mapping):
+            raise RequestException("Unexpected monthSummary payload type")
+        return payload
+
+    @staticmethod
     def from_dict(
         data: Mapping[str, object] | None,
     ) -> MonthSummary | None:
@@ -2430,25 +2451,9 @@ class MonthSummary:
         """
         _LOGGER.debug("Parsing MonthSummary response")
 
-        if data is None:
-            return None
-
-        errors = data.get("errors")
-        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
-            raise RequestException(errors[0].get("message", "Unknown error"))
-
-        root = data.get("data")
-
-        if not isinstance(root, Mapping):
-            raise RequestException("Missing data payload")
-
-        payload = root.get("monthSummary")
-
+        payload = MonthSummary._response_payload(data)
         if payload is None:
             return None
-
-        if not isinstance(payload, Mapping):
-            raise RequestException("Unexpected monthSummary payload type")
 
         summary_id = payload.get("_id")
         actual_costs = payload.get("actualCostsUntilLastMeterReadingDate")
