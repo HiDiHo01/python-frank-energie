@@ -2238,11 +2238,13 @@ def _month_insights_reading_date(data: Mapping[str, object]) -> datetime | None:
         raise RequestException("Invalid MonthInsights lastMeterReadingDate")
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (TypeError, ValueError, OverflowError):
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except OverflowError as exc:
+        raise RequestException("Invalid MonthInsights lastMeterReadingDate") from exc
+    except (TypeError, ValueError):
         raise RequestException("Invalid MonthInsights lastMeterReadingDate") from None
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
 
 
 def _month_insights_gas_excluded(data: Mapping[str, object]) -> bool | None:
@@ -2329,9 +2331,12 @@ class MonthInsights:
             return None
         if not isinstance(payload, dict):
             raise RequestException("Invalid MonthInsights response payload")
+        record_id = payload.get("_id")
+        if not isinstance(record_id, str) or not record_id.strip():
+            raise RequestException("Invalid MonthInsights _id")
 
         return MonthInsights(
-            _id=str(payload.get("_id", "")),
+            _id=record_id,
             expectedCosts=_month_insights_number(payload, "expectedCosts"),
             expectedCostsGas=_month_insights_number(payload, "expectedCostsGas"),
             expectedCostsFixed=_month_insights_number(payload, "expectedCostsFixed"),
