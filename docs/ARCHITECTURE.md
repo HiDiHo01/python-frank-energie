@@ -207,8 +207,10 @@ Public operations apply their own validation, response parsing, and failure beha
 - `month_summary()` can also return `None` for valid no-data payloads. It
   propagates authentication, network, and rate-limit exceptions and rewraps
   other caught failures in `FrankEnergieException`.
-- `period_usage_and_costs()` and `month_insights()` rewrap request failures in
-  `FrankEnergieException`. The contract-resolution methods return `None` on
+- `period_usage_and_costs()` rewraps request failures in `FrankEnergieException`.
+  `month_insights()` preserves typed authentication, network, rate-limit and
+  parsing errors; it recognizes one narrowly verified missing-reading error
+  as a normal unavailable (`None`) result. The contract-resolution methods return `None` on
   caught request or parsing failures. The boolean controls and settings
   methods return `False` on caught request failures. On success, some check a
   provider result field and others accept a nonempty response without errors.
@@ -381,3 +383,37 @@ before moving it. The sequence records proposed boundaries for issue #177.
   price inputs. If callers inspect return annotations, characterize those
   results on the supported Python versions. Require an agreed migration
   before changing any observable fields or aliases.
+
+## MonthInsights provider-backed nullable contract (issue #266)
+
+`FrankEnergie.month_insights(site_reference, date)` requires an authenticated client,
+nonempty site reference and a strict ASCII `YYYY-MM` period (year 0001–9999,
+month 01–12). Year-only `YYYY` is not supported. A live year-only probe returned
+`monthInsights: null` without a reported error, which does not verify yearly
+aggregate support.
+
+In a valid JSON response, provider-supplied `0` remains `0.0`, negative
+feed-in costs/usage remain negative, and missing or explicit `null` numeric
+fields map to `None`. `gasDifference`, `electricityDifference` and
+`feedInDifference` are independently nullable; `gasExcluded=False` does not
+imply a non-null gas comparison. Present blocks retain partial null numbers
+and `unit=""` distinctly from an absent/null `unit`; malformed non-null
+numbers and block types raise sanitized `RequestException` errors.
+
+`lastMeterReadingDate` may be missing/null, or an ISO8601 date/datetime
+normalized to UTC; `meterReadingDayCompleteness` and `gasExcluded` remain
+optional rather than acquiring fabricated zero/false defaults. The existing
+`MonthInsights` and `Difference` field order and constructor arity are retained,
+but consumers must now handle `float | None`, `Difference | None`,
+`datetime | None` and `bool | None` explicitly. This is a deliberate typing
+migration for data fidelity, and consumers such as the Home Assistant
+integration must be audited and updated before release.
+
+A real `2026-12` query produced `data.monthInsights=null` alongside a single
+GraphQL error indicating first/last meter readings were missing, on
+`path=["monthInsights"]`. The transport recognizes **only** this observed
+error shape (single error, exact path, explicit null payload) as unavailable
+and returns `None` without leaking account identifiers. An explicit null
+without GraphQL errors is also `None`, but a missing/malformed response,
+unknown error or multiple errors remains a sanitized failure. The matching
+rule is provider-observation-based, not a guarantee of future API behavior.
