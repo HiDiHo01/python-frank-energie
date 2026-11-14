@@ -2348,6 +2348,7 @@ class MonthInsights:
             gasExcluded=_month_insights_gas_excluded(payload),
         )
 
+
 @dataclass(slots=True)
 class MonthSummary:
     """Month summary data, including the actual and expected costs for this month."""
