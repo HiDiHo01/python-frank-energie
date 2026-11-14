@@ -34,6 +34,12 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   `re.ASCII` so Unicode numerals remain invalid. Existing GraphQL-style
   public model attributes are compatibility constraints: do not rename them
   solely to satisfy generic naming rules; document the exception for review.
+- Offer `snake_case` through explicit typed, writable properties that forward
+  to existing camelCase dataclass fields; never duplicate state or rename
+  positional/keyword constructor arguments. Test read/write in both directions,
+  nullable values, `dataclasses.fields()`, `dataclasses.asdict()`,
+  `dataclasses.replace()`, and the original constructor signatures. The
+  original field names stay in serialized dataclass output.
 
 ## Expose optional periods from opaque model IDs without leaking identifiers
 

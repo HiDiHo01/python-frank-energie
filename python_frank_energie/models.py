@@ -2270,6 +2270,66 @@ class Difference:
     expectedCosts: float | None
     unit: str | None
 
+    @property
+    def actual_usage(self) -> float | None:
+        """Return the actualUsage value through its snake_case alias."""
+        return self.actualUsage
+
+    @actual_usage.setter
+    def actual_usage(self, value: float | None) -> None:
+        """Update the existing actualUsage dataclass field."""
+        self.actualUsage = value
+
+    @property
+    def actual_average_unit_price(self) -> float | None:
+        """Return the actualAverageUnitPrice value through its snake_case alias."""
+        return self.actualAverageUnitPrice
+
+    @actual_average_unit_price.setter
+    def actual_average_unit_price(self, value: float | None) -> None:
+        """Update the existing actualAverageUnitPrice dataclass field."""
+        self.actualAverageUnitPrice = value
+
+    @property
+    def actual_costs(self) -> float | None:
+        """Return the actualCosts value through its snake_case alias."""
+        return self.actualCosts
+
+    @actual_costs.setter
+    def actual_costs(self, value: float | None) -> None:
+        """Update the existing actualCosts dataclass field."""
+        self.actualCosts = value
+
+    @property
+    def expected_usage(self) -> float | None:
+        """Return the expectedUsage value through its snake_case alias."""
+        return self.expectedUsage
+
+    @expected_usage.setter
+    def expected_usage(self, value: float | None) -> None:
+        """Update the existing expectedUsage dataclass field."""
+        self.expectedUsage = value
+
+    @property
+    def expected_average_unit_price(self) -> float | None:
+        """Return the expectedAverageUnitPrice value through its snake_case alias."""
+        return self.expectedAverageUnitPrice
+
+    @expected_average_unit_price.setter
+    def expected_average_unit_price(self, value: float | None) -> None:
+        """Update the existing expectedAverageUnitPrice dataclass field."""
+        self.expectedAverageUnitPrice = value
+
+    @property
+    def expected_costs(self) -> float | None:
+        """Return the expectedCosts value through its snake_case alias."""
+        return self.expectedCosts
+
+    @expected_costs.setter
+    def expected_costs(self, value: float | None) -> None:
+        """Update the existing expectedCosts dataclass field."""
+        self.expectedCosts = value
+
     @staticmethod
     def from_dict(data: Mapping[str, object]) -> Difference:
         """Parse a present difference, without replacing missing values with zeros."""
@@ -2303,6 +2363,146 @@ class MonthInsights:
     feedInDifference: Difference | None
     meterReadingDayCompleteness: float | None
     gasExcluded: bool | None
+
+    @property
+    def expected_costs(self) -> float | None:
+        """Return the expectedCosts value through its snake_case alias."""
+        return self.expectedCosts
+
+    @expected_costs.setter
+    def expected_costs(self, value: float | None) -> None:
+        """Update the existing expectedCosts dataclass field."""
+        self.expectedCosts = value
+
+    @property
+    def expected_costs_gas(self) -> float | None:
+        """Return the expectedCostsGas value through its snake_case alias."""
+        return self.expectedCostsGas
+
+    @expected_costs_gas.setter
+    def expected_costs_gas(self, value: float | None) -> None:
+        """Update the existing expectedCostsGas dataclass field."""
+        self.expectedCostsGas = value
+
+    @property
+    def expected_costs_fixed(self) -> float | None:
+        """Return the expectedCostsFixed value through its snake_case alias."""
+        return self.expectedCostsFixed
+
+    @expected_costs_fixed.setter
+    def expected_costs_fixed(self, value: float | None) -> None:
+        """Update the existing expectedCostsFixed dataclass field."""
+        self.expectedCostsFixed = value
+
+    @property
+    def expected_costs_electricity(self) -> float | None:
+        """Return the expectedCostsElectricity value through its snake_case alias."""
+        return self.expectedCostsElectricity
+
+    @expected_costs_electricity.setter
+    def expected_costs_electricity(self, value: float | None) -> None:
+        """Update the existing expectedCostsElectricity dataclass field."""
+        self.expectedCostsElectricity = value
+
+    @property
+    def expected_costs_feed_in(self) -> float | None:
+        """Return the expectedCostsFeedIn value through its snake_case alias."""
+        return self.expectedCostsFeedIn
+
+    @expected_costs_feed_in.setter
+    def expected_costs_feed_in(self, value: float | None) -> None:
+        """Update the existing expectedCostsFeedIn dataclass field."""
+        self.expectedCostsFeedIn = value
+
+    @property
+    def expected_costs_until_last_meter_reading(self) -> float | None:
+        """Return the expectedCostsUntilLastMeterReading value through its snake_case alias."""
+        return self.expectedCostsUntilLastMeterReading
+
+    @expected_costs_until_last_meter_reading.setter
+    def expected_costs_until_last_meter_reading(self, value: float | None) -> None:
+        """Update the existing expectedCostsUntilLastMeterReading dataclass field."""
+        self.expectedCostsUntilLastMeterReading = value
+
+    @property
+    def actual_costs_until_last_meter_reading(self) -> float | None:
+        """Return the actualCostsUntilLastMeterReading value through its snake_case alias."""
+        return self.actualCostsUntilLastMeterReading
+
+    @actual_costs_until_last_meter_reading.setter
+    def actual_costs_until_last_meter_reading(self, value: float | None) -> None:
+        """Update the existing actualCostsUntilLastMeterReading dataclass field."""
+        self.actualCostsUntilLastMeterReading = value
+
+    @property
+    def last_meter_reading_date(self) -> datetime | None:
+        """Return the lastMeterReadingDate value through its snake_case alias."""
+        return self.lastMeterReadingDate
+
+    @last_meter_reading_date.setter
+    def last_meter_reading_date(self, value: datetime | None) -> None:
+        """Update the existing lastMeterReadingDate dataclass field."""
+        self.lastMeterReadingDate = value
+
+    @property
+    def invoice_id(self) -> str | None:
+        """Return the invoiceId value through its snake_case alias."""
+        return self.invoiceId
+
+    @invoice_id.setter
+    def invoice_id(self, value: str | None) -> None:
+        """Update the existing invoiceId dataclass field."""
+        self.invoiceId = value
+
+    @property
+    def gas_difference(self) -> Difference | None:
+        """Return the gasDifference value through its snake_case alias."""
+        return self.gasDifference
+
+    @gas_difference.setter
+    def gas_difference(self, value: Difference | None) -> None:
+        """Update the existing gasDifference dataclass field."""
+        self.gasDifference = value
+
+    @property
+    def electricity_difference(self) -> Difference | None:
+        """Return the electricityDifference value through its snake_case alias."""
+        return self.electricityDifference
+
+    @electricity_difference.setter
+    def electricity_difference(self, value: Difference | None) -> None:
+        """Update the existing electricityDifference dataclass field."""
+        self.electricityDifference = value
+
+    @property
+    def feed_in_difference(self) -> Difference | None:
+        """Return the feedInDifference value through its snake_case alias."""
+        return self.feedInDifference
+
+    @feed_in_difference.setter
+    def feed_in_difference(self, value: Difference | None) -> None:
+        """Update the existing feedInDifference dataclass field."""
+        self.feedInDifference = value
+
+    @property
+    def meter_reading_day_completeness(self) -> float | None:
+        """Return the meterReadingDayCompleteness value through its snake_case alias."""
+        return self.meterReadingDayCompleteness
+
+    @meter_reading_day_completeness.setter
+    def meter_reading_day_completeness(self, value: float | None) -> None:
+        """Update the existing meterReadingDayCompleteness dataclass field."""
+        self.meterReadingDayCompleteness = value
+
+    @property
+    def gas_excluded(self) -> bool | None:
+        """Return the gasExcluded value through its snake_case alias."""
+        return self.gasExcluded
+
+    @gas_excluded.setter
+    def gas_excluded(self, value: bool | None) -> None:
+        """Update the existing gasExcluded dataclass field."""
+        self.gasExcluded = value
 
     def __post_init__(self) -> None:
         """Ensure a supplied reading date is timezone-aware and normalized to UTC."""
