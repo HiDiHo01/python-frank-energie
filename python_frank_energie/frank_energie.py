@@ -3711,10 +3711,14 @@ class FrankEnergie:
             ) {
                 deviceId
                 fairUsePolicyVerified
+                periodBreakdownEpexCorrection
+                periodBreakdownFrankSlim
+                periodBreakdownTradingResult
                 periodEndDate
                 periodEpexResult
                 periodFrankSlim
                 periodImbalanceResult
+                periodResult
                 periodStartDate
                 periodTotalResult
                 periodTradeIndex
@@ -3748,10 +3752,14 @@ class FrankEnergie:
                     ) {
                         deviceId
                         fairUsePolicyVerified
+                        periodBreakdownEpexCorrection
+                        periodBreakdownFrankSlim
+                        periodBreakdownTradingResult
                         periodEndDate
                         periodEpexResult
                         periodFrankSlim
                         periodImbalanceResult
+                        periodResult
                         periodStartDate
                         periodTotalResult
                         periodTradeIndex
