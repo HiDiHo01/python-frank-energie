@@ -46,9 +46,11 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Preserve existing opaque ID fields, dataclass constructors, parser return
   types, and snapshots. Add a read-only computed property rather than a new
   serialized or positional dataclass field.
-- Accept only the explicitly supported `|YYYY-MM` suffix for
-  `MonthSummary`, using exact full-string matches, ASCII digits, a valid
+- Accept only the observed `|YYYY-MM` suffix for `MonthSummary` and
+  `MonthInsights`, using exact full-string matches, ASCII digits, a valid
   calendar year and month, and a single nonempty prefix.
+  Validate the prefix for each model. `MonthInsights` permits spaces in
+  printable prefix text. `MonthSummary` rejects whitespace in its prefix.
   Return `None` for year-only (`|YYYY`), missing, legacy, ambiguous,
   malformed or unsupported identifiers rather than inventing a month.
 - Do not claim a billing period is complete from a source ID,
