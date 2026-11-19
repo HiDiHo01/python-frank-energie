@@ -51,6 +51,7 @@ LOCAL_TZ = ZoneInfo("Europe/Amsterdam")
 _UTC_SUFFIX = "+00:00"  # Replaces trailing 'Z' in ISO-8601 UTC timestamps from the API
 _INVALID_MONTH_INSIGHTS_READING_DATE = "Invalid MonthInsights lastMeterReadingDate"
 _ERROR_NO_MARKET_PRICES = "No marketprices found"
+_MONTH_INSIGHTS_PERIOD_PATTERN = re.compile(r"(?!0000)\d{4}-(?:0[1-9]|1[0-2])", re.ASCII)
 _MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}-(?:0[1-9]|1[0-2]))")
 
 
@@ -2363,6 +2364,16 @@ class MonthInsights:
     feedInDifference: Difference | None
     meterReadingDayCompleteness: float | None
     gasExcluded: bool | None
+
+    @property
+    def period(self) -> str | None:
+        """Return the observed YYYY-MM source label, or None for an unrecognized ID."""
+        if not isinstance(self._id, str):
+            return None
+        prefix, _, period = self._id.partition("|")
+        if not prefix.isprintable() or not prefix.strip():
+            return None
+        return period if _MONTH_INSIGHTS_PERIOD_PATTERN.fullmatch(period) else None
 
     @property
     def expected_costs(self) -> float | None:

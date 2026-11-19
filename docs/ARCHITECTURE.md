@@ -392,6 +392,16 @@ month 01–12). Year-only `YYYY` is not supported. A live year-only probe return
 `monthInsights: null` without a reported error, which does not verify yearly
 aggregate support.
 
+The read-only `MonthInsights.period` property returns the observed `YYYY-MM`
+label from the record's opaque `_id`. For example, `synthetic account|2026-10`
+gives `"2026-10"` even when the last reading is dated November 13. The prefix
+must contain printable text and can include spaces. Exactly one `|` must
+separate it from an ASCII year (0001–9999) and month (01–12). Unsupported
+IDs, including year-only labels, yield `None`. The provider may change this
+convention. The property uses only the returned ID, independently of the
+requested month and reading date. A day completeness of `1.0` describes the
+last processed reading day. Full-month billing coverage remains unknown.
+
 In a valid JSON response, provider-supplied `0` remains `0.0`, negative
 feed-in costs/usage remain negative, and missing or explicit `null` numeric
 fields map to `None`. `gasDifference`, `electricityDifference` and

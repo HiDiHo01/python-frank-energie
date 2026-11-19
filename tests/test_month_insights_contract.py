@@ -289,6 +289,60 @@ def test_month_insights_rejects_missing_id_and_empty_payload() -> None:
             MonthInsights.from_dict({"data": {"monthInsights": invalid_payload}})
 
 
+@pytest.mark.parametrize("period", ("0001-01", "2026-10", "2026-12", "2027-01", "9999-12"))
+def test_month_insights_period_from_source_id(period: str) -> None:
+    """Read the calendar month from a source ID with a space in its prefix."""
+    source_id = f"synthetic account|{period}"
+    insights = _parse_month(_id=source_id)
+    assert insights.period == period
+    assert insights._id == source_id
+
+
+@pytest.mark.parametrize(
+    "source_id",
+    (
+        "summary_123",
+        "synthetic account|2026",
+        "|2026-10",
+        "   |2026-10",
+        "synthetic account|0000-01",
+        "synthetic account|2026-00",
+        "synthetic account|2026-13",
+        "synthetic account|2026-1",
+        "synthetic account|2026-010",
+        "synthetic account|2026-10-extra",
+        "synthetic account|2026-10 ",
+        "synthetic account|2026-10\n",
+        "synthetic account||2026-10",
+        "synthetic account|2026-10|2027-01",
+        "synthetic account|２０２６-10",
+        "synthetic account|2026-١٠",
+        "synthetic\naccount|2026-10",
+        "synthetic\taccount|2026-10",
+        "synthetic\x00account|2026-10",
+        "synthetic\x7faccount|2026-10",
+        "synthetic\x85account|2026-10",
+    ),
+)
+def test_month_insights_unsupported_source_id_has_no_period(source_id: str) -> None:
+    """Keep usable records with unrecognized IDs and leave their period unknown."""
+    insights = _parse_month(_id=source_id)
+    assert insights._id == source_id
+    assert insights.period is None
+
+
+def test_month_insights_period_is_read_only_and_computed() -> None:
+    """Keep the source period out of the constructor and serialized fields."""
+    insights = _parse_month()
+    assert "period" not in signature(MonthInsights).parameters
+    assert "period" not in asdict(insights)
+    with pytest.raises(AttributeError):
+        insights.period = "2027-01"
+    insights._id = "synthetic account|2027-01"
+    assert insights.period == "2027-01"
+    assert replace(insights, _id=None).period is None
+
+
 def test_difference_positional_constructor_keeps_field_order() -> None:
     """Lock the public Difference positional argument order with distinct values."""
     difference = Difference(1.1, 2.2, 3.3, 4.4, 5.5, 6.6, "KWH")
@@ -627,13 +681,24 @@ async def test_unrecognized_reading_errors_fail_closed_without_logging_ids(
 
 
 @pytest.mark.asyncio
-async def test_real_transport_keeps_nullable_payload_values(aresponses: object) -> None:
-    """Verify the HTTP-to-model path does not replace null differences with zeros."""
-    _add_response(aresponses, {"data": {"monthInsights": _month_payload()}})
+async def test_real_transport_preserves_source_period_and_nullable_values(
+    aresponses: object, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Report the provider's month and nullable values while protecting the account data."""
+    private_prefix = "synthetic private account"
+    payload = _month_payload(_id=f"{private_prefix}|2026-10", invoiceId="synthetic-private-invoice")
+    _add_response(aresponses, {"data": {"monthInsights": payload}})
+    caplog.set_level(logging.DEBUG)
     async with aiohttp.ClientSession() as session:
         api = FrankEnergie(session, auth_token="synthetic-token")
-        insights = await api.month_insights("synthetic-site", "2026-11")
+        insights = await api.month_insights("synthetic-site", "2026-12")
     assert insights is not None
+    assert insights.period == "2026-10"
+    assert insights.last_meter_reading_date == datetime(2026, 11, 13, tzinfo=UTC)
+    assert insights.meter_reading_day_completeness == pytest.approx(1.0)
     assert insights.expectedCostsGas == 0.0
     assert insights.gasDifference is None
     assert insights.feedInDifference is None
+    assert "MonthInsights" in caplog.text
+    assert private_prefix not in caplog.text
+    assert "synthetic-private-invoice" not in caplog.text
