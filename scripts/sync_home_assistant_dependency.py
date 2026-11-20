@@ -17,7 +17,7 @@ MANIFEST_PIN = re.compile(rf"{PACKAGE_NAME}==(?P<version>{VERSION})", re.ASCII)
 DISTRIBUTION_NAME = re.compile(r"\s*([a-z0-9][a-z0-9._-]*)", re.IGNORECASE | re.ASCII)
 POETRY_PATTERN = re.compile(
     r"""^[ \t]*(?P<key_quote>['"]?)python-frank-energie(?P=key_quote)[ \t]*=[ \t]*(?P<quote>['"])"""
-    rf"(?P<constraint>(?:\^|==)(?P<version>{VERSION}))"
+    rf"(?P<constraint>(?:\^|==|>=)(?P<version>{VERSION}))"
     r"(?P=quote)[ \t]*(?:#[^\r\n]*)?\r?$",
     re.ASCII | re.MULTILINE,
 )
@@ -43,7 +43,7 @@ def _is_library_requirement(requirement: object) -> bool:
 
 
 def _current_version(manifest_text: str, pyproject_text: str) -> str:
-    """Require exactly one matching manifest pin and Poetry dependency."""
+    """Require one manifest pin and a compatible Poetry constraint."""
     manifest = json.loads(manifest_text)
     if not isinstance(manifest, dict) or not isinstance(manifest.get("requirements"), list):
         raise ValueError("Expected an integration manifest object with a requirements list")
@@ -53,14 +53,16 @@ def _current_version(manifest_text: str, pyproject_text: str) -> str:
         raise ValueError("Expected exactly one pinned python-frank-energie manifest requirement")
 
     version = pin["version"]
-    _version_parts(version)
+    manifest_parts = _version_parts(version)
     pyproject = tomllib.loads(pyproject_text)
     declared = pyproject.get("tool", {}).get("poetry", {}).get("dependencies", {}).get(PACKAGE_NAME)
     declarations = list(POETRY_PATTERN.finditer(pyproject_text))
-    if (
-        declared not in (f"^{version}", f"=={version}")
-        or len(declarations) != 1
-        or declarations[0].group("version") != version
+    if len(declarations) != 1 or declared != declarations[0].group("constraint"):
+        raise ValueError("Poetry's python-frank-energie dependency must match the pinned manifest version")
+    constraint = declarations[0].group("constraint")
+    declared_parts = _version_parts(declarations[0].group("version"))
+    if (constraint.startswith(">=") and declared_parts > manifest_parts) or (
+        not constraint.startswith(">=") and declared_parts != manifest_parts
     ):
         raise ValueError("Poetry's python-frank-energie dependency must match the pinned manifest version")
     return version
@@ -105,13 +107,18 @@ def update_dependency(root: Path, version: str, *, prepare_lock: bool = False) -
     current_version = _current_version(manifest_text, pyproject_text)
     if _version_parts(current_version) > target_parts:
         return False
-    if current_version == version and (not prepare_lock or _locked_versions(root) == [version]):
-        return False
-
-    old_pin = f'"{PACKAGE_NAME}=={current_version}"'
     existing_constraint = POETRY_PATTERN.search(pyproject_text)
     if existing_constraint is None:
         raise ValueError("Cannot locate the existing Poetry dependency")
+    has_minimum_constraint = existing_constraint.group("constraint").startswith(">=")
+    if (
+        current_version == version
+        and not has_minimum_constraint
+        and (not prepare_lock or _locked_versions(root) == [version])
+    ):
+        return False
+
+    old_pin = f'"{PACKAGE_NAME}=={current_version}"'
     if manifest_text.count(old_pin) != 1:
         raise ValueError("Cannot identify a unique library dependency in both configuration files")
 
