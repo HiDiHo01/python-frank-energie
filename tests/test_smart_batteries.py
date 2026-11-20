@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import patch
 
 import aiohttp
@@ -11,6 +12,7 @@ from syrupy.assertion import SnapshotAssertion
 from python_frank_energie import FrankEnergie
 from python_frank_energie.domain import SmartBatteryMode, SmartBatteryTradingAlgorithm
 from python_frank_energie.exceptions import AuthException, AuthRequiredException, NetworkError, RateLimitException
+from python_frank_energie.models import SmartBatterySessions
 
 from . import load_fixtures
 
@@ -41,17 +43,23 @@ async def test_smart_batteries(aresponses, snapshot: SnapshotAssertion):
 
 
 @pytest.mark.asyncio
-async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion):
+async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion) -> None:
     """Test request with authentication."""
+    requests: list[dict[str, Any]] = []
+
+    async def handler(request: Any) -> Any:
+        requests.append(await request.json())
+        return aresponses.Response(
+            text=load_fixtures("smart_battery_sessions.json"),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        )
+
     aresponses.add(
         SIMPLE_DATA_URL,
         "/",
         "POST",
-        aresponses.Response(
-            text=load_fixtures("smart_battery_sessions.json"),
-            status=200,
-            headers={"Content-Type": "application/json"},
-        ),
+        handler,
     )
 
     async with aiohttp.ClientSession() as session:
@@ -61,6 +69,49 @@ async def test_smart_battery_sessions(aresponses, snapshot: SnapshotAssertion):
 
     assert sessions is not None
     assert sessions == snapshot
+    query = requests[0]["query"]
+    assert requests[0]["operationName"] == "SmartBatterySessions"
+    for field_name in (
+        "periodBreakdownTradingResult",
+        "periodBreakdownFrankSlim",
+        "periodResult",
+        "periodBreakdownEpexCorrection",
+        "date",
+        "result",
+        "status",
+    ):
+        assert field_name in query
+
+
+def test_smart_battery_sessions_period_breakdowns_preserve_signed_zero_and_missing_values() -> None:
+    """Parse new period fields without changing signs or collapsing null and zero."""
+    sessions = SmartBatterySessions.from_dict(
+        {
+            "data": {
+                "smartBatterySessions": {
+                    "deviceId": "synthetic-device",
+                    "periodBreakdownTradingResult": 0,
+                    "periodBreakdownFrankSlim": None,
+                    "periodBreakdownEpexCorrection": 0.0009,
+                    "sessions": [
+                        {
+                            "date": "2026-11-16",
+                            "result": 0,
+                            "status": "COMPLETE_FINAL",
+                        }
+                    ],
+                }
+            }
+        }
+    )
+
+    assert sessions.period_breakdown_trading_result == pytest.approx(0.0)
+    assert sessions.period_breakdown_frank_slim is None
+    assert sessions.period_result is None
+    assert sessions.period_breakdown_epex_correction == pytest.approx(0.0009)
+    assert sessions.sessions[0].date.isoformat() == "2026-11-16T00:00:00+00:00"
+    assert sessions.sessions[0].result == pytest.approx(0.0)
+    assert sessions.sessions[0].status.value == "COMPLETE_FINAL"
 
 
 @pytest.mark.asyncio

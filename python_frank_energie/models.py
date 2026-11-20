@@ -5029,7 +5029,7 @@ class SmartBatterySession:
 
 @dataclass
 class SmartBatterySessions:
-    """Collection of smart battery trading sessions."""
+    """Collection of smart battery trading sessions and period results."""
 
     device_id: str
     fairuse_policy_verified: bool
@@ -5043,11 +5043,15 @@ class SmartBatterySessions:
     period_epex_result: float | None
     period_frank_slim: float | None
     sessions: list[SmartBatterySession]
+    period_result: float | None = None
+    period_breakdown_epex_correction: float | None = None
+    period_breakdown_frank_slim: float | None = None
+    period_breakdown_trading_result: float | None = None
     # total_trading_result: float
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> SmartBatterySessions:
-        """Parse the response from the SmartBatterySessions query."""
+        """Parse period breakdowns and daily sessions from the SmartBatterySessions response."""
         _LOGGER.debug("Parsing SmartBatterySessions response: %s", data)
 
         if errors := data.get("errors"):
@@ -5081,6 +5085,12 @@ class SmartBatterySessions:
             sessions=[
                 SmartBatterySession.from_dict(session) for session in smart_battery_session_data.get("sessions", [])
             ],
+            period_result=_safe_float(smart_battery_session_data.get("periodResult")),
+            period_breakdown_epex_correction=_safe_float(
+                smart_battery_session_data.get("periodBreakdownEpexCorrection")
+            ),
+            period_breakdown_frank_slim=_safe_float(smart_battery_session_data.get("periodBreakdownFrankSlim")),
+            period_breakdown_trading_result=_safe_float(smart_battery_session_data.get("periodBreakdownTradingResult")),
         )
 
     def __iter__(self) -> Iterator:
