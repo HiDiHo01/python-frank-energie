@@ -216,3 +216,83 @@ def test_cli_handles_validation_errors(tmp_path: Path, capsys: pytest.CaptureFix
         main(["--root", str(tmp_path), "--version", "invalid-version"])
     error = capsys.readouterr().err.splitlines()[-1].partition(": error: ")[2]
     assert error.startswith("Cannot safely synchronize")
+
+def test_release_manifest_with_older_poetry_floor(tmp_path: Path) -> None:
+    """Accept the published manifest pin even when Poetry declares a lower compatible minimum."""
+    manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.21")
+    original_manifest = manifest_path.read_bytes()
+    original_pyproject = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(
+        original_pyproject.replace("^2026.11.21", ">=2026.11.13"),
+        encoding="utf-8",
+    )
+    (tmp_path / "poetry.lock").write_text(
+        '[[package]]\nname = "python-frank-energie"\nversion = "2026.11.13"\n',
+        encoding="utf-8",
+    )
+
+    assert update_dependency(tmp_path, "2026.11.21", prepare_lock=True) is True
+    assert manifest_path.read_bytes() == original_manifest
+    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject.replace(
+        "^2026.11.21", "==2026.11.21"
+    )
+
+
+def test_minimum_floor_updates_with_newer_release(tmp_path: Path) -> None:
+    """Update the manifest and normalize an existing compatible Poetry floor."""
+    manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.13")
+    original = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(original.replace("^2026.11.13", ">=2026.11.13"), encoding="utf-8")
+
+    assert update_dependency(tmp_path, "2026.11.21") is True
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["requirements"] == [
+        "python-frank-energie==2026.11.21"
+    ]
+    assert pyproject_path.read_text(encoding="utf-8") == original.replace(
+        "^2026.11.13", "==2026.11.21"
+    )
+
+
+def test_matching_lock_still_normalizes_poetry_minimum(tmp_path: Path) -> None:
+    """Normalize a compatible minimum even when the lock is already current, then stay idempotent."""
+    manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.21")
+    original = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(original.replace("^2026.11.21", ">=2026.11.13"), encoding="utf-8")
+    (tmp_path / "poetry.lock").write_text(
+        '[[package]]\nname = "python-frank-energie"\nversion = "2026.11.21"\n',
+        encoding="utf-8",
+    )
+
+    assert update_dependency(tmp_path, "2026.11.21", prepare_lock=True) is True
+    assert pyproject_path.read_text(encoding="utf-8") == original.replace("^2026.11.21", "==2026.11.21")
+    unchanged = manifest_path.read_bytes(), pyproject_path.read_bytes()
+    assert update_dependency(tmp_path, "2026.11.21", prepare_lock=True) is False
+    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == unchanged
+
+
+@pytest.mark.parametrize("floor", ["2026.11.22", "2026.11.32"])
+def test_newer_or_invalid_poetry_floor_is_rejected(tmp_path: Path, floor: str) -> None:
+    """Reject an incompatible or malformed minimum without touching the checkout."""
+    manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.21")
+    original = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(original.replace("^2026.11.21", f">={floor}"), encoding="utf-8")
+    unchanged = manifest_path.read_bytes(), pyproject_path.read_bytes()
+
+    with pytest.raises(ValueError):
+        update_dependency(tmp_path, "2026.11.23")
+    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == unchanged
+
+
+def test_unsupported_compound_minimum_is_rejected(tmp_path: Path) -> None:
+    """Do not silently broaden the accepted Poetry constraint syntax."""
+    manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.21")
+    original = pyproject_path.read_text(encoding="utf-8")
+    pyproject_path.write_text(
+        original.replace("^2026.11.21", ">=2026.11.13,<2027"),
+        encoding="utf-8",
+    )
+    unchanged = manifest_path.read_bytes(), pyproject_path.read_bytes()
+
+    with pytest.raises(ValueError, match="must match"):
+        update_dependency(tmp_path, "2026.11.23")
+    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == unchanged
