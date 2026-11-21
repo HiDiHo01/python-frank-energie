@@ -260,9 +260,11 @@ def test_matching_lock_still_normalizes_poetry_minimum(tmp_path: Path) -> None:
 
     assert update_dependency(tmp_path, "2026.11.21", prepare_lock=True) is True
     assert pyproject_path.read_text(encoding="utf-8") == original.replace("^2026.11.21", "==2026.11.21")
-    unchanged = manifest_path.read_bytes(), pyproject_path.read_bytes()
+    unchanged_manifest = manifest_path.read_bytes()
+    unchanged_pyproject = pyproject_path.read_bytes()
     assert update_dependency(tmp_path, "2026.11.21", prepare_lock=True) is False
-    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == unchanged
+    assert manifest_path.read_bytes() == unchanged_manifest
+    assert pyproject_path.read_bytes() == unchanged_pyproject
 
 
 @pytest.mark.parametrize("floor", ["2026.11.22", "2026.11.32"])
@@ -271,11 +273,13 @@ def test_newer_or_invalid_poetry_floor_is_rejected(tmp_path: Path, floor: str) -
     manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.21")
     original = pyproject_path.read_text(encoding="utf-8")
     pyproject_path.write_text(original.replace("^2026.11.21", f">={floor}"), encoding="utf-8")
-    unchanged = manifest_path.read_bytes(), pyproject_path.read_bytes()
+    unchanged_manifest = manifest_path.read_bytes()
+    unchanged_pyproject = pyproject_path.read_bytes()
 
     with pytest.raises(ValueError):
         update_dependency(tmp_path, "2026.11.23")
-    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == unchanged
+    assert manifest_path.read_bytes() == unchanged_manifest
+    assert pyproject_path.read_bytes() == unchanged_pyproject
 
 
 def test_unsupported_compound_minimum_is_rejected(tmp_path: Path) -> None:
@@ -286,8 +290,10 @@ def test_unsupported_compound_minimum_is_rejected(tmp_path: Path) -> None:
         original.replace("^2026.11.21", ">=2026.11.13,<2027"),
         encoding="utf-8",
     )
-    unchanged = manifest_path.read_bytes(), pyproject_path.read_bytes()
+    unchanged_manifest = manifest_path.read_bytes()
+    unchanged_pyproject = pyproject_path.read_bytes()
 
     with pytest.raises(ValueError, match="must match"):
         update_dependency(tmp_path, "2026.11.23")
-    assert (manifest_path.read_bytes(), pyproject_path.read_bytes()) == unchanged
+    assert manifest_path.read_bytes() == unchanged_manifest
+    assert pyproject_path.read_bytes() == unchanged_pyproject
