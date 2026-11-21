@@ -217,6 +217,7 @@ def test_cli_handles_validation_errors(tmp_path: Path, capsys: pytest.CaptureFix
     error = capsys.readouterr().err.splitlines()[-1].partition(": error: ")[2]
     assert error.startswith("Cannot safely synchronize")
 
+
 def test_release_manifest_with_older_poetry_floor(tmp_path: Path) -> None:
     """Accept the published manifest pin even when Poetry declares a lower compatible minimum."""
     manifest_path, pyproject_path = _make_checkout(tmp_path, "2026.11.21")
@@ -233,9 +234,7 @@ def test_release_manifest_with_older_poetry_floor(tmp_path: Path) -> None:
 
     assert update_dependency(tmp_path, "2026.11.21", prepare_lock=True) is True
     assert manifest_path.read_bytes() == original_manifest
-    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject.replace(
-        "^2026.11.21", "==2026.11.21"
-    )
+    assert pyproject_path.read_text(encoding="utf-8") == original_pyproject.replace("^2026.11.21", "==2026.11.21")
 
 
 def test_minimum_floor_updates_with_newer_release(tmp_path: Path) -> None:
@@ -245,12 +244,8 @@ def test_minimum_floor_updates_with_newer_release(tmp_path: Path) -> None:
     pyproject_path.write_text(original.replace("^2026.11.13", ">=2026.11.13"), encoding="utf-8")
 
     assert update_dependency(tmp_path, "2026.11.21") is True
-    assert json.loads(manifest_path.read_text(encoding="utf-8"))["requirements"] == [
-        "python-frank-energie==2026.11.21"
-    ]
-    assert pyproject_path.read_text(encoding="utf-8") == original.replace(
-        "^2026.11.13", "==2026.11.21"
-    )
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["requirements"] == ["python-frank-energie==2026.11.21"]
+    assert pyproject_path.read_text(encoding="utf-8") == original.replace("^2026.11.13", "==2026.11.21")
 
 
 def test_matching_lock_still_normalizes_poetry_minimum(tmp_path: Path) -> None:
