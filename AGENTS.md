@@ -9,6 +9,7 @@ This repository contains `python-frank-energie`, an asynchronous Python client l
 - Read [`AI_POLICY.md`](AI_POLICY.md) before making changes and follow it.
 - AI-generated or AI-refactored changes require human review before merge.
 - Never invent Frank Energie API behavior, GraphQL fields, response semantics, or device behavior. Verify assumptions against the existing implementation, tests, or documented responses.
+- **Frank Energie GraphQL introspection is blocked and must not be used.** Never send or retry `__schema` / `__type` introspection queries, including discovery scripts, validation probes, fallbacks or bypass attempts. Use documented contracts and independently verified, authorized provider queries/responses with sanitized fixtures instead; state unknown argument types, fields and semantics explicitly. Do not interpret a generic `Graphql validation error` as proof that an operation is supported or removed.
 - Never include credentials, tokens, account details, or other private data in code, logs, tests, issues, or pull requests.
 - Pull requests involving AI-assisted work must disclose that use and summarize the AI-assisted changes, as required by `AI_POLICY.md`.
 
