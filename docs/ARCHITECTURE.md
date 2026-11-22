@@ -240,8 +240,7 @@ See the [inventory](../tests/test_device_inventories.py),
   argument. The parser requires a nonempty site list, fills its top-level
   fields from the first entry, and exposes the parsed entries in
   `deliverySites`. The `address.addressFormatted` selection is a list of
-  two or more nonempty strings for each site. `UserSites.addressFormatted:
-  list[str] | None` contains the first site's validated nested address
+  two or more nonempty strings for each site. `UserSites.addressFormatted` is `list[str] | None` and contains the first site's validated nested address
   lines or `None` when the address is absent, null, too short, or malformed.
   `DeliverySite.address` independently parses each site's first two lines
   into an `Address` object, or `None` for an invalid address; valid
@@ -252,8 +251,9 @@ See the [inventory](../tests/test_device_inventories.py),
   value from `None` to `list[str]` for valid responses. Other first-entry
   fields describe the returned order; site selection is up to the caller.
   The [alias tests](../tests/test_user_sites_alias.py) cover forwarding,
-  result identity, and error parity; [address regression tests]
-  (../tests/test_user_sites_address.py) cover parsing and invalid payloads.
+  result identity, and error parity. The
+  [address regression tests](../tests/test_user_sites_address.py) cover
+  parsing and invalid payloads.
 - Both site methods declare `UserSites` as their return type. On Python
   3.14, default runtime inspection of that annotation resolves to the
   class-local `FrankEnergie.UserSites` method. The methods still return the
