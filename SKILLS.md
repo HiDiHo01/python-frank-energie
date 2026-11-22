@@ -73,6 +73,11 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   missing root, malformed response, or GraphQL error. Preserve successful empty
   collections only when the provider explicitly returned `[]`; never infer them
   from an error.
+- For nested `userSites[].address.addressFormatted`, validate the
+  actual `list[str]` shape and each nonempty line before mapping it to a
+  top-level alias or structured `Address`. Do not coerce malformed elements
+  to strings or log complete site, address, or identifier payloads. Keep
+  first-site legacy summaries distinct from per-site objects and test both.
 - Use synthetic regression fixtures, especially for nullable nested fields.
   Two 2026-11-11 `UserSmartCharging` responses confirmed
   `provider: "ENODE"` and both `isActivated: false` with null
