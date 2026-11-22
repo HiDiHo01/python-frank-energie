@@ -983,12 +983,22 @@ class ContractPriceResolutionState:
         return self.upcoming_change_effective_date
 
 
+def _validated_formatted_address_lines(data: dict[str, object]) -> list[str] | None:
+    """Return complete, nonempty formatted address lines without coercing invalid values."""
+    raw_lines = data.get("addressFormatted")
+    if not isinstance(raw_lines, list) or len(raw_lines) < 2:
+        return None
+    if any(not isinstance(line, str) or not line.strip() for line in raw_lines):
+        return None
+    return [line for line in raw_lines if isinstance(line, str)]
+
+
 @dataclass
 class UserSites:
     """UserSites data."""
 
     deliverySites: list[object]
-    addressFormatted: str
+    addressFormatted: list[str] | None
     addressHasMultipleSites: bool
     deliveryEndDate: str | None
     deliveryStartDate: str | None
@@ -1002,8 +1012,6 @@ class UserSites:
     @staticmethod
     def from_dict(data: dict[str, object]) -> UserSites:
         """Parse the response from the UserSites query."""
-        _LOGGER.debug("UserSites %s", data)
-
         errors = data.get("errors")
         if isinstance(errors, list) and errors and isinstance(errors[0], dict):
             raise RequestException(errors[0].get("message", "Unknown error"))
@@ -1020,8 +1028,11 @@ class UserSites:
             first_meter_reading_date = first_site.get("firstMeterReadingDate")
             last_meter_reading_date = first_site.get("lastMeterReadingDate")
 
+        address_data = first_site.get("address")
+        address_lines = _validated_formatted_address_lines(address_data) if isinstance(address_data, dict) else None
+
         return UserSites(
-            addressFormatted=first_site.get("addressFormatted"),
+            addressFormatted=address_lines,
             addressHasMultipleSites=first_site.get("addressHasMultipleSites"),
             deliveryEndDate=first_site.get("deliveryEndDate"),
             deliveryStartDate=first_site.get("deliveryStartDate"),
@@ -1276,17 +1287,12 @@ class Address:
         Returns:
             Address instance or None if invalid input.
         """
-        address_formatted = data.get("addressFormatted")
-
-        if not isinstance(address_formatted, list) or len(address_formatted) < 2:
-            _LOGGER.debug(
-                "Invalid addressFormatted: %s",
-                address_formatted,
-            )
+        address_formatted = _validated_formatted_address_lines(data)
+        if address_formatted is None:
             return None
 
-        street_and_number = str(address_formatted[0]).strip()
-        postcode_and_city = str(address_formatted[1]).strip()
+        street_and_number = address_formatted[0].strip()
+        postcode_and_city = address_formatted[1].strip()
 
         street, house_number, house_number_addition = Address._parse_street_and_number(street_and_number)
         zip_code, city = Address._parse_zip_and_city(postcode_and_city)
@@ -1401,8 +1407,6 @@ class DeliverySite(BaseModel):
 
         if not payload:
             return None
-
-        _LOGGER.debug("DeliverySites %s", payload)
 
         address_data = payload.get("address")
         address = Address.from_dict(address_data) if isinstance(address_data, dict) else None
