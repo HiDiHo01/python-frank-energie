@@ -330,12 +330,16 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
 - Preserve the fail-closed inventory guarantees of #243. Distinguish
   a missing selected field from an explicit null; do not silently convert
   malformed non-null summary numbers or timestamps to `None`.
-- If authorized schema introspection is unavailable, record the failure
-  category and evidence boundary without exposing credentials or provider
-  payloads. Avoid speculative query changes. For issue #244, acceptance
-  covers independently verifiable fields only: an unavailable full schema
-  is not by itself a blocker once mapping, tests, CI and human review are
-  confirmed. Never claim provider-schema completeness.
+- GraphQL introspection is blocked for Frank Energie: do not attempt
+  `__schema` or `__type` queries, retries, discovery probes, or fallback
+  introspection. Instead, use dated provider documentation and verified,
+  authorized application/API requests with sanitized responses. Record
+  unknown argument types, fields and semantics explicitly; never infer them
+  from a generic `Graphql validation error` or a historical schema snapshot.
+  Avoid speculative query changes. For issue #244, acceptance covers
+  independently verifiable fields only: the unavailable full schema is not
+  itself a blocker once mapping, tests, CI and human review are confirmed.
+  Never claim provider-schema completeness.
 
 ### Lessons from historical GraphQL schema and third-party client research
 
