@@ -55,6 +55,53 @@ _MONTH_INSIGHTS_PERIOD_PATTERN = re.compile(r"(?!0000)\d{4}-(?:0[1-9]|1[0-2])", 
 _MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}-(?:0[1-9]|1[0-2]))")
 
 
+# Unknown upstream strings are never logged verbatim unless every component
+# belongs to a small, non-identifying battery-status vocabulary.
+_SAFE_BATTERY_STATUS_WORDS = frozenset(
+    {
+        "ACTIVE",
+        "BALANCING",
+        "CHARGE",
+        "CHARGING",
+        "CONGESTION",
+        "CONSUMPTION",
+        "DATA",
+        "DISCHARGE",
+        "DISCHARGING",
+        "EMPTY",
+        "EPEX",
+        "ERROR",
+        "FIFTEEN",
+        "FULL",
+        "GRID",
+        "HOME",
+        "IDLE",
+        "IMBALANCE",
+        "IMBALANCES",
+        "INTRADAY",
+        "MAINTENANCE",
+        "MIXED",
+        "OFFLINE",
+        "ONLINE",
+        "PERCENT",
+        "PERCENTAGE",
+        "PRICE",
+        "PV",
+        "SEPARATE",
+        "SELF",
+        "SMART",
+        "SOLAR",
+        "STANDBY",
+        "STATUS",
+        "TRADING",
+        "UNKNOWN",
+        "UNRELIABLE",
+    }
+)
+_MISSING_BATTERY_STATUS = object()
+_LOGGED_BATTERY_STATUS_DIAGNOSTICS: set[str] = set()
+
+
 @overload
 def _safe_float(val: Any, precision: int | None = None, *, default: float) -> float: ...
 @overload
@@ -4888,6 +4935,50 @@ class SmartBatteryAdjustableSettings:
         )
 
 
+def _is_safe_battery_status_diagnostic(raw_status: str) -> bool:
+    """Allow logging only short ASCII tokens made from status terminology."""
+    return (
+        0 < len(raw_status) <= 64
+        and raw_status.isascii()
+        and len(raw_status.split("_")) <= 5
+        and all(word in _SAFE_BATTERY_STATUS_WORDS for word in raw_status.upper().split("_"))
+    )
+
+
+def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
+    """Record a privacy-safe raw status diagnostic before enum conversion.
+
+    Unrecognised values preserve the existing UNKNOWN fallback, but missing,
+    null, empty, explicit UNKNOWN and unexpected tokens can be distinguished.
+    Never log an arbitrary upstream string or the containing battery payload.
+    """
+    if isinstance(raw_status, str):
+        normalized_status = raw_status.casefold()
+        for known_status in SmartBatteryStatus:
+            if known_status.value.casefold() == normalized_status and known_status is not SmartBatteryStatus.UNKNOWN:
+                return known_status
+        if not raw_status:
+            diagnostic = "<empty>"
+        elif _is_safe_battery_status_diagnostic(raw_status):
+            diagnostic = raw_status
+        else:
+            diagnostic = "<redacted>"
+    elif raw_status is _MISSING_BATTERY_STATUS:
+        diagnostic = "<missing>"
+    elif raw_status is None:
+        diagnostic = "<null>"
+    else:
+        diagnostic = "<invalid-type>"
+
+    if diagnostic not in _LOGGED_BATTERY_STATUS_DIAGNOSTICS:
+        _LOGGED_BATTERY_STATUS_DIAGNOSTICS.add(diagnostic)
+        _LOGGER.warning(
+            "SmartBatterySummary raw lastKnownStatus before enum conversion: %s",
+            diagnostic,
+        )
+    return SmartBatteryStatus.UNKNOWN
+
+
 @dataclass
 class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
@@ -4908,6 +4999,10 @@ class SmartBatterySummary:
         Returns:
             SmartBatterySummary: Parsed dataclass instance.
 
+        Notes:
+            Missing, null, empty and unrecognized statuses become UNKNOWN. A
+            privacy-filtered warning records the original status category once.
+
         Raises:
             ValueError: If 'lastUpdate' is missing or invalid.
         """
@@ -4918,11 +5013,7 @@ class SmartBatterySummary:
 
         return cls(
             last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
-            last_known_status=(
-                SmartBatteryStatus(data["lastKnownStatus"])
-                if data.get("lastKnownStatus")
-                else SmartBatteryStatus.UNKNOWN
-            ),
+            last_known_status=_parse_smart_battery_status(data.get("lastKnownStatus", _MISSING_BATTERY_STATUS)),
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
         )

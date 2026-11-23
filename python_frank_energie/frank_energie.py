@@ -90,6 +90,24 @@ if sys.platform == "win32":
 
 _DISTRIBUTION_NAME = "python-frank-energie"
 _SMART_BATTERY_NOT_FOUND_LOG = "Smart battery not found for device_id: %s"
+# Fixed, non-identifying detail failure categories; never include upstream text or IDs.
+_SMART_BATTERY_DETAIL_SAFE_FAILURES = frozenset(
+    {
+        "not_found",
+        "request_timeout",
+        "network_error",
+        "rate_limited",
+        "authentication_error",
+        "request_error",
+        "unexpected_error",
+        "empty_response",
+        "invalid_data",
+        "invalid_battery",
+        "invalid_summary",
+        "parse_error",
+    }
+)
+_SMART_BATTERY_DETAIL_REPORTED_FAILURES: set[str] = set()
 _GRAPHQL_VALIDATION_MESSAGE = "Graphql validation error"
 _INVALID_GRAPHQL_ERROR_STRUCTURE = "Invalid GraphQL error structure"
 _REQUEST_NOT_SUPPORTED_IN_COUNTRY = "request-error:request-not-supported-in-country"
@@ -106,6 +124,37 @@ _REDACTED_QUERY_OPERATIONS = (
     | _EXTRA_READ_QUERY_OPERATIONS
     | {"WeightedAveragePrices", "RenewToken", "MonthInsights"}
 )
+
+
+def _smart_battery_detail_failure_reason(error: Exception) -> str:
+    """Classify a failed details request without exposing upstream exception data."""
+    if isinstance(error, TimeoutError):
+        return "request_timeout"
+    if isinstance(error, NetworkError):
+        if str(error) in (
+            "Frank Energie API timeout",
+            "Frank Energie GraphQL timeout during operation [SmartBattery]",
+            "Frank Energie GraphQL timeout during operation [RenewToken]",
+        ):
+            return "request_timeout"
+        return "network_error"
+    if isinstance(error, RateLimitException):
+        return "rate_limited"
+    if isinstance(error, (AuthException, AuthRequiredException)):
+        return "authentication_error"
+    if isinstance(error, RequestException):
+        return "request_error"
+    return "unexpected_error"
+
+
+def _record_smart_battery_detail_failure(reason: str) -> None:
+    """Warn once per safe failure category when no battery status was parsed."""
+    if reason not in _SMART_BATTERY_DETAIL_SAFE_FAILURES:
+        reason = "unexpected_error"
+    if reason not in _SMART_BATTERY_DETAIL_REPORTED_FAILURES:
+        _SMART_BATTERY_DETAIL_REPORTED_FAILURES.add(reason)
+        _LOGGER.warning("SmartBattery details unavailable (%s); no status was parsed", reason)
+
 
 try:
     VERSION = _pkg_version(_DISTRIBUTION_NAME)
@@ -3557,56 +3606,42 @@ class FrankEnergie:
         )
 
         try:
-            _LOGGER.debug("Querying smart battery details for device_id: %s", device_id)
+            _LOGGER.debug("Querying smart battery details")
             response = await self._query(query)
         except SmartBatteryNotFoundException:
-            _LOGGER.debug(_SMART_BATTERY_NOT_FOUND_LOG, device_id)
+            _record_smart_battery_detail_failure("not_found")
             return None
         except Exception as err:
-            _LOGGER.error(
-                "Failed to query smart battery details for device_id %s: %s",
-                device_id,
-                err,
-            )
+            _record_smart_battery_detail_failure(_smart_battery_detail_failure_reason(err))
             return None
 
         if not response:
-            _LOGGER.debug(
-                "Empty response received for smart battery device_id: %s",
-                device_id,
-            )
+            _record_smart_battery_detail_failure("empty_response")
             return None
 
         data: dict[str, object] | None = response.get("data")  # type: ignore[assignment]
 
         if not isinstance(data, dict):
-            _LOGGER.debug(
-                "Invalid response structure for device_id %s: missing 'data'",
-                device_id,
-            )
+            _record_smart_battery_detail_failure("invalid_data")
             return None
 
         battery_data = data.get("smartBattery")
         summary_data = data.get("smartBatterySummary")
 
         if not isinstance(battery_data, dict) or not isinstance(summary_data, dict):
-            _LOGGER.debug(
-                "Incomplete smart battery response for device_id %s",
-                device_id,
-            )
+            reason = "invalid_battery" if not isinstance(battery_data, dict) else "invalid_summary"
+            _record_smart_battery_detail_failure(reason)
             raise FrankEnergieException("Incomplete response data")
 
         try:
             battery = SmartBattery.from_dict(battery_data)
             summary = SmartBatterySummary.from_dict(summary_data)
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to parse smart battery response for device_id %s: %s",
-                device_id,
-                err,
-            )
+        except Exception:
+            _record_smart_battery_detail_failure("parse_error")
             return None
 
+        # The parsed status is an enum value, never an upstream string or device ID.
+        _LOGGER.debug("SmartBattery details parsed (status=%s)", summary.last_known_status.value)
         return SmartBatteryDetails(
             smart_battery=battery,
             smart_battery_summary=summary,

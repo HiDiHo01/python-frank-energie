@@ -1,6 +1,7 @@
 """Tests for Frank Energie Smart batteries implementation."""
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
@@ -10,9 +11,17 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.domain import SmartBatteryMode, SmartBatteryTradingAlgorithm
-from python_frank_energie.exceptions import AuthException, AuthRequiredException, NetworkError, RateLimitException
-from python_frank_energie.models import SmartBatterySessions
+from python_frank_energie.domain import SmartBatteryMode, SmartBatteryStatus, SmartBatteryTradingAlgorithm
+from python_frank_energie.exceptions import (
+    AuthException,
+    AuthRequiredException,
+    FrankEnergieException,
+    NetworkError,
+    RateLimitException,
+    RequestException,
+    SmartBatteryNotFoundException,
+)
+from python_frank_energie.models import SmartBatterySessions, SmartBatterySummary
 
 from . import load_fixtures
 
@@ -415,3 +424,205 @@ async def test_smart_battery_settings_are_per_device(aresponses):
         SmartBatteryMode.TRADING,
         SmartBatteryMode.SELF_CONSUMPTION,
     ]
+
+
+@pytest.mark.parametrize(
+    ("raw_status", "expected_status", "diagnostic"),
+    [
+        ("CHARGE_INTRADAY", SmartBatteryStatus.CHARGE_INTRADAY, None),
+        ("charge_intraday", SmartBatteryStatus.CHARGE_INTRADAY, None),
+        ("UNKNOWN", SmartBatteryStatus.UNKNOWN, "UNKNOWN"),
+        ("CHARGING", SmartBatteryStatus.UNKNOWN, "CHARGING"),
+        ("CHARGE_SOLAR", SmartBatteryStatus.UNKNOWN, "CHARGE_SOLAR"),
+        ("", SmartBatteryStatus.UNKNOWN, "<empty>"),
+        (None, SmartBatteryStatus.UNKNOWN, "<null>"),
+        ({"deviceId": "sensitive-device-12345"}, SmartBatteryStatus.UNKNOWN, "<invalid-type>"),
+        ("STATUS_ACCOUNT_SECRET123", SmartBatteryStatus.UNKNOWN, "<redacted>"),
+        ("STATUS_ACCOUNT_SECRET", SmartBatteryStatus.UNKNOWN, "<redacted>"),
+    ],
+)
+def test_smart_battery_summary_status_diagnostics(
+    raw_status: object,
+    expected_status: SmartBatteryStatus,
+    diagnostic: str | None,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Log only safe original status tokens once, before enum fallback."""
+    from python_frank_energie import models
+
+    monkeypatch.setattr(models, "_LOGGED_BATTERY_STATUS_DIAGNOSTICS", set())
+    payload = {
+        "lastKnownStateOfCharge": 62,
+        "lastKnownStatus": raw_status,
+        "lastUpdate": "2026-11-23T10:38:25Z",
+        "totalResult": 1.0,
+        "deviceId": "sensitive-device-12345",
+    }
+    with caplog.at_level(logging.WARNING, logger="python_frank_energie.models"):
+        summary = SmartBatterySummary.from_dict(payload)
+        repeated_summary = SmartBatterySummary.from_dict(payload)
+
+    assert summary.last_known_status is expected_status
+    assert repeated_summary.last_known_status is expected_status
+    assert summary.last_update == datetime(2026, 11, 23, 10, 38, 25, tzinfo=UTC)
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if "SmartBatterySummary raw lastKnownStatus before enum conversion:" in record.getMessage()
+    ]
+    expected_messages = (
+        [f"SmartBatterySummary raw lastKnownStatus before enum conversion: {diagnostic}"]
+        if diagnostic is not None
+        else []
+    )
+    assert messages == expected_messages
+    assert "sensitive-device-12345" not in caplog.text
+    assert "STATUS_ACCOUNT_SECRET123" not in caplog.text
+    assert "STATUS_ACCOUNT_SECRET" not in caplog.text
+
+
+def test_smart_battery_summary_missing_status_diagnostic(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Distinguish an absent status field from an explicit API null."""
+    from python_frank_energie import models
+
+    monkeypatch.setattr(models, "_LOGGED_BATTERY_STATUS_DIAGNOSTICS", set())
+    payload = {
+        "lastKnownStateOfCharge": 62,
+        "lastUpdate": "2026-11-23T10:38:25Z",
+        "totalResult": 1.0,
+    }
+    with caplog.at_level(logging.WARNING, logger="python_frank_energie.models"):
+        summary = SmartBatterySummary.from_dict(payload)
+
+    assert summary.last_known_status is SmartBatteryStatus.UNKNOWN
+    assert "SmartBatterySummary raw lastKnownStatus before enum conversion: <missing>" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "reason"),
+    [
+        (NetworkError("Frank Energie API timeout"), "request_timeout"),
+        (NetworkError("Frank Energie GraphQL timeout during operation [SmartBattery]"), "request_timeout"),
+        (NetworkError("Frank Energie GraphQL timeout during operation [RenewToken]"), "request_timeout"),
+        (TimeoutError("private-account-marker"), "request_timeout"),
+        (NetworkError("private-account-marker"), "network_error"),
+        (RateLimitException("private-account-marker"), "rate_limited"),
+        (AuthException("private-account-marker"), "authentication_error"),
+        (AuthRequiredException("private-account-marker"), "authentication_error"),
+        (RequestException("private-account-marker"), "request_error"),
+        (RuntimeError("private-account-marker"), "unexpected_error"),
+        (SmartBatteryNotFoundException("private-account-marker"), "not_found"),
+    ],
+)
+async def test_smart_battery_details_failure_diagnostic(
+    failure: Exception,
+    reason: str,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep request failures distinct from enum UNKNOWN without logging private data."""
+    from python_frank_energie import frank_energie
+
+    monkeypatch.setattr(frank_energie, "_SMART_BATTERY_DETAIL_REPORTED_FAILURES", set())
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        with (
+            patch.object(api, "_query", side_effect=failure),
+            caplog.at_level(logging.WARNING, logger="python_frank_energie.frank_energie"),
+        ):
+            assert await api.smart_battery_details("private-device-marker") is None
+            assert await api.smart_battery_details("private-device-marker") is None
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("SmartBattery details unavailable (")
+    ]
+    assert messages == [f"SmartBattery details unavailable ({reason}); no status was parsed"]
+    assert "private-device-marker" not in caplog.text
+    assert "private-account-marker" not in caplog.text
+    assert "Frank Energie API timeout" not in caplog.text
+    assert "SmartBatterySummary raw lastKnownStatus" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("response", "reason", "raises"),
+    [
+        (None, "empty_response", False),
+        ({}, "empty_response", False),
+        ({"data": None}, "invalid_data", False),
+        ({"data": {"smartBattery": None, "smartBatterySummary": {}}}, "invalid_battery", True),
+        ({"data": {"smartBattery": {"id": "private-device-marker"}}}, "invalid_summary", True),
+        (
+            {
+                "data": {
+                    "smartBattery": {"id": "private-device-marker"},
+                    "smartBatterySummary": {"lastUpdate": "invalid-timestamp", "lastKnownStatus": "IDLE_INTRADAY"},
+                }
+            },
+            "parse_error",
+            False,
+        ),
+    ],
+)
+async def test_smart_battery_details_missing_summary_diagnostics(
+    response: object,
+    reason: str,
+    raises: bool,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Classify absent or invalid data without changing existing return or raise contracts."""
+    from python_frank_energie import frank_energie
+
+    monkeypatch.setattr(frank_energie, "_SMART_BATTERY_DETAIL_REPORTED_FAILURES", set())
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        with (
+            patch.object(api, "_query", return_value=response),
+            caplog.at_level(logging.WARNING, logger="python_frank_energie.frank_energie"),
+        ):
+            if raises:
+                with pytest.raises(FrankEnergieException, match="Incomplete response data"):
+                    await api.smart_battery_details("private-device-marker")
+            else:
+                assert await api.smart_battery_details("private-device-marker") is None
+
+    assert f"SmartBattery details unavailable ({reason}); no status was parsed" in caplog.text
+    assert "private-device-marker" not in caplog.text
+    assert "invalid-timestamp" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raw_status", "expected_value"),
+    [("IDLE_INTRADAY", "idle_intraday"), ("UNKNOWN", "unknown")],
+)
+async def test_smart_battery_details_valid_response_is_not_a_transport_failure(
+    raw_status: str,
+    expected_value: str,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Distinguish a successfully parsed status, including API UNKNOWN, from an unavailable summary."""
+    from python_frank_energie import frank_energie
+
+    monkeypatch.setattr(frank_energie, "_SMART_BATTERY_DETAIL_REPORTED_FAILURES", set())
+    response = json.loads(_details_response({"tradingAlgorithm": "T3"}))
+    response["data"]["smartBatterySummary"]["lastKnownStatus"] = raw_status
+    with caplog.at_level(logging.DEBUG, logger="python_frank_energie.frank_energie"):
+        async with aiohttp.ClientSession() as session:
+            api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+            with patch.object(api, "_query", return_value=response):
+                details = await api.smart_battery_details("private-device-marker")
+
+    assert details is not None
+    assert details.smart_battery_summary.last_known_status.value == expected_value
+    assert f"SmartBattery details parsed (status={expected_value})" in caplog.text
+    assert "SmartBattery details unavailable" not in caplog.text
+    assert "private-device-marker" not in caplog.text
