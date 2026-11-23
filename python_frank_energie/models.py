@@ -4999,6 +4999,10 @@ class SmartBatterySummary:
         Returns:
             SmartBatterySummary: Parsed dataclass instance.
 
+        Notes:
+            Missing, null, empty and unrecognized statuses become UNKNOWN. A
+            privacy-filtered warning records the original status category once.
+
         Raises:
             ValueError: If 'lastUpdate' is missing or invalid.
         """
