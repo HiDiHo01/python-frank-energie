@@ -414,8 +414,12 @@ zensical serve
   accidentally.
 - Preserve the supported parser's existing error precedence, absent-response
   semantics, cost calculations, and two-argument daily-average utility.
-  Document the public replacement and validate the latest PR head across
-  all configured Python and pre-commit checks before merging.
+  The removed parser returned `None` for an empty mapping and invented
+  defaults for several populated-summary fields; `from_dict()` rejects an
+  invalid envelope or incomplete populated summary. Document these behavior
+  differences and the consumer's required error handling, not just the method
+  rename. Validate the latest PR head across all configured Python and
+  pre-commit checks before merging.
 
 ## Introduce compatible public API aliases
 
