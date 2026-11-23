@@ -11,13 +11,13 @@ tracked in [issue #177](https://github.com/HiDiHo01/python-frank-energie/issues/
 
 | Component | Responsibility and dependencies |
 | --- | --- |
-| [`FrankEnergie`](../python_frank_energie/frank_energie.py) | The async client façade defines GraphQL operations, validates method arguments, manages authentication and HTTP state, sends requests, and passes responses to model parsers. Public methods can apply operation-specific error handling after the shared transport. |
-| `FrankEnergieQuery` in [`frank_energie.py`](../python_frank_energie/frank_energie.py) | Holds the GraphQL document, operation name, and variables. The constructor accepts a `dict` or `None` for variables and raises `TypeError` for other values. `to_dict()` returns a `dict[str, Any]` with `query`, `operationName`, and `variables`. A supplied variables dictionary is shared with the returned payload. |
-| `Authentication` in [`models.py`](../python_frank_energie/models.py) | Represents the client's current credentials and expiry metadata. The client constructs it from supplied tokens or parses the result of a login or renewal mutation. The separate [`authentication.py`](../python_frank_energie/authentication.py) model is the package export. |
-| GraphQL transport and errors in [`frank_energie.py`](../python_frank_energie/frank_energie.py) | Private client helpers prepare headers, post JSON through `aiohttp`, classify HTTP and GraphQL errors, and return the response for parsing. The exception types live in [`exceptions.py`](../python_frank_energie/exceptions.py). |
-| [`models.py`](../python_frank_energie/models.py) and [`domain.py`](../python_frank_energie/domain.py) | Model parsers translate response fields to Python objects. The module includes dataclasses, a Pydantic `DeliverySite`, domain-specific validation, legacy accessors, and price and battery calculations. `domain.py` provides enums used by the models, including status enums with an `UNKNOWN` fallback. [`time_periods.py`](../python_frank_energie/time_periods.py) supplies price-period helpers. |
-| [`weighted_average_prices.py`](../python_frank_energie/weighted_average_prices.py) | Provides isolated, typed GraphQL response models and validation for the additive weighted-average-price operation. Values and timestamps are not recalculated; malformed or missing selected data raises `RequestException`. |
-| HTTP session and token renewal in [`frank_energie.py`](../python_frank_energie/frank_energie.py) | The client borrows an injected `aiohttp.ClientSession` or lazily creates one. `_prepare_query_headers()` and `validate_authentication()` coordinate expiry-driven renewal with a per-client lock. `renew_token()` sends the renewal mutation through the same transport. |
+| [`FrankEnergie`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/frank_energie.py) | The async client façade defines GraphQL operations, validates method arguments, manages authentication and HTTP state, sends requests, and passes responses to model parsers. Public methods can apply operation-specific error handling after the shared transport. |
+| `FrankEnergieQuery` in [`frank_energie.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/frank_energie.py) | Holds the GraphQL document, operation name, and variables. The constructor accepts a `dict` or `None` for variables and raises `TypeError` for other values. `to_dict()` returns a `dict[str, Any]` with `query`, `operationName`, and `variables`. A supplied variables dictionary is shared with the returned payload. |
+| `Authentication` in [`models.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/models.py) | Represents the client's current credentials and expiry metadata. The client constructs it from supplied tokens or parses the result of a login or renewal mutation. The separate [`authentication.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/authentication.py) model is the package export. |
+| GraphQL transport and errors in [`frank_energie.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/frank_energie.py) | Private client helpers prepare headers, post JSON through `aiohttp`, classify HTTP and GraphQL errors, and return the response for parsing. The exception types live in [`exceptions.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/exceptions.py). |
+| [`models.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/models.py) and [`domain.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/domain.py) | Model parsers translate response fields to Python objects. The module includes dataclasses, a Pydantic `DeliverySite`, domain-specific validation, legacy accessors, and price and battery calculations. `domain.py` provides enums used by the models, including status enums with an `UNKNOWN` fallback. [`time_periods.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/time_periods.py) supplies price-period helpers. |
+| [`weighted_average_prices.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/weighted_average_prices.py) | Provides isolated, typed GraphQL response models and validation for the additive weighted-average-price operation. Values and timestamps are not recalculated; malformed or missing selected data raises `RequestException`. |
+| HTTP session and token renewal in [`frank_energie.py`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/frank_energie.py) | The client borrows an injected `aiohttp.ClientSession` or lazily creates one. `_prepare_query_headers()` and `validate_authentication()` coordinate expiry-driven renewal with a per-client lock. `renew_token()` sends the renewal mutation through the same transport. |
 
 ### Runtime state and ownership
 
@@ -76,8 +76,8 @@ wrappers can preserve, translate, or handle these errors as described below.
 | Known GraphQL authentication or feature errors | Typed exceptions such as `AuthException`, `AuthRequiredException`, `RefreshTokenInvalidException`, `SmartTradingNotEnabledException`, `SmartChargingNotEnabledException`, and `SmartBatteryNotFoundException`. `RefreshTokenInvalidException` subclasses `AuthException`. |
 | Other GraphQL errors or malformed responses | Handling depends on the operation. Some errors reach the model parser, which may raise `RequestException` or apply a model-specific fallback. The dedicated [Smart HVAC operations](smart-hvac.md#error-and-privacy-guarantees) reject malformed responses. |
 
-See the request-boundary tests for [timeouts and cancellation](../tests/test_graphql_timeouts.py),
-[rate limits](../tests/test_rate_limits.py), and [partial account responses](../tests/test_me_partial_errors.py).
+See the request-boundary tests for [timeouts and cancellation](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_graphql_timeouts.py),
+[rate limits](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_rate_limits.py), and [partial account responses](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_me_partial_errors.py).
 
 ### Public compatibility surface
 
@@ -85,12 +85,12 @@ See the request-boundary tests for [timeouts and cancellation](../tests/test_gra
 
 | Import path | Current surface |
 | --- | --- |
-| [`python_frank_energie`](../python_frank_energie/__init__.py) | `FrankEnergie`, `Authentication`, `CountryCode`, `EnergyType`, `Resolution`, `ContractPriceResolutionChangeResult`, `ContractPriceResolutionState`, `Invoices`, `MarketPrices`, `PeriodUsageAndCosts`, `WeightedAveragePrices`, `WeightedAveragePriceCategory`, `WeightedAveragePriceItem`, `Price`, `PriceData`, `SmartHvac`, `SmartHvacConnectRequest`, `SmartHvacDevice`, `SmartHvacSummary`, `AuthException`, `ConnectionException`, `RateLimitException`, and `RequestException` are in `__all__`. The module also exposes `__version__`. |
-| [`python_frank_energie.frank_energie`](../python_frank_energie/frank_energie.py) | The same `FrankEnergie` class and the directly importable `FrankEnergieQuery` and `sanitize_query()`. The latter masks a password through the shared variables dictionary. `_query()` is private. |
-| [`python_frank_energie.authentication`](../python_frank_energie/authentication.py) | The package-exported `Authentication` class and the separate `AuthenticationResult` dataclass with `authToken` and `refreshToken` fields. |
-| [`python_frank_energie.models`](../python_frank_energie/models.py) | The operation result models, including `UserSites`, `DeliverySite`, `Me`, `User`, and the distinct runtime `Authentication` class. Models such as `PriceData` re-exported by the package root refer to the same classes as their definitions here. |
-| [`python_frank_energie.exceptions`](../python_frank_energie/exceptions.py) | The root-exported exceptions and additional types such as `FrankEnergieException`, `AuthRequiredException`, `RefreshTokenInvalidException`, `NetworkError`, and `NoMarketPricesAvailableException`. `ConnectionException` and `NetworkError` are distinct classes. |
-| [`python_frank_energie.domain`](../python_frank_energie/domain.py) and [`python_frank_energie.types`](../python_frank_energie/types.py) | `CountryCode`, `EnergyType`, and the root-exported `Resolution` are domain enums. `models.Resolution` is a separate enum used by the contract-resolution mutation with the same two values, `PT15M` and `PT60M`. `types.PriceResolution` and `types.CountryCode` are literal type aliases. |
+| [`python_frank_energie`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/__init__.py) | `FrankEnergie`, `Authentication`, `CountryCode`, `EnergyType`, `Resolution`, `ContractPriceResolutionChangeResult`, `ContractPriceResolutionState`, `Invoices`, `MarketPrices`, `PeriodUsageAndCosts`, `WeightedAveragePrices`, `WeightedAveragePriceCategory`, `WeightedAveragePriceItem`, `Price`, `PriceData`, `SmartHvac`, `SmartHvacConnectRequest`, `SmartHvacDevice`, `SmartHvacSummary`, `AuthException`, `ConnectionException`, `RateLimitException`, and `RequestException` are in `__all__`. The module also exposes `__version__`. |
+| [`python_frank_energie.frank_energie`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/frank_energie.py) | The same `FrankEnergie` class and the directly importable `FrankEnergieQuery` and `sanitize_query()`. The latter masks a password through the shared variables dictionary. `_query()` is private. |
+| [`python_frank_energie.authentication`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/authentication.py) | The package-exported `Authentication` class and the separate `AuthenticationResult` dataclass with `authToken` and `refreshToken` fields. |
+| [`python_frank_energie.models`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/models.py) | The operation result models, including `UserSites`, `DeliverySite`, `Me`, `User`, and the distinct runtime `Authentication` class. Models such as `PriceData` re-exported by the package root refer to the same classes as their definitions here. |
+| [`python_frank_energie.exceptions`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/exceptions.py) | The root-exported exceptions and additional types such as `FrankEnergieException`, `AuthRequiredException`, `RefreshTokenInvalidException`, `NetworkError`, and `NoMarketPricesAvailableException`. `ConnectionException` and `NetworkError` are distinct classes. |
+| [`python_frank_energie.domain`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/domain.py) and [`python_frank_energie.types`](https://github.com/HiDiHo01/python-frank-energie/blob/main/python_frank_energie/types.py) | `CountryCode`, `EnergyType`, and the root-exported `Resolution` are domain enums. `models.Resolution` is a separate enum used by the contract-resolution mutation with the same two values, `PT15M` and `PT60M`. `types.PriceResolution` and `types.CountryCode` are literal type aliases. |
 
 #### Client lifecycle and properties
 
@@ -223,9 +223,9 @@ Public operations apply their own validation, response parsing, and failure beha
   returns `None` for a not-found error or other caught request failures.
   Its model parsing occurs after the request exception handler.
 
-See the [inventory](../tests/test_device_inventories.py),
-[control](../tests/test_smart_controls_mutations.py), and
-[contract-resolution](../tests/test_contract_price_resolution_mutations.py) tests.
+See the [inventory](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_device_inventories.py),
+[control](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_smart_controls_mutations.py), and
+[contract-resolution](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_contract_price_resolution_mutations.py) tests.
 
 #### Naming and model access
 
@@ -257,9 +257,9 @@ See the [inventory](../tests/test_device_inventories.py),
   always-missing top-level attribute and intentionally changes its public
   value from `None` to `list[str]` for valid responses. Other first-entry
   fields describe the returned order; site selection is up to the caller.
-  The [alias tests](../tests/test_user_sites_alias.py) cover forwarding,
+  The [alias tests](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_user_sites_alias.py) cover forwarding,
   result identity, and error parity. The
-  [address regression tests](../tests/test_user_sites_address.py) cover
+  [address regression tests](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_user_sites_address.py) cover
   parsing and invalid payloads.
 - Both site methods declare `UserSites` as their return type. On Python
   3.14, default runtime inspection of that annotation resolves to the
@@ -277,7 +277,7 @@ See the [inventory](../tests/test_device_inventories.py),
   Model-level helpers, fields, constructors, and parsers are observable to
   callers through their existing imports. Examples of covered behavior include
   price interval helpers, status parsing, and nullable fields in
-  [model tests](../tests/test_models.py) and [domain tests](../tests/test_domain.py).
+  [model tests](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_models.py) and [domain tests](https://github.com/HiDiHo01/python-frank-energie/blob/main/tests/test_domain.py).
 
 #### The two authentication models
 
