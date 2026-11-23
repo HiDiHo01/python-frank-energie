@@ -4932,6 +4932,7 @@ def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
         )
     return SmartBatteryStatus.UNKNOWN
 
+
 @dataclass
 class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
