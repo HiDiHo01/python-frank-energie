@@ -998,7 +998,8 @@ class UserSites:
     """UserSites data."""
 
     deliverySites: list[object]
-    addressFormatted: list[str] | None
+    # Existing constructor keyword and dataclasses.asdict() key.
+    addressFormatted: list[str] | None  # NOSONAR(S116)
     addressHasMultipleSites: bool
     deliveryEndDate: str | None
     deliveryStartDate: str | None
@@ -1008,6 +1009,16 @@ class UserSites:
     reference: str
     segments: list[str]
     status: ServiceStatus
+
+    @property
+    def address_formatted(self) -> list[str] | None:
+        """Return the formatted address lines in the first-site summary."""
+        return self.addressFormatted
+
+    @address_formatted.setter
+    def address_formatted(self, value: list[str] | None) -> None:
+        """Update the formatted address lines in the first-site summary."""
+        self.addressFormatted = value
 
     @staticmethod
     def from_dict(data: dict[str, object]) -> UserSites:

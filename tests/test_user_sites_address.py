@@ -1,6 +1,8 @@
 """Regression tests for nested UserSites address parsing and validation."""
 
 import logging
+from dataclasses import asdict, fields, replace
+from inspect import signature
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -74,6 +76,53 @@ def test_user_sites_parses_nested_lines_and_distinct_site_addresses(caplog: pyte
         "Another Road 7 A 1000 Brussels",
     ]
     assert caplog.record_tuples == []
+
+
+def test_formatted_address_alias_shares_reads_and_writes() -> None:
+    """Expose the same nullable address lines through both writable names."""
+    original = ["Example Road 12", "1234 AB Exampletown"]
+    sites = UserSites.from_dict(_response(_site("synthetic-site", {"addressFormatted": original})))
+    assert sites.address_formatted == original
+    assert sites.address_formatted is sites.addressFormatted
+
+    updated = ["Another Road 7A", "1000 Brussels"]
+    sites.address_formatted = updated
+    assert sites.addressFormatted is updated
+
+    sites.addressFormatted = None
+    assert sites.address_formatted is None
+    sites.addressFormatted = original
+    assert sites.address_formatted is original
+    sites.address_formatted = None
+    assert sites.addressFormatted is None
+
+
+def test_formatted_address_alias_preserves_dataclass_contract() -> None:
+    """Preserve positional and keyword construction, replacement, and the serialized field names."""
+    field_names = (
+        "deliverySites",
+        "addressFormatted",
+        "addressHasMultipleSites",
+        "deliveryEndDate",
+        "deliveryStartDate",
+        "firstMeterReadingDate",
+        "lastMeterReadingDate",
+        "propositionType",
+        "reference",
+        "segments",
+        "status",
+    )
+    assert tuple(signature(UserSites).parameters) == field_names
+    assert tuple(field.name for field in fields(UserSites)) == field_names
+
+    lines = ["Example Road 12", "1234 AB Exampletown"]
+    sites = UserSites.from_dict(_response(_site("synthetic-site", {"addressFormatted": lines})))
+    serialized = asdict(sites)
+    assert tuple(serialized) == field_names
+    assert serialized["addressFormatted"] == lines
+    assert UserSites(**serialized) == sites
+    assert UserSites(*serialized.values()) == sites
+    assert replace(sites, addressFormatted=None).address_formatted is None
 
 
 @pytest.mark.parametrize(
@@ -192,6 +241,7 @@ async def test_public_user_sites_method_returns_corrected_model() -> None:
         parsed = await client.user_sites()
 
     assert parsed.addressFormatted == address_lines
+    assert parsed.address_formatted is parsed.addressFormatted
     mocked_query.assert_awaited_once()
     actual_query = mocked_query.await_args.args[0]
     assert actual_query.operation_name == "UserSites"
