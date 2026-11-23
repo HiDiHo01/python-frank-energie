@@ -374,7 +374,12 @@ def test_month_summary_with_expected_parameters(snapshot: SnapshotAssertion):
     assert month_summary == snapshot
 
 
-@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
+def test_month_summary_legacy_parser_is_removed() -> None:
+    """Expose only from_dict and prevent accidental return of the removed parser."""
+    assert callable(MonthSummary.from_dict)
+    assert not hasattr(MonthSummary, "old_from_dict")
+
+
 @pytest.mark.parametrize(
     ("source_id", "expected_period"),
     [
@@ -408,16 +413,14 @@ def test_month_summary_with_expected_parameters(snapshot: SnapshotAssertion):
         ("synthetic-site|２０２６-１１", None),
     ],
 )
-def test_month_summary_period_is_strictly_validated(
-    parser_name: str, source_id: str, expected_period: str | None
-) -> None:
+def test_month_summary_period_is_strictly_validated(source_id: str, expected_period: str | None) -> None:
     """Read only exact valid month suffixes; reject unsupported or ambiguous IDs."""
     payload = json.loads(load_fixtures("month_summary.json"))
     payload["data"]["monthSummary"]["_id"] = source_id
     # Deliberately different from the source ID's period, including year rollover.
     payload["data"]["monthSummary"]["lastMeterReadingDate"] = "2027-01-01"
 
-    summary = getattr(MonthSummary, parser_name)(payload)
+    summary = MonthSummary.from_dict(payload)
 
     assert summary is not None
     assert summary._id == source_id
@@ -425,12 +428,11 @@ def test_month_summary_period_is_strictly_validated(
     assert summary.lastMeterReadingDate == "2027-01-01"
 
 
-@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
-def test_month_summary_period_preserves_dataclass_contract(parser_name: str) -> None:
+def test_month_summary_period_preserves_dataclass_contract() -> None:
     """Adding a read-only derived property must not change fields or constructors."""
     payload = json.loads(load_fixtures("month_summary.json"))
     payload["data"]["monthSummary"]["_id"] = "synthetic-site|2026-11"
-    summary = getattr(MonthSummary, parser_name)(payload)
+    summary = MonthSummary.from_dict(payload)
     assert summary is not None
 
     assert "period" not in MonthSummary.__dataclass_fields__
@@ -448,7 +450,6 @@ def test_month_summary_period_preserves_dataclass_contract(parser_name: str) -> 
     assert summary.period == "2027-01"
 
 
-@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
 @pytest.mark.parametrize(
     "response",
     (
@@ -457,22 +458,19 @@ def test_month_summary_period_preserves_dataclass_contract(parser_name: str) -> 
         {"data": {}},
     ),
 )
-def test_month_summary_period_absent_payload_stays_absent(parser_name: str, response: dict[str, object]) -> None:
+def test_month_summary_period_absent_payload_stays_absent(response: dict[str, object]) -> None:
     """An absent source summary has no period; do not invent a current month."""
-    assert getattr(MonthSummary, parser_name)(response) is None
+    assert MonthSummary.from_dict(response) is None
 
 
-@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
-def test_month_summary_source_id_never_appears_in_parser_logs(
-    parser_name: str, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_month_summary_source_id_never_appears_in_parser_logs(caplog: pytest.LogCaptureFixture) -> None:
     """Do not log opaque source identifiers that may include customer references."""
     private_id = "synthetic-private-account-reference|2026-11"
     payload = json.loads(load_fixtures("month_summary.json"))
     payload["data"]["monthSummary"]["_id"] = private_id
 
     with caplog.at_level(logging.DEBUG, logger="python_frank_energie.models"):
-        summary = getattr(MonthSummary, parser_name)(payload)
+        summary = MonthSummary.from_dict(payload)
 
     assert summary is not None
     assert summary.period == "2026-11"
@@ -636,8 +634,7 @@ def test_month_summary_daily_average_preserves_public_signature() -> None:
     assert tuple(parameters) == ("costs_till_now", "lastMeterReadingDate")
 
 
-@pytest.mark.parametrize("parser_name", ("from_dict", "old_from_dict"))
-def test_month_summary_observed_delayed_meter_reading(parser_name: str) -> None:
+def test_month_summary_observed_delayed_meter_reading() -> None:
     """Use a sanitized November 13 observation with a complete November 12 reading.
 
     The returned cost amounts and cutoff were observed in the provider response.
@@ -647,7 +644,7 @@ def test_month_summary_observed_delayed_meter_reading(parser_name: str) -> None:
     retrieved_at = datetime(2026, 11, 13, tzinfo=UTC)
     response = json.loads(load_fixtures("month_summary_observed_2026_11.json"))
 
-    summary = getattr(MonthSummary, parser_name)(response)
+    summary = MonthSummary.from_dict(response)
 
     assert summary is not None
     reading_date = datetime.strptime(summary.lastMeterReadingDate, "%Y-%m-%d").date()

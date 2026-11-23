@@ -401,6 +401,22 @@ zensical serve
 - After a published release, verify downstream integrations against the released dependency rather than assuming that upstream `main` matches their pinned runtime version.
 - For non-throttling session-query failures that still use the legacy `None` fallback, log a fixed category (`timeout`, `network`, `authentication`, or `other`) rather than provider-controlled exception messages; cover each with synthetic sensitive values.
 
+## Retire an obsolete model parser without losing regression coverage
+
+- Verify repository-wide and downstream usage before removing a public parser.
+  In the 2026-11 MonthSummary cleanup, `old_from_dict()` was referenced only
+  by its SDK definition, tests and architecture documentation; no calls were
+  found in the Home Assistant integration. External consumers may still
+  depend on it, so flag the removal as an intentional breaking API change.
+- Migrate the parser-specific tests to `MonthSummary.from_dict()` while
+  retaining their original payload and boundary assertions. Add a regression
+  check that the removed method is absent so it cannot be reintroduced
+  accidentally.
+- Preserve the supported parser's existing error precedence, absent-response
+  semantics, cost calculations, and two-argument daily-average utility.
+  Document the public replacement and validate the latest PR head across
+  all configured Python and pre-commit checks before merging.
+
 ## Introduce compatible public API aliases
 
 - Introduce snake_case public methods as small typed async wrappers around existing methods before renaming or moving legacy implementations. Preserve arguments, return objects, authentication checks, and raised exceptions; do not create a second GraphQL code path.
