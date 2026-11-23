@@ -1,24 +1,117 @@
 # Repository skills
 
-## Publish the documentation website through reviewed GitHub Pages changes
-
-- Keep public documentation in the existing `docs/` tree with `docs/index.md`
-  as the homepage. Never publish secrets, real identifiers, private account
-  data, raw API responses, or test fixtures containing personal information.
-- Build from `zensical.toml` using the dedicated pinned dependency in
-  `requirements-docs.txt`, not the SDK runtime dependencies. Use the canonical
-  project subpath `https://hidiho01.github.io/python-frank-energie/` and
-  absolute GitHub links for references to source files outside `docs/`.
-- Validate navigation, local build, static output, and link targets in PR CI.
-  Publish only from `main` after human review. Give `pages: write` and
-  `id-token: write` permissions only to the deployment job. The repository
-  owner must select `GitHub Actions` in Settings > Pages, then verify that
-  the deployment and public URL actually succeed.
-- Keep GitHub Actions pinned to verified versions, monitor the documentation
-  generator's release notes, and confirm site visibility and privacy on each
-  material publishing change.
-
 Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI_POLICY.md). Update a practice when new evidence changes how to carry it out.
+
+## Publish and maintain GitHub Pages documentation
+
+### Verified architecture and ownership
+
+- The public documentation site is
+  [hidiho01.github.io/python-frank-energie](https://hidiho01.github.io/python-frank-energie/).
+  The successful production deployment after PR
+  [#285](https://github.com/HiDiHo01/python-frank-energie/pull/285)
+  was confirmed by the [GitHub Pages workflow run](https://github.com/HiDiHo01/python-frank-energie/actions/runs/45185105267):
+  both the **build** and **publish** jobs succeeded. Do not infer that later
+  changes are live without checking their own runs and the URL.
+- The website generator is Zensical. The authoring sources are `docs/**/*.md`
+  and `docs/stylesheets/extra.css`, the navigation/configuration is
+  `zensical.toml`, and the independently pinned builder is
+  `requirements-docs.txt`. The generated `site/` tree is ignored by Git.
+  Documentation dependencies must not be added to the SDK's runtime install.
+- Keep the published site's disclaimer that this is an independent,
+  community-maintained library. Do not publish account/site/device
+  identifiers, access tokens, credentials, GraphQL payloads, or raw user logs.
+  Examples must use safe placeholders or synthetic values.
+
+### Document authoring and link hygiene
+
+1. Edit the existing Markdown under `docs/` rather than making a second
+   copy of the API reference. Use `docs/index.md` for the homepage and
+   maintain `zensical.toml` navigation when pages are added, moved, or removed.
+2. Use normal Markdown links between pages within `docs/`. For code,
+   scripts, tests, or other files **outside** the documentation tree,
+   link to their GitHub repository URLs: `../python_frank_energie/...`
+   or `../tests/...` will not resolve in the rendered Pages site.
+3. Treat `site_url = "https://hidiho01.github.io/python-frank-energie/"`
+   and the trailing slash as significant. Check assets, links, and search
+   under this project subpath, not only when serving at the web root.
+4. Keep code snippets consistent with the declared Python minimum, the
+   current SDK method signatures and async/session contracts. Never invent
+   undocumented GraphQL fields, device semantics, or capabilities.
+5. Do not include unrelated source files in the site artifact. Inspect
+   generated HTML and assets before publication when changing templates,
+   themes, or build configuration.
+
+### Development and validation
+
+Run the documentation checks locally when the builder is available:
+
+```bash
+python -m pip install -r requirements-docs.txt
+zensical build --clean
+test -s site/index.html
+test -s site/getting-started/index.html
+test -s site/ARCHITECTURE/index.html
+test -s site/privacy-policy/index.html
+zensical serve
+```
+
+- The last command starts a **local preview**. Verify navigation, search,
+  styles, light/dark display and mobile layout in a browser. On Windows,
+  replace the shell `test -s` assertions with suitable file existence
+  and nonempty checks; the GitHub Actions runner executes them on Linux.
+- Re-run applicable documentation and repository quality checks, including
+  `blacken-docs` for fenced Python examples and existing pre-commit checks.
+  CI can run all hooks across Python 3.12/3.13/3.14 even for documentation-only
+  changes. A formatter failure in an **unchanged** file may be inherited:
+  compare the failed file with `main` before attributing the error to
+  your patch; do not hide, skip or falsely dismiss a genuine regression.
+- Record the **actual** command, build output, commit SHA and CI run
+  conclusion. If the local generator cannot be installed, report that
+  limitation, then verify a successful GitHub Actions build. Do not equate
+  an unrun local check with success.
+
+### Safe GitHub Actions publishing
+
+- The documentation workflow is `.github/workflows/docs.yml`. It builds
+  on relevant pull-request changes; pull requests must not upload or deploy
+  the Pages artifact. The deployment is permitted only from
+  `refs/heads/main`, including `workflow_dispatch` runs. A manual
+  dispatch on another branch may build, but must never publish.
+- The build job needs only `contents: read`. The deployment job, protected
+  by `github-pages` environment, receives `pages: write` and
+  `id-token: write`. Prefer SHA-pinned GitHub Actions rather than mutable
+  version tags. Recheck action versions and permissions before updating.
+- In **Settings → Pages → Build and deployment**, the publishing source must
+  be **GitHub Actions**. Repository metadata such as `has_pages: true` or
+  `homepage` alone does not establish that a new deployment succeeded.
+  PR jobs correctly skip deployment; only a successful production deployment
+  job confirms publication.
+- Avoid deploying from an unreviewed or feature branch through manual
+  triggers. Keep a separate build and deploy job, with a precise branch
+  condition on any upload/deploy step. Never expose secret values via
+  documentation builds or user-supplied content.
+
+### Review, synchronization, and release verification
+
+1. Read applicable `AGENTS.md` and `AI_POLICY.md`, inspect the current
+   `main` branch, Pages configuration, and the prior PR/review status.
+2. Create a focused branch/PR. AI-assisted changes require human review and
+   an AI-assistance note in the PR description. Build in CI, but do not
+   publish or merge merely because the build is green.
+3. If `main` advances during review (as happened when SDK PR #284 was
+   merged while website PR #285 was open), reconcile the branch with
+   `main`, preserving its other changes. Inspect the resulting diff to
+   ensure only intended documentation files remain, and rerun all checks
+   on the **updated commit**. Do not force-push without authorization.
+4. Confirm each required CI job and unresolved review thread on the latest
+   head; historical passing runs and queued checks are not sufficient.
+   Record any remaining review, permission or Pages configuration blockers.
+5. After an approved merge, inspect the `main`-triggered **GitHub Pages**
+   workflow: the documentation build *and* deployment jobs must succeed.
+   Open the canonical URL to check HTTP availability, expected content,
+   navigation and CSS/assets. Report GitHub's deployment success and
+   direct public-site verification **separately** if one cannot be checked.
 
 ## Diagnose unknown Smart Battery status values without disclosing identifiers
 
