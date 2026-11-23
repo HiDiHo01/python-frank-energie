@@ -2,6 +2,19 @@
 
 Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI_POLICY.md). Update a practice when new evidence changes how to carry it out.
 
+## Diagnose unknown Smart Battery status values without disclosing identifiers
+
+- Inspect `smartBatterySummary.lastKnownStatus` in `SmartBatterySummary.from_dict()`
+  **before** enum conversion: missing, null, empty, explicit `UNKNOWN`
+  and new values would otherwise collapse to the same fallback.
+- Keep the public summary dataclass and the `UNKNOWN` fallback unchanged.
+  Emit one diagnostic per sanitized status token, only allowing status-shaped
+  alphabetic identifiers; redact arbitrary strings and unexpected value types.
+  Never log battery IDs, account details or entire GraphQL/model payloads.
+- Test recognized statuses, unknown status-like tokens, explicit `UNKNOWN`,
+  missing/null/empty fields, malformed values, and de-duplication with `caplog`.
+  A fresh summary timestamp does not prove the provider supplied a usable status.
+
 ## Preserve nullable provider billing data without inventing zeros
 
 - Inspect **raw JSON before model parsing** when provider zero and missing
