@@ -55,12 +55,48 @@ _MONTH_INSIGHTS_PERIOD_PATTERN = re.compile(r"(?!0000)\d{4}-(?:0[1-9]|1[0-2])", 
 _MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}-(?:0[1-9]|1[0-2]))")
 
 
-# Only provider-status-shaped tokens may appear in diagnostic logs. Arbitrary
-# upstream strings, including possible account/device identifiers, are redacted.
-_SAFE_BATTERY_STATUS_DIAGNOSTIC = re.compile(
-    r"(?:STATUS|CHARGE|DISCHARGE|IDLE|SEPARATE|CHARGING|DISCHARGING|UNKNOWN|ONLINE|OFFLINE|STANDBY)"
-    r"(?:_[A-Z]{1,20}){0,3}\Z",
-    re.ASCII | re.IGNORECASE,
+# Unknown upstream strings are never logged verbatim unless every component
+# belongs to a small, non-identifying battery-status vocabulary.
+_SAFE_BATTERY_STATUS_WORDS = frozenset(
+    {
+        "ACTIVE",
+        "BALANCING",
+        "CHARGE",
+        "CHARGING",
+        "CONGESTION",
+        "CONSUMPTION",
+        "DATA",
+        "DISCHARGE",
+        "DISCHARGING",
+        "EMPTY",
+        "EPEX",
+        "ERROR",
+        "FIFTEEN",
+        "FULL",
+        "GRID",
+        "HOME",
+        "IDLE",
+        "IMBALANCE",
+        "IMBALANCES",
+        "INTRADAY",
+        "MAINTENANCE",
+        "MIXED",
+        "OFFLINE",
+        "ONLINE",
+        "PERCENT",
+        "PERCENTAGE",
+        "PRICE",
+        "PV",
+        "SEPARATE",
+        "SELF",
+        "SMART",
+        "SOLAR",
+        "STANDBY",
+        "STATUS",
+        "TRADING",
+        "UNKNOWN",
+        "UNRELIABLE",
+    }
 )
 _MISSING_BATTERY_STATUS = object()
 _LOGGED_BATTERY_STATUS_DIAGNOSTICS: set[str] = set()
@@ -4899,6 +4935,16 @@ class SmartBatteryAdjustableSettings:
         )
 
 
+def _is_safe_battery_status_diagnostic(raw_status: str) -> bool:
+    """Allow logging only short ASCII tokens made from status terminology."""
+    return (
+        0 < len(raw_status) <= 64
+        and raw_status.isascii()
+        and len(raw_status.split("_")) <= 5
+        and all(word in _SAFE_BATTERY_STATUS_WORDS for word in raw_status.upper().split("_"))
+    )
+
+
 def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
     """Record a privacy-safe raw status diagnostic before enum conversion.
 
@@ -4913,7 +4959,7 @@ def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
                 return known_status
         if not raw_status:
             diagnostic = "<empty>"
-        elif _SAFE_BATTERY_STATUS_DIAGNOSTIC.fullmatch(raw_status):
+        elif _is_safe_battery_status_diagnostic(raw_status):
             diagnostic = raw_status
         else:
             diagnostic = "<redacted>"
