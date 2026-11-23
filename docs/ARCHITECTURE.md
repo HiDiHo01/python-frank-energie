@@ -240,8 +240,12 @@ See the [inventory](../tests/test_device_inventories.py),
   argument. The parser requires a nonempty site list, fills its top-level
   fields from the first entry, and exposes the parsed entries in
   `deliverySites`. The `address.addressFormatted` selection is a list of
-  two or more nonempty strings for each site. `UserSites.addressFormatted` is `list[str] | None` and contains the first site's validated nested address
-  lines or `None` when the address is absent, null, too short, or malformed.
+  two or more nonempty strings for each site. Read or write the address lines
+  in the first-site summary via `UserSites.address_formatted` (`list[str] | None`).
+  Parsing yields `None` when the address is absent, null, too short, or
+  malformed. The alias shares its value with the public dataclass field
+  `addressFormatted`. Keyword construction, `dataclasses.replace()`, and
+  `dataclasses.asdict()` use that original spelling.
   `DeliverySite.address` independently parses each site's first two lines
   into an `Address` object, or `None` for an invalid address; valid
   additional raw lines are retained by the top-level field but are not
