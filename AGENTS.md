@@ -24,6 +24,32 @@ This repository contains `python-frank-energie`, an asynchronous Python client l
 - Keep [`SKILLS.md`](SKILLS.md) current. When work verifies a reusable technique or changes existing guidance, update the relevant entry in the same PR or a linked documentation PR. Keep mandatory project rules in `AGENTS.md` and follow `AI_POLICY.md` for policy.
 - Before proposing dependency or packaging changes, inspect `pyproject.toml`, `poetry.lock`, and the affected consumers where available. Consider runtime, development, and downstream compatibility.
 
+## Documentation website and GitHub Pages
+
+- Treat `docs/` as the canonical source for the public website; keep its
+  navigation, URLs, and public content aligned with `zensical.toml`.
+  Keep generated `site/` files untracked and website tooling separate from
+  the SDK's runtime dependencies. Never expose private data or credentials in
+  documentation, examples, artifacts, or logs.
+- Preserve the project subpath in the canonical website URL
+  (`https://hidiho01.github.io/python-frank-energie/`). Verify internal
+  navigation and assets after rendering. Source/test references outside
+  `docs/` must use repository URLs rather than broken relative Pages paths.
+- Build documentation for pull requests **without deployment permissions**.
+  Deploy only reviewed content from `refs/heads/main`, including when the
+  workflow is triggered manually. Scope `pages: write` and
+  `id-token: write` to the deployment job; pin third-party Actions to
+  reviewed commit SHAs. Never make a PR build publish production content.
+- For website-related changes, verify the documentation build and applicable
+  repository quality checks on the **latest PR head**. A passing PR build
+  does not prove that the public website was deployed. Verify the production
+  Pages job, its environment, and the actual canonical URL separately after
+  merging. If Pages configuration is unknown, report it as unverified.
+- When `main` changes during a PR, reconcile with the latest `main`
+  without losing upstream fixes or unrelated files; recheck the final diff,
+  mergeability, review feedback, and CI. Follow the step-by-step workflow in
+  [SKILLS.md](SKILLS.md#publish-and-maintain-github-pages-documentation).
+
 ## Architecture and public API compatibility
 
 - Use [the architecture reference](docs/ARCHITECTURE.md) for changes to client state, authentication, transport, or models. Keep observed behavior and proposed boundaries in separate sections and identify any unresolved ownership or consumer dependencies.
