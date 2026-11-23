@@ -11,8 +11,15 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   Emit one diagnostic per sanitized status token, only allowing status-shaped
   alphabetic identifiers; redact arbitrary strings and unexpected value types.
   Never log battery IDs, account details or entire GraphQL/model payloads.
+- Treat API timeouts and unavailable details separately from a parsed
+  `SmartBatteryStatus.UNKNOWN`: the SDK's `smart_battery_details()` method
+  returns `None` for most request errors, before parsing the summary.
+  Record bounded, identifier-free failure reasons once per reason per process.
+  Never log upstream error objects, payloads or battery IDs as part of these
+  diagnostics. A successfully parsed enum status is not a transport failure.
 - Test recognized statuses, unknown status-like tokens, explicit `UNKNOWN`,
-  missing/null/empty fields, malformed values, and de-duplication with `caplog`.
+  missing/null/empty fields, malformed values, timeouts, HTTP/network errors,
+  malformed/missing summaries, and de-duplication with `caplog`.
   A fresh summary timestamp does not prove the provider supplied a usable status.
 
 ## Preserve nullable provider billing data without inventing zeros
