@@ -1,5 +1,23 @@
 # Repository skills
 
+## Publish the documentation website through reviewed GitHub Pages changes
+
+- Keep public documentation in the existing `docs/` tree with `docs/index.md`
+  as the homepage. Never publish secrets, real identifiers, private account
+  data, raw API responses, or test fixtures containing personal information.
+- Build from `zensical.toml` using the dedicated pinned dependency in
+  `requirements-docs.txt`, not the SDK runtime dependencies. Use the canonical
+  project subpath `https://hidiho01.github.io/python-frank-energie/` and
+  absolute GitHub links for references to source files outside `docs/`.
+- Validate navigation, local build, static output, and link targets in PR CI.
+  Publish only from `main` after human review. Give `pages: write` and
+  `id-token: write` permissions only to the deployment job. The repository
+  owner must select `GitHub Actions` in Settings > Pages, then verify that
+  the deployment and public URL actually succeed.
+- Keep GitHub Actions pinned to verified versions, monitor the documentation
+  generator's release notes, and confirm site visibility and privacy on each
+  material publishing change.
+
 Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI_POLICY.md). Update a practice when new evidence changes how to carry it out.
 
 ## Preserve nullable provider billing data without inventing zeros

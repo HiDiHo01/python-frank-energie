@@ -25,3 +25,6 @@ example.py
 private/**
 
 .coverage
+
+# Generated documentation website
+/site/

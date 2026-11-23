@@ -1,0 +1,67 @@
+[project]
+site_name = "python-frank-energie"
+site_url = "https://hidiho01.github.io/python-frank-energie/"
+site_description = "Documentation for the unofficial asynchronous Python client for Frank Energie."
+site_author = "HiDiHo01"
+repo_url = "https://github.com/HiDiHo01/python-frank-energie"
+repo_name = "HiDiHo01/python-frank-energie"
+edit_uri = "edit/main/docs/"
+docs_dir = "docs"
+site_dir = "site"
+copyright = "Community-maintained SDK. Not affiliated with or supported by Frank Energie."
+extra_css = ["stylesheets/extra.css"]
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = "getting-started.md" },
+  { "API & concepts" = [
+    { "Architecture" = "ARCHITECTURE.md" },
+    { "Authentication" = "authentication.md" },
+    { "Rate limits" = "rate-limits.md" },
+    { "Additional read-only queries" = "extra-read-only-queries.md" },
+  ] },
+  { "Smart energy" = [
+    { "Smart HVAC" = "smart-hvac.md" },
+    { "Smart PV" = "smart-pv.md" },
+    { "Smart PV field matrix" = "smart-pv-field-matrix.md" },
+    { "Weighted average prices" = "weighted-average-prices.md" },
+  ] },
+  { "Contributing" = "contributing.md" },
+  { "Privacy policy" = "privacy-policy/index.md" },
+]
+
+[project.theme]
+features = [
+  "navigation.instant",
+  "navigation.tracking",
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.footer",
+  "navigation.top",
+  "search.suggest",
+  "search.highlight",
+  "content.code.copy",
+]
+
+[project.theme.icon]
+logo = "lucide/zap"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/HiDiHo01/python-frank-energie"
+name = "View source on GitHub"
