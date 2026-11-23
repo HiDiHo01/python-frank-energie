@@ -245,7 +245,10 @@ See the [inventory](../tests/test_device_inventories.py),
   `DeliverySite.address` independently parses each site's first two lines
   into an `Address` object, or `None` for an invalid address; valid
   additional raw lines are retained by the top-level field but are not
-  interpreted by the legacy structured-address parser. Neither parser
+  interpreted by the legacy structured-address parser. Each site with a
+  non-null `address` that fails validation emits one warning, including
+  the first site. The message contains no address lines or site reference.
+  An omitted or null `address` yields `None` silently. Neither parser
   stringifies invalid non-string elements. This corrects the formerly
   always-missing top-level attribute and intentionally changes its public
   value from `None` to `list[str]` for valid responses. Other first-entry

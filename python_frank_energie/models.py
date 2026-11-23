@@ -1410,6 +1410,8 @@ class DeliverySite(BaseModel):
 
         address_data = payload.get("address")
         address = Address.from_dict(address_data) if isinstance(address_data, dict) else None
+        if address_data is not None and address is None:
+            _LOGGER.warning("Ignoring malformed delivery site address (expected at least two nonempty formatted lines)")
 
         segments_raw = payload.get("segments", [])
         segments = [str(s) for s in segments_raw] if isinstance(segments_raw, list) else []

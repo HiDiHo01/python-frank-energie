@@ -78,6 +78,9 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
   top-level alias or structured `Address`. Do not coerce malformed elements
   to strings or log complete site, address, or identifier payloads. Keep
   first-site legacy summaries distinct from per-site objects and test both.
+  Emit malformed-address warnings while parsing each delivery site so the
+  first-site summary cannot duplicate the warning. Test the exact message
+  and count with mixed valid, missing, null, and malformed addresses.
 - Use synthetic regression fixtures, especially for nullable nested fields.
   Two 2026-11-11 `UserSmartCharging` responses confirmed
   `provider: "ENODE"` and both `isActivated: false` with null
