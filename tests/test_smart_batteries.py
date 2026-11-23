@@ -500,6 +500,7 @@ def test_smart_battery_summary_missing_status_diagnostic(
     assert summary.last_known_status is SmartBatteryStatus.UNKNOWN
     assert "SmartBatterySummary raw lastKnownStatus before enum conversion: <missing>" in caplog.text
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("failure", "reason"),

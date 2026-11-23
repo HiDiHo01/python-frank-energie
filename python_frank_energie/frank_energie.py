@@ -125,6 +125,7 @@ _REDACTED_QUERY_OPERATIONS = (
     | {"WeightedAveragePrices", "RenewToken", "MonthInsights"}
 )
 
+
 def _smart_battery_detail_failure_reason(error: Exception) -> str:
     """Classify a failed details request without exposing upstream exception data."""
     if isinstance(error, TimeoutError):
