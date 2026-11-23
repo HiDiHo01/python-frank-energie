@@ -55,6 +55,17 @@ _MONTH_INSIGHTS_PERIOD_PATTERN = re.compile(r"(?!0000)\d{4}-(?:0[1-9]|1[0-2])", 
 _MONTH_SUMMARY_PERIOD_ID_PATTERN = re.compile(r"[^|\s]+\|(?P<period>[0-9]{4}-(?:0[1-9]|1[0-2]))")
 
 
+# Only provider-status-shaped tokens may appear in diagnostic logs. Arbitrary
+# upstream strings, including possible account/device identifiers, are redacted.
+_SAFE_BATTERY_STATUS_DIAGNOSTIC = re.compile(
+    r"(?:STATUS|CHARGE|DISCHARGE|IDLE|SEPARATE|CHARGING|DISCHARGING|UNKNOWN|ONLINE|OFFLINE|STANDBY)"
+    r"(?:_[A-Z]{1,20}){0,3}\Z",
+    re.ASCII | re.IGNORECASE,
+)
+_MISSING_BATTERY_STATUS = object()
+_LOGGED_BATTERY_STATUS_DIAGNOSTICS: set[str] = set()
+
+
 @overload
 def _safe_float(val: Any, precision: int | None = None, *, default: float) -> float: ...
 @overload
@@ -4888,6 +4899,39 @@ class SmartBatteryAdjustableSettings:
         )
 
 
+def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
+    """Record a privacy-safe raw status diagnostic before enum conversion.
+
+    Unrecognised values preserve the existing UNKNOWN fallback, but missing,
+    null, empty, explicit UNKNOWN and unexpected tokens can be distinguished.
+    Never log an arbitrary upstream string or the containing battery payload.
+    """
+    if isinstance(raw_status, str):
+        normalized_status = raw_status.casefold()
+        for known_status in SmartBatteryStatus:
+            if known_status.value.casefold() == normalized_status and known_status is not SmartBatteryStatus.UNKNOWN:
+                return known_status
+        if not raw_status:
+            diagnostic = "<empty>"
+        elif _SAFE_BATTERY_STATUS_DIAGNOSTIC.fullmatch(raw_status):
+            diagnostic = raw_status
+        else:
+            diagnostic = "<redacted>"
+    elif raw_status is _MISSING_BATTERY_STATUS:
+        diagnostic = "<missing>"
+    elif raw_status is None:
+        diagnostic = "<null>"
+    else:
+        diagnostic = "<invalid-type>"
+
+    if diagnostic not in _LOGGED_BATTERY_STATUS_DIAGNOSTICS:
+        _LOGGED_BATTERY_STATUS_DIAGNOSTICS.add(diagnostic)
+        _LOGGER.warning(
+            "SmartBatterySummary raw lastKnownStatus before enum conversion: %s",
+            diagnostic,
+        )
+    return SmartBatteryStatus.UNKNOWN
+
 @dataclass
 class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
@@ -4918,10 +4962,8 @@ class SmartBatterySummary:
 
         return cls(
             last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
-            last_known_status=(
-                SmartBatteryStatus(data["lastKnownStatus"])
-                if data.get("lastKnownStatus")
-                else SmartBatteryStatus.UNKNOWN
+            last_known_status=_parse_smart_battery_status(
+                data.get("lastKnownStatus", _MISSING_BATTERY_STATUS)
             ),
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
