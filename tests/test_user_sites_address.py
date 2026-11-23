@@ -8,6 +8,13 @@ import pytest
 from python_frank_energie import FrankEnergie
 from python_frank_energie.models import Address, DeliverySite, UserSites
 
+MODELS_LOGGER = "python_frank_energie.models"
+MALFORMED_ADDRESS_WARNING = (
+    MODELS_LOGGER,
+    logging.WARNING,
+    "Ignoring malformed delivery site address (expected at least two nonempty formatted lines)",
+)
+
 
 def _site(reference: str, address: object) -> dict[str, object]:
     """Build a fictional delivery site without personal account information."""
@@ -30,7 +37,7 @@ def _response(*sites: dict[str, object]) -> dict[str, object]:
     return {"data": {"userSites": list(sites)}}
 
 
-def test_user_sites_parses_nested_lines_and_distinct_site_addresses() -> None:
+def test_user_sites_parses_nested_lines_and_distinct_site_addresses(caplog: pytest.LogCaptureFixture) -> None:
     """Preserve the first-site summary and separately parsed addresses for every site."""
     first_lines = ["Example Road 12", "1234 AB Exampletown"]
     second_lines = ["Another Road 7A", "1000 Brussels"]
@@ -66,6 +73,7 @@ def test_user_sites_parses_nested_lines_and_distinct_site_addresses() -> None:
         "Example Road 12 1234 AB Exampletown",
         "Another Road 7 A 1000 Brussels",
     ]
+    assert caplog.record_tuples == []
 
 
 @pytest.mark.parametrize(
@@ -104,7 +112,6 @@ def test_address_parses_first_two_of_multiple_valid_lines() -> None:
 @pytest.mark.parametrize(
     "address_payload",
     [
-        None,
         "not-an-object",
         {},
         {"addressFormatted": None},
@@ -114,38 +121,60 @@ def test_address_parses_first_two_of_multiple_valid_lines() -> None:
         {"addressFormatted": ["Example Road 12", "  "]},
     ],
 )
-def test_user_sites_invalid_nested_address_returns_none(address_payload: object) -> None:
-    """Keep invalid nested address values unavailable in both model representations."""
-    parsed = UserSites.from_dict(_response(_site("synthetic-site", address_payload)))
+def test_user_sites_invalid_nested_address_returns_none(
+    address_payload: object, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Warn once for a malformed first-site address and leave both representations unavailable."""
+    with caplog.at_level(logging.DEBUG, logger=MODELS_LOGGER):
+        parsed = UserSites.from_dict(_response(_site("synthetic-site", address_payload)))
 
     assert parsed.addressFormatted is None
     assert len(parsed.deliverySites) == 1
     assert isinstance(parsed.deliverySites[0], DeliverySite)
     assert parsed.deliverySites[0].address is None
     assert parsed.format_delivery_site_as_dict == []
+    assert caplog.record_tuples == [MALFORMED_ADDRESS_WARNING]
 
 
-def test_user_sites_missing_address_returns_none() -> None:
-    """Missing nested address is distinct from a valid formatted address."""
+@pytest.mark.parametrize("omit_address", [True, False], ids=["missing", "null"])
+def test_user_sites_missing_address_returns_none(omit_address: bool, caplog: pytest.LogCaptureFixture) -> None:
+    """Keep missing and explicit null addresses unavailable without logging them."""
     site = _site("synthetic-site", None)
-    del site["address"]
-    parsed = UserSites.from_dict(_response(site))
+    if omit_address:
+        del site["address"]
+    with caplog.at_level(logging.DEBUG, logger=MODELS_LOGGER):
+        parsed = UserSites.from_dict(_response(site))
 
     assert parsed.addressFormatted is None
     assert isinstance(parsed.deliverySites[0], DeliverySite)
     assert parsed.deliverySites[0].address is None
+    assert caplog.record_tuples == []
+
+
+def test_delivery_site_warns_on_malformed_address(caplog: pytest.LogCaptureFixture) -> None:
+    """Report a malformed address when a single delivery site is parsed directly."""
+    parsed = DeliverySite.from_dict(_site("synthetic-site", {"addressFormatted": []}))
+
+    assert parsed is not None
+    assert parsed.address is None
+    assert caplog.record_tuples == [MALFORMED_ADDRESS_WARNING]
 
 
 def test_user_sites_does_not_log_full_provider_addresses(caplog: pytest.LogCaptureFixture) -> None:
-    """Do not expose site identifiers or formatted addresses at DEBUG level."""
-    private_site = "synthetic-private-reference"
+    """Warn once per malformed site and keep valid addresses and site identifiers out of all messages."""
     private_street = "Synthetic Private Street 12"
-    with caplog.at_level(logging.DEBUG, logger="python_frank_energie.models"):
-        UserSites.from_dict(_response(_site(private_site, {"addressFormatted": [private_street, "1234 AB Town"]})))
-        Address.from_dict({"addressFormatted": [private_street, None]})
+    malformed = {"addressFormatted": [private_street, None]}
+    valid_site = _site("synthetic-valid", {"addressFormatted": [private_street, "1234 AB Town"]})
+    with caplog.at_level(logging.DEBUG, logger=MODELS_LOGGER):
+        UserSites.from_dict(
+            _response(
+                valid_site,
+                _site("synthetic-private-reference-1", malformed),
+                _site("synthetic-private-reference-2", malformed),
+            )
+        )
 
-    assert private_site not in caplog.text
-    assert private_street not in caplog.text
+    assert caplog.record_tuples == [MALFORMED_ADDRESS_WARNING, MALFORMED_ADDRESS_WARNING]
 
 
 @pytest.mark.asyncio
