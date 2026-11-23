@@ -506,6 +506,8 @@ def test_smart_battery_summary_missing_status_diagnostic(
     ("failure", "reason"),
     [
         (NetworkError("Frank Energie API timeout"), "request_timeout"),
+        (NetworkError("Frank Energie GraphQL timeout during operation [SmartBattery]"), "request_timeout"),
+        (NetworkError("Frank Energie GraphQL timeout during operation [RenewToken]"), "request_timeout"),
         (TimeoutError("private-account-marker"), "request_timeout"),
         (NetworkError("private-account-marker"), "network_error"),
         (RateLimitException("private-account-marker"), "rate_limited"),

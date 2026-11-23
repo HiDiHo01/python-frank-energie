@@ -131,7 +131,13 @@ def _smart_battery_detail_failure_reason(error: Exception) -> str:
     if isinstance(error, TimeoutError):
         return "request_timeout"
     if isinstance(error, NetworkError):
-        return "request_timeout" if str(error) == "Frank Energie API timeout" else "network_error"
+        if str(error) in (
+            "Frank Energie API timeout",
+            "Frank Energie GraphQL timeout during operation [SmartBattery]",
+            "Frank Energie GraphQL timeout during operation [RenewToken]",
+        ):
+            return "request_timeout"
+        return "network_error"
     if isinstance(error, RateLimitException):
         return "rate_limited"
     if isinstance(error, (AuthException, AuthRequiredException)):
