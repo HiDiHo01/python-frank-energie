@@ -430,6 +430,7 @@ async def test_smart_battery_settings_are_per_device(aresponses):
         (None, SmartBatteryStatus.UNKNOWN, "<null>"),
         ({"deviceId": "sensitive-device-12345"}, SmartBatteryStatus.UNKNOWN, "<invalid-type>"),
         ("STATUS_ACCOUNT_SECRET123", SmartBatteryStatus.UNKNOWN, "<redacted>"),
+        ("STATUS_ACCOUNT_SECRET", SmartBatteryStatus.UNKNOWN, "<redacted>"),
     ],
 )
 def test_smart_battery_summary_status_diagnostics(
@@ -470,6 +471,7 @@ def test_smart_battery_summary_status_diagnostics(
     assert messages == expected_messages
     assert "sensitive-device-12345" not in caplog.text
     assert "STATUS_ACCOUNT_SECRET123" not in caplog.text
+    assert "STATUS_ACCOUNT_SECRET" not in caplog.text
 
 
 def test_smart_battery_summary_missing_status_diagnostic(
