@@ -1,6 +1,7 @@
 """Tests for Frank Energie Smart batteries implementation."""
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
@@ -10,9 +11,9 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.domain import SmartBatteryMode, SmartBatteryTradingAlgorithm
+from python_frank_energie.domain import SmartBatteryMode, SmartBatteryStatus, SmartBatteryTradingAlgorithm
 from python_frank_energie.exceptions import AuthException, AuthRequiredException, NetworkError, RateLimitException
-from python_frank_energie.models import SmartBatterySessions
+from python_frank_energie.models import SmartBatterySessions, SmartBatterySummary
 
 from . import load_fixtures
 
@@ -415,3 +416,76 @@ async def test_smart_battery_settings_are_per_device(aresponses):
         SmartBatteryMode.TRADING,
         SmartBatteryMode.SELF_CONSUMPTION,
     ]
+
+
+@pytest.mark.parametrize(
+    ("raw_status", "expected_status", "diagnostic"),
+    [
+        ("CHARGE_INTRADAY", SmartBatteryStatus.CHARGE_INTRADAY, None),
+        ("charge_intraday", SmartBatteryStatus.CHARGE_INTRADAY, None),
+        ("UNKNOWN", SmartBatteryStatus.UNKNOWN, "UNKNOWN"),
+        ("CHARGING", SmartBatteryStatus.UNKNOWN, "CHARGING"),
+        ("CHARGE_SOLAR", SmartBatteryStatus.UNKNOWN, "CHARGE_SOLAR"),
+        ("", SmartBatteryStatus.UNKNOWN, "<empty>"),
+        (None, SmartBatteryStatus.UNKNOWN, "<null>"),
+        ({"deviceId": "sensitive-device-12345"}, SmartBatteryStatus.UNKNOWN, "<invalid-type>"),
+        ("STATUS_ACCOUNT_SECRET123", SmartBatteryStatus.UNKNOWN, "<redacted>"),
+    ],
+)
+def test_smart_battery_summary_status_diagnostics(
+    raw_status: object,
+    expected_status: SmartBatteryStatus,
+    diagnostic: str | None,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Log only safe original status tokens once, before enum fallback."""
+    from python_frank_energie import models
+
+    monkeypatch.setattr(models, "_LOGGED_BATTERY_STATUS_DIAGNOSTICS", set())
+    payload = {
+        "lastKnownStateOfCharge": 62,
+        "lastKnownStatus": raw_status,
+        "lastUpdate": "2026-11-23T10:38:25Z",
+        "totalResult": 1.0,
+        "deviceId": "sensitive-device-12345",
+    }
+    with caplog.at_level(logging.WARNING, logger="python_frank_energie.models"):
+        summary = SmartBatterySummary.from_dict(payload)
+        repeated_summary = SmartBatterySummary.from_dict(payload)
+
+    assert summary.last_known_status is expected_status
+    assert repeated_summary.last_known_status is expected_status
+    assert summary.last_update == datetime(2026, 11, 23, 10, 38, 25, tzinfo=UTC)
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if "SmartBatterySummary raw lastKnownStatus before enum conversion:" in record.getMessage()
+    ]
+    expected_messages = (
+        [f"SmartBatterySummary raw lastKnownStatus before enum conversion: {diagnostic}"]
+        if diagnostic is not None
+        else []
+    )
+    assert messages == expected_messages
+    assert "sensitive-device-12345" not in caplog.text
+    assert "STATUS_ACCOUNT_SECRET123" not in caplog.text
+
+
+def test_smart_battery_summary_missing_status_diagnostic(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Distinguish an absent status field from an explicit API null."""
+    from python_frank_energie import models
+
+    monkeypatch.setattr(models, "_LOGGED_BATTERY_STATUS_DIAGNOSTICS", set())
+    payload = {
+        "lastKnownStateOfCharge": 62,
+        "lastUpdate": "2026-11-23T10:38:25Z",
+        "totalResult": 1.0,
+    }
+    with caplog.at_level(logging.WARNING, logger="python_frank_energie.models"):
+        summary = SmartBatterySummary.from_dict(payload)
+
+    assert summary.last_known_status is SmartBatteryStatus.UNKNOWN
+    assert "SmartBatterySummary raw lastKnownStatus before enum conversion: <missing>" in caplog.text
