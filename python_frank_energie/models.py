@@ -5013,9 +5013,7 @@ class SmartBatterySummary:
 
         return cls(
             last_known_state_of_charge=data.get("lastKnownStateOfCharge", 0),
-            last_known_status=_parse_smart_battery_status(
-                data.get("lastKnownStatus", _MISSING_BATTERY_STATUS)
-            ),
+            last_known_status=_parse_smart_battery_status(data.get("lastKnownStatus", _MISSING_BATTERY_STATUS)),
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
         )
