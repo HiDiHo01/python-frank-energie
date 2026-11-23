@@ -173,8 +173,10 @@ invalid calendar years/months, extra separators, trailing characters,
 embedded whitespace and unsupported legacy IDs (`summary_123`). The parser
 does not expose the private prefix of the source ID, modify the dataclass
 fields or constructor, alter the GraphQL query, or create additional API
-requests. Both `from_dict()` and `old_from_dict()` return the same
-unchanged `MonthSummary` model, including `_id`.
+requests. The supported `MonthSummary.from_dict()` parser returns the
+unchanged `MonthSummary` model, including `_id`. The redundant
+`old_from_dict()` parser was removed intentionally; external callers must
+use `MonthSummary.from_dict()`.
 
 **Evidence limit:** The source-ID suffix shape is based on provider
 observations, not an independently documented long-term API contract. A
