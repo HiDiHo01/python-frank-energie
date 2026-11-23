@@ -178,6 +178,35 @@ unchanged `MonthSummary` model, including `_id`. The redundant
 `old_from_dict()` parser was removed intentionally; external callers must
 use `MonthSummary.from_dict()`.
 
+### Migrating from the removed MonthSummary parser
+
+`from_dict()` is **not** a drop-in replacement for malformed or incomplete
+responses. The removed parser accepted `old_from_dict({})` and returned
+`None`; `MonthSummary.from_dict({})` instead raises
+`RequestException("Missing data payload")`. Passing `None`, or a valid
+GraphQL envelope containing no `monthSummary` (`{"data": {}}` or
+`{"data": {"monthSummary": null}}`), still returns `None`.
+
+The old parser silently supplied default values for some populated summaries.
+The supported parser validates these response fields instead:
+
+| API field | Former default in `old_from_dict()` | Requirement in `from_dict()` |
+| --- | --- | --- |
+| `_id` | `""` | String |
+| `expectedCostsUntilLastMeterReadingDate` | `0.0` | Numeric value |
+| `meterReadingDayCompleteness` | `0.0` | Numeric value |
+| `gasExcluded` | `False` | Boolean |
+| `__typename` | `""` | String |
+
+Update external callers to supply the complete, validated GraphQL response
+envelope and handle `RequestException` for malformed or incomplete populated
+summaries. Do not fabricate missing monetary values or completeness metadata
+just to suppress validation errors. The `FrankEnergie.month_summary()`
+method already uses the supported parser; the Home Assistant integration has
+no known direct calls to the removed method. This intentional breaking
+change requires downstream review if an external consumer called
+`MonthSummary.old_from_dict()` directly.
+
 **Evidence limit:** The source-ID suffix shape is based on provider
 observations, not an independently documented long-term API contract. A
 validated month suffix does not prove complete billing coverage. Consumers

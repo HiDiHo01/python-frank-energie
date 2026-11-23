@@ -501,6 +501,7 @@ def test_month_summary_with_empty_payload():
     ("response", "expected_message"),
     [
         ({"errors": [{"message": "Upstream failure"}], "data": None}, "Upstream failure"),
+        ({}, "Missing data payload"),
         ({"data": None}, "Missing data payload"),
         ({"data": {}}, None),
         ({"data": {"monthSummary": None}}, None),
@@ -567,6 +568,27 @@ def test_month_summary_malformed_populated_payload_still_raises():
     with pytest.raises(RequestException) as excinfo:
         MonthSummary.from_dict(payload)
     assert "Invalid expectedCosts" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("missing_field", "expected_error"),
+    [
+        ("_id", "Invalid _id"),
+        ("expectedCostsUntilLastMeterReadingDate", "Invalid expectedCostsUntilLastMeterReadingDate"),
+        ("meterReadingDayCompleteness", "Invalid meterReadingDayCompleteness"),
+        ("gasExcluded", "Invalid gasExcluded"),
+        ("__typename", "Invalid __typename"),
+    ],
+)
+def test_month_summary_rejects_fields_previously_defaulted_by_old_parser(
+    missing_field: str, expected_error: str
+) -> None:
+    """Require complete populated summaries instead of restoring legacy defaults."""
+    response = json.loads(load_fixtures("month_summary.json"))
+    del response["data"]["monthSummary"][missing_field]
+
+    with pytest.raises(RequestException, match=expected_error):
+        MonthSummary.from_dict(response)
 
 
 @pytest.mark.parametrize(
