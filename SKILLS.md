@@ -40,7 +40,11 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
    undocumented GraphQL fields, device semantics, or capabilities.
 5. Do not include unrelated source files in the site artifact. Inspect
    generated HTML and assets before publication when changing templates,
-   themes, or build configuration.
+   themes, or build configuration. Contributor instructions under `docs/`
+   are repository files, not website pages: exclude `AGENTS.md` and
+   `AI_POLICY.md` from the build, and use checkout-relative links between
+   instruction files. Verify their absence from generated pages, search
+   and sitemap, not just navigation.
 
 ### Development and validation
 
