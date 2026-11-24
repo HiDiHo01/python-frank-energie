@@ -134,6 +134,13 @@ zensical serve
   missing/null/empty fields, malformed values, timeouts, HTTP/network errors,
   malformed/missing summaries, and de-duplication with `caplog`.
   A fresh summary timestamp does not prove the provider supplied a usable status.
+- Apply the same rule to other optional status fields on the summary
+  (`activityStatus`, `status`, `gridCongestionStatus`): log an unknown value
+  verbatim only when every word of it is in the battery-status vocabulary, never
+  because it merely looks like an identifier (a UUID or account number is
+  identifier-shaped). Report anything else as a redacted category, once per enum.
+  Test an identifier-shaped value explicitly. Widening the vocabulary also
+  widens what `lastKnownStatus` diagnostics log, so add words deliberately.
 
 ## Preserve nullable provider billing data without inventing zeros
 
