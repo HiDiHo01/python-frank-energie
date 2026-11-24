@@ -404,11 +404,33 @@ async def test_smart_battery_details_trading_algorithm(aresponses, trading_algor
             SmartBatteryConnectionStatus.UNKNOWN,
             SmartBatteryGridCongestionStatus.UNKNOWN,
         ),
+        (
+            {"activityStatus": None, "status": "NO_RECENT_DATA", "gridCongestionStatus": "NOT_ENROLLED"},
+            None,
+            SmartBatteryConnectionStatus.NO_RECENT_DATA,
+            SmartBatteryGridCongestionStatus.NOT_ENROLLED,
+        ),
+        (
+            {"activityStatus": "standby", "status": "no_recent_data", "gridCongestionStatus": "not_enrolled"},
+            SmartBatteryActivityStatus.STANDBY,
+            SmartBatteryConnectionStatus.NO_RECENT_DATA,
+            SmartBatteryGridCongestionStatus.NOT_ENROLLED,
+        ),
         ({"activityStatus": None, "status": None, "gridCongestionStatus": None}, None, None, None),
         ({"activityStatus": "", "status": "", "gridCongestionStatus": ""}, None, None, None),
         ({}, None, None, None),
     ],
-    ids=["known", "lowercase", "unrecognised", "wrong-type", "null", "empty", "absent"],
+    ids=[
+        "known",
+        "lowercase",
+        "unrecognised",
+        "wrong-type",
+        "no-recent-data",
+        "no-recent-data-lowercase",
+        "null",
+        "empty",
+        "absent",
+    ],
 )
 async def test_smart_battery_details_activity_connection_and_congestion_status(
     aresponses, summary_extra, activity, connection, congestion
