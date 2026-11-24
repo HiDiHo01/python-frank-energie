@@ -195,11 +195,15 @@ class SmartBatteryActivityStatus(_FallbackStrEnum):
 class SmartBatteryConnectionStatus(_FallbackStrEnum):
     """Connection state of a Smart Battery, from the summary's ``status`` field.
 
-    Only ``CONNECTED`` has been observed so far; other values fall back to
-    ``UNKNOWN`` (and are logged once) until they are added here.
+    ``CONNECTED`` and ``NO_RECENT_DATA`` have been observed. ``NO_RECENT_DATA``
+    means the API has had no recent readings from the battery. It was seen with
+    a null ``activityStatus`` and a stale ``lastUpdate`` before recovering to
+    ``CONNECTED``, but that is an observation, not a guarantee. Other values fall
+    back to ``UNKNOWN`` (and are logged once) until they are added here.
     """
 
     CONNECTED = "CONNECTED"
+    NO_RECENT_DATA = "NO_RECENT_DATA"
     UNKNOWN = "UNKNOWN"
 
 

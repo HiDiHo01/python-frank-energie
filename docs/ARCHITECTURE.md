@@ -204,13 +204,13 @@ the battery-status vocabulary; anything else (an identifier-shaped string, free
 text, a value of the wrong type) becomes `UNKNOWN` and only a redacted category
 is logged, once per enum.
 
-Only some values have been observed from the API: `CHARGING`, `DISCHARGING`
-and `STANDBY` for activity, `CONNECTED` for connection and `NOT_ENROLLED` for
-grid congestion. `SmartBatteryGridCongestionStatus.ENROLLED` and `.ACTIVE` are
-inferred from the Frank Energie app's translation keys and remain unconfirmed.
-The API does not allow schema introspection, so complete value lists cannot be
-queried; verify new values with sanitised observations from an authorised
-account.
+Only some values have been observed from the API: `CHARGING`, `DISCHARGING` and
+`STANDBY` for activity, `CONNECTED` and `NO_RECENT_DATA` for connection and
+`NOT_ENROLLED` for grid congestion. `SmartBatteryGridCongestionStatus.ENROLLED`
+and `.ACTIVE` are inferred from the Frank Energie app's translation keys and
+remain unconfirmed. The API does not allow schema introspection, so complete
+value lists cannot be queried; verify new values with sanitised observations
+from an authorised account.
 
 ### Migrating from the removed MonthSummary parser
 

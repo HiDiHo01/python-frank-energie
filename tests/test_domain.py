@@ -31,6 +31,7 @@ from python_frank_energie.domain import (
         (SmartBatteryStatus, "STATUS_IDLE", "status_idle"),
         (SmartBatteryActivityStatus, "STANDBY", "STANDBY"),
         (SmartBatteryConnectionStatus, "CONNECTED", "CONNECTED"),
+        (SmartBatteryConnectionStatus, "NO_RECENT_DATA", "NO_RECENT_DATA"),
         (SmartBatteryGridCongestionStatus, "NOT_ENROLLED", "NOT_ENROLLED"),
         (SmartPvOperationalStatus, "ON", "ON"),
         (SmartPvSteeringStatus, "ACTIVE", "ACTIVE"),
