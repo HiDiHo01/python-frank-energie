@@ -20,11 +20,64 @@ API_HOST = "frank-graphql-prod.graphcdn.app"
 TIMEOUT = 30
 MAX_BYTES = 512 * 1024
 FIELDS = (
-    "activityStatus", "gridCongestionStatus", "lastKnownStateOfCharge",
-    "lastKnownStatus", "lastUpdate", "status", "totalResult",
+    "activityStatus",
+    "gridCongestionStatus",
+    "lastKnownStateOfCharge",
+    "lastKnownStatus",
+    "lastUpdate",
+    "status",
+    "totalResult",
 )
 STATUS_FIELDS = frozenset({"activityStatus", "gridCongestionStatus", "lastKnownStatus", "status"})
-SAFE_WORDS = frozenset("ACTIVE BALANCING BATTERY CHARGE CHARGING CONGESTION CONNECTED CONNECTING DISCONNECTED CONNECTION CONSUMPTION DATA DISCHARGE DISCHARGING EMPTY ENROLLED EPEX ERROR FIFTEEN FULL GRID HOME IDLE IMBALANCE IMBALANCES INTRADAY MAINTENANCE MIXED NOT OFFLINE ONLINE PENDING PERCENT PERCENTAGE PRICE PV SEPARATE SELF SMART SOLAR STANDBY STATUS TRADING UNKNOWN UNRELIABLE".split())
+SAFE_WORDS = frozenset(
+    {
+        "ACTIVE",
+        "BALANCING",
+        "BATTERY",
+        "CHARGE",
+        "CHARGING",
+        "CONGESTION",
+        "CONNECTED",
+        "CONNECTING",
+        "DISCONNECTED",
+        "CONNECTION",
+        "CONSUMPTION",
+        "DATA",
+        "DISCHARGE",
+        "DISCHARGING",
+        "EMPTY",
+        "ENROLLED",
+        "EPEX",
+        "ERROR",
+        "FIFTEEN",
+        "FULL",
+        "GRID",
+        "HOME",
+        "IDLE",
+        "IMBALANCE",
+        "IMBALANCES",
+        "INTRADAY",
+        "MAINTENANCE",
+        "MIXED",
+        "NOT",
+        "OFFLINE",
+        "ONLINE",
+        "PENDING",
+        "PERCENT",
+        "PERCENTAGE",
+        "PRICE",
+        "PV",
+        "SEPARATE",
+        "SELF",
+        "SMART",
+        "SOLAR",
+        "STANDBY",
+        "STATUS",
+        "TRADING",
+        "UNKNOWN",
+        "UNRELIABLE",
+    }
+)
 LOGIN = """mutation Login($email: String!, $password: String!) {
     login(email: $email, password: $password) { authToken }
 }"""
@@ -63,7 +116,7 @@ def load_credentials(path: Path) -> tuple[str, str]:
         value = value.strip()
         if value.startswith(("'", '"')):
             end = value.rfind(value[0])
-            if end == 0 or (value[end + 1:].strip() and not value[end + 1:].strip().startswith("#")):
+            if end == 0 or (value[end + 1 :].strip() and not value[end + 1 :].strip().startswith("#")):
                 raise DiagnosticError(f"Invalid quoted .env value on line {number}.")
             value = value[1:end]
         values[key.strip()] = value
@@ -77,9 +130,12 @@ def load_credentials(path: Path) -> tuple[str, str]:
 def request(operation: str, query: str, variables: dict[str, str], token: str | None = None) -> dict[str, object]:
     """Execute one HTTPS GraphQL request without exposing upstream errors."""
     headers = {
-        "Accept": "application/json", "Content-Type": "application/json",
-        "x-graphql-client-version": "4.35.0", "x-graphql-client-name": "frank-app",
-        "x-graphql-client-os": "ios/26.0.1", "skip-graphcdn": "1",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "x-graphql-client-version": "4.35.0",
+        "x-graphql-client-name": "frank-app",
+        "x-graphql-client-os": "ios/26.0.1",
+        "skip-graphcdn": "1",
         "User-Agent": "FrankEnergieBatterySummaryDiagnostic/1.0",
     }
     if token:
@@ -174,7 +230,10 @@ async def run(env_file: Path) -> dict[str, object]:
         if index > 1:
             await asyncio.sleep(0.5)
         provider = battery.get("provider")
-        record: dict[str, object] = {"battery_number": index, "provider": provider if provider in ("SESSY", "ANKER", "HYXI") else "OTHER"}
+        record: dict[str, object] = {
+            "battery_number": index,
+            "provider": provider if provider in ("SESSY", "ANKER", "HYXI") else "OTHER",
+        }
         try:
             data = await asyncio.to_thread(request, "SmartBattery", SUMMARY, {"deviceId": device_id}, token)
             record.update(summarize(data))

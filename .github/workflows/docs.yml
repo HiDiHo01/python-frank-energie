@@ -69,3 +69,66 @@ jobs:
       - name: Deploy Pages artifact
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+
+  verify:
+    name: Verify published documentation
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    steps:
+      - name: Check public documentation URLs
+        shell: bash
+        env:
+          SITE_URL: https://hidiho01.github.io/python-frank-energie/
+        run: |
+          set -euo pipefail
+          pages=(
+            ""
+            "getting-started/"
+            "ARCHITECTURE/"
+            "authentication/"
+            "rate-limits/"
+            "extra-read-only-queries/"
+            "smart-hvac/"
+            "smart-pv/"
+            "smart-pv-field-matrix/"
+            "weighted-average-prices/"
+            "contributing/"
+            "privacy-policy/"
+          )
+          # Share one propagation window across all routes. A final sweep may
+          # finish after the deadline, but every request has a 15-second cap.
+          retry_deadline=$((SECONDS + 300))
+          pending=("${pages[@]}")
+          while true; do
+            retry=()
+            for page in "${pending[@]}"; do
+              url="${SITE_URL}${page}"
+              if status=$(curl --silent --show-error --output /dev/null \
+                --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "$url"); then
+                if [[ "$status" == "200" ]]; then
+                  echo "HTTP 200: $url"
+                  continue
+                fi
+                echo "HTTP $status: $url"
+              else
+                echo "Request failed: $url"
+              fi
+              retry+=("$page")
+            done
+            pending=("${retry[@]}")
+            if (( ${#pending[@]} == 0 )); then
+              exit 0
+            fi
+            remaining=$((retry_deadline - SECONDS))
+            if (( remaining <= 0 )); then
+              break
+            fi
+            sleep "$((remaining < 20 ? remaining : 20))"
+          done
+          for page in "${pending[@]}"; do
+            echo "::error::Published page is not reachable: ${SITE_URL}${page}"
+          done
+          exit 1

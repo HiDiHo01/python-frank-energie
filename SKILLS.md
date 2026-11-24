@@ -112,6 +112,15 @@ zensical serve
    Open the canonical URL to check HTTP availability, expected content,
    navigation and CSS/assets. Report GitHub's deployment success and
    direct public-site verification **separately** if one cannot be checked.
+6. Use the post-deployment HTTP verification job to check every public
+   navigation page on the canonical project URL. Keep its route list in sync
+   with `zensical.toml`; preserve case and trailing slashes. Require HTTP 200
+   without redirects. Use a shared five-minute propagation retry window,
+   retry only failed routes at up to 20-second intervals, and cap each
+   request at 15 seconds. The final sweep may finish after the deadline;
+   report every persistent failure. A failed verification does not undo a
+   deployment. Run it only after successful production publication, without
+   deployment permissions.
 
 ## Diagnose unknown Smart Battery status values without disclosing identifiers
 
