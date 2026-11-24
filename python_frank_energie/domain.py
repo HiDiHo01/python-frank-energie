@@ -179,6 +179,45 @@ class SmartBatteryStatus(_FallbackStrEnum):
     UNKNOWN = "unknown"
 
 
+class SmartBatteryActivityStatus(_FallbackStrEnum):
+    """What a Smart Battery is doing right now, as reported by ``activityStatus``.
+
+    Unlike ``SmartBatteryStatus`` (the steering plan), this is the observed
+    state, so the two can disagree for a moment.
+    """
+
+    CHARGING = "CHARGING"
+    DISCHARGING = "DISCHARGING"
+    STANDBY = "STANDBY"
+    UNKNOWN = "UNKNOWN"
+
+
+class SmartBatteryConnectionStatus(_FallbackStrEnum):
+    """Connection state of a Smart Battery, from the summary's ``status`` field.
+
+    Only ``CONNECTED`` has been observed so far; other values fall back to
+    ``UNKNOWN`` (and are logged once) until they are added here.
+    """
+
+    CONNECTED = "CONNECTED"
+    UNKNOWN = "UNKNOWN"
+
+
+class SmartBatteryGridCongestionStatus(_FallbackStrEnum):
+    """Whether a Smart Battery takes part in grid-congestion steering.
+
+    Only ``NOT_ENROLLED`` has been observed from the API. ``ENROLLED`` and
+    ``ACTIVE`` are inferred from the Frank Energie app's translation keys, so
+    treat them as unconfirmed; any other value falls back to ``UNKNOWN`` and is
+    logged once.
+    """
+
+    NOT_ENROLLED = "NOT_ENROLLED"
+    ENROLLED = "ENROLLED"
+    ACTIVE = "ACTIVE"
+    UNKNOWN = "UNKNOWN"
+
+
 class SessionStatus(_FallbackStrEnum):
     """Session status for trading/battery sessions."""
 
