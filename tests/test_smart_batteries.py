@@ -437,6 +437,120 @@ async def test_smart_battery_details_activity_connection_and_congestion_status(
 
 
 @pytest.mark.asyncio
+async def test_smart_battery_details_requests_status_fields(aresponses) -> None:
+    """The outgoing query selects the three status fields on smartBatterySummary."""
+    requests: list[dict[str, Any]] = []
+
+    async def handler(request: Any) -> Any:
+        requests.append(await request.json())
+        return aresponses.Response(
+            text=_details_response({}),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        )
+
+    aresponses.add(SIMPLE_DATA_URL, "/", "POST", handler)
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        await api.smart_battery_details("device_id")
+        await api.close()
+
+    query = requests[0]["query"]
+    start = query.index("{", query.index("smartBatterySummary("))
+    depth = 0
+    summary_selection = ""
+    for position in range(start, len(query)):
+        depth += (query[position] == "{") - (query[position] == "}")
+        if depth == 0:
+            summary_selection = query[start + 1 : position]
+            break
+    for field_name in ("activityStatus", "gridCongestionStatus", "status"):
+        assert field_name in summary_selection.split(), field_name
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        1,
+        3.5,
+        True,
+        ["CHARGING"],
+        {"state": "CHARGING"},
+        "  secret  ",
+        "two words",
+        "line\nbreak",
+        "x" * 65,
+        "ÄÖÜ",
+        "token;drop",
+    ],
+    ids=["int", "float", "bool", "list", "dict", "space", "words", "newline", "too-long", "non-ascii", "punctuation"],
+)
+def test_lenient_enum_never_logs_non_status_values(caplog, monkeypatch, raw) -> None:
+    """A value that is not a status-shaped token maps to UNKNOWN without being logged."""
+    from python_frank_energie import models
+    from python_frank_energie.models import _lenient_enum
+
+    monkeypatch.setattr(models, "_LOGGED_IGNORED_STATUS_TYPES", set())
+    with caplog.at_level(logging.DEBUG):
+        member = _lenient_enum(SmartBatteryActivityStatus, raw)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert member is SmartBatteryActivityStatus.UNKNOWN
+    assert messages, "the ignored value should leave a trace"
+    assert all(str(raw) not in message and repr(raw) not in message for message in messages)
+    assert any("SmartBatteryActivityStatus" in message for message in messages)  # the type is named
+
+
+def test_lenient_enum_reports_an_ignored_value_type_once(caplog, monkeypatch) -> None:
+    """The ignored-value warning is not repeated on every poll."""
+    from python_frank_energie import models
+    from python_frank_energie.models import _lenient_enum
+
+    monkeypatch.setattr(models, "_LOGGED_IGNORED_STATUS_TYPES", set())
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            assert _lenient_enum(SmartBatteryConnectionStatus, ["x"]) is SmartBatteryConnectionStatus.UNKNOWN
+
+    assert caplog.text.count("Ignoring non-status list value for SmartBatteryConnectionStatus") == 1
+
+
+@pytest.mark.parametrize("token", ["REGRESSION_TOKEN", "GRID-FEEDING", "grid.feeding"])
+def test_lenient_enum_logs_an_unrecognised_status_token_once(caplog, monkeypatch, token) -> None:
+    """A status-shaped token is the useful case: logged once, so it can be added."""
+    from python_frank_energie import domain
+    from python_frank_energie.models import _lenient_enum
+
+    monkeypatch.setattr(domain, "_warned_unknown_enum_values", set())
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            assert _lenient_enum(SmartBatteryGridCongestionStatus, token) is SmartBatteryGridCongestionStatus.UNKNOWN
+
+    assert caplog.text.count(f"Unknown SmartBatteryGridCongestionStatus encountered: {token}") == 1
+
+
+def test_lenient_enum_without_unknown_member_does_not_raise() -> None:
+    """An enum with no UNKNOWN member yields None instead of a KeyError."""
+    from enum import StrEnum
+
+    from python_frank_energie.models import _lenient_enum
+
+    class Plain(StrEnum):
+        ON = "ON"
+
+    assert _lenient_enum(Plain, "ON") is Plain.ON
+    assert _lenient_enum(Plain, ["ON"]) is None
+
+
+@pytest.mark.parametrize("raw", [None, ""])
+def test_lenient_enum_treats_null_and_empty_as_no_value(raw) -> None:
+    """Null and empty strings are "nothing sent", not UNKNOWN."""
+    from python_frank_energie.models import _lenient_enum
+
+    assert _lenient_enum(SmartBatteryActivityStatus, raw) is None
+
+
+@pytest.mark.asyncio
 async def test_smart_battery_settings_are_per_device(aresponses):
     """Each device gets its own options: requests carry their own deviceId and
     two batteries with different options never share them."""
