@@ -469,6 +469,10 @@ async def test_smart_battery_details_requests_status_fields(aresponses) -> None:
         assert field_name in summary_selection.split(), field_name
 
 
+_UUID_SHAPED = "123e4567-e89b-12d3-a456-426614174000"
+_ACCOUNT_SHAPED = "NL00TEST0000000000"
+
+
 @pytest.mark.parametrize(
     "raw",
     [
@@ -483,15 +487,35 @@ async def test_smart_battery_details_requests_status_fields(aresponses) -> None:
         "x" * 65,
         "ÄÖÜ",
         "token;drop",
+        _UUID_SHAPED,
+        _ACCOUNT_SHAPED,
+        "REGRESSION_TOKEN",
+        "GRID-FEEDING",
     ],
-    ids=["int", "float", "bool", "list", "dict", "space", "words", "newline", "too-long", "non-ascii", "punctuation"],
+    ids=[
+        "int",
+        "float",
+        "bool",
+        "list",
+        "dict",
+        "padded",
+        "words",
+        "newline",
+        "too-long",
+        "non-ascii",
+        "punctuation",
+        "uuid",
+        "account",
+        "unknown-word",
+        "hyphenated",
+    ],
 )
-def test_lenient_enum_never_logs_non_status_values(caplog, monkeypatch, raw) -> None:
-    """A value that is not a status-shaped token maps to UNKNOWN without being logged."""
+def test_lenient_enum_never_logs_values_outside_the_status_vocabulary(caplog, monkeypatch, raw) -> None:
+    """Identifier-shaped, free-text and wrong-type values map to UNKNOWN without being logged."""
     from python_frank_energie import models
     from python_frank_energie.models import _lenient_enum
 
-    monkeypatch.setattr(models, "_LOGGED_IGNORED_STATUS_TYPES", set())
+    monkeypatch.setattr(models, "_LOGGED_IGNORED_STATUS_CATEGORIES", set())
     with caplog.at_level(logging.DEBUG):
         member = _lenient_enum(SmartBatteryActivityStatus, raw)
 
@@ -499,25 +523,25 @@ def test_lenient_enum_never_logs_non_status_values(caplog, monkeypatch, raw) -> 
     assert member is SmartBatteryActivityStatus.UNKNOWN
     assert messages, "the ignored value should leave a trace"
     assert all(str(raw) not in message and repr(raw) not in message for message in messages)
-    assert any("SmartBatteryActivityStatus" in message for message in messages)  # the type is named
+    assert any("SmartBatteryActivityStatus" in message for message in messages)  # the enum is named
 
 
-def test_lenient_enum_reports_an_ignored_value_type_once(caplog, monkeypatch) -> None:
-    """The ignored-value warning is not repeated on every poll."""
+def test_lenient_enum_reports_a_redacted_category_once(caplog, monkeypatch) -> None:
+    """The redacted warning is not repeated on every poll, and not per distinct value."""
     from python_frank_energie import models
     from python_frank_energie.models import _lenient_enum
 
-    monkeypatch.setattr(models, "_LOGGED_IGNORED_STATUS_TYPES", set())
+    monkeypatch.setattr(models, "_LOGGED_IGNORED_STATUS_CATEGORIES", set())
     with caplog.at_level(logging.WARNING):
-        for _ in range(3):
-            assert _lenient_enum(SmartBatteryConnectionStatus, ["x"]) is SmartBatteryConnectionStatus.UNKNOWN
+        for raw in (_UUID_SHAPED, _ACCOUNT_SHAPED, "NOT-A-STATUS"):
+            assert _lenient_enum(SmartBatteryConnectionStatus, raw) is SmartBatteryConnectionStatus.UNKNOWN
 
-    assert caplog.text.count("Ignoring non-status list value for SmartBatteryConnectionStatus") == 1
+    assert caplog.text.count("Ignoring unexpected SmartBatteryConnectionStatus value <redacted>") == 1
 
 
-@pytest.mark.parametrize("token", ["REGRESSION_TOKEN", "GRID-FEEDING", "grid.feeding"])
-def test_lenient_enum_logs_an_unrecognised_status_token_once(caplog, monkeypatch, token) -> None:
-    """A status-shaped token is the useful case: logged once, so it can be added."""
+@pytest.mark.parametrize("token", ["CHARGE_SOLAR_FULL", "NOT_CONNECTED", "disconnected"])
+def test_lenient_enum_logs_an_unknown_status_vocabulary_token_once(caplog, monkeypatch, token) -> None:
+    """An unknown value made only of status words is still reported once, so it can be added."""
     from python_frank_energie import domain
     from python_frank_energie.models import _lenient_enum
 
@@ -529,8 +553,20 @@ def test_lenient_enum_logs_an_unrecognised_status_token_once(caplog, monkeypatch
     assert caplog.text.count(f"Unknown SmartBatteryGridCongestionStatus encountered: {token}") == 1
 
 
+@pytest.mark.parametrize("raw", ["charging", "CHARGING", "Charging"])
+def test_lenient_enum_matches_known_values_case_insensitively(caplog, raw) -> None:
+    """A known value maps to its member without going through the warning path."""
+    from python_frank_energie.models import _lenient_enum
+
+    with caplog.at_level(logging.DEBUG):
+        member = _lenient_enum(SmartBatteryActivityStatus, raw)
+
+    assert member is SmartBatteryActivityStatus.CHARGING
+    assert caplog.records == []
+
+
 def test_lenient_enum_without_unknown_member_does_not_raise() -> None:
-    """An enum with no UNKNOWN member yields None instead of a KeyError."""
+    """An enum with no UNKNOWN member yields None for unknown input instead of raising."""
     from enum import StrEnum
 
     from python_frank_energie.models import _lenient_enum
@@ -539,6 +575,8 @@ def test_lenient_enum_without_unknown_member_does_not_raise() -> None:
         ON = "ON"
 
     assert _lenient_enum(Plain, "ON") is Plain.ON
+    assert _lenient_enum(Plain, "OFF") is None  # not a status word
+    assert _lenient_enum(Plain, "IDLE") is None  # a status word: the enum raises ValueError
     assert _lenient_enum(Plain, ["ON"]) is None
 
 

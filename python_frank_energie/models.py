@@ -67,11 +67,14 @@ _SAFE_BATTERY_STATUS_WORDS = frozenset(
         "CHARGE",
         "CHARGING",
         "CONGESTION",
+        "CONNECTED",
         "CONSUMPTION",
         "DATA",
         "DISCHARGE",
         "DISCHARGING",
+        "DISCONNECTED",
         "EMPTY",
+        "ENROLLED",
         "EPEX",
         "ERROR",
         "FIFTEEN",
@@ -84,6 +87,7 @@ _SAFE_BATTERY_STATUS_WORDS = frozenset(
         "INTRADAY",
         "MAINTENANCE",
         "MIXED",
+        "NOT",
         "OFFLINE",
         "ONLINE",
         "PERCENT",
@@ -4906,33 +4910,46 @@ def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
     return SmartBatteryStatus.UNKNOWN
 
 
-_STATUS_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_.-]{1,64}", re.ASCII)
-_LOGGED_IGNORED_STATUS_TYPES: set[tuple[str, str]] = set()
+_LOGGED_IGNORED_STATUS_CATEGORIES: set[tuple[str, str]] = set()
 
 
 def _lenient_enum[EnumT: StrEnum](enum_type: type[EnumT], raw: Any) -> EnumT | None:
     """Return ``enum_type(raw)``, or ``None`` when the API sent no value.
 
     Unlike ``_optional_enum`` this never raises, so an optional informational
-    field cannot make the whole payload unparseable. Only ``None`` and ``""``
-    count as "no value".
+    field cannot make the whole payload unparseable. ``None`` and ``""`` mean
+    "no value". An enum without an ``UNKNOWN`` member also yields ``None`` for
+    a value it does not know, so use this helper with a fallback enum when the
+    two cases must stay apart.
 
-    A status-shaped token (letters, digits, ``_``, ``-`` and ``.``, at most 64
-    characters) goes through the enum, so a ``_FallbackStrEnum`` maps an
-    unrecognised one to ``UNKNOWN`` and logs that token once. Anything else (a
-    value of the wrong type, free text, whitespace, control or non-ASCII
-    characters) is never logged: it becomes ``UNKNOWN`` and only its type is
-    reported, once per enum and type.
+    A known value (matched case-insensitively) returns its member. An unknown
+    value is passed to the enum, so a ``_FallbackStrEnum`` maps it to ``UNKNOWN``
+    and logs it once, only when every word of it belongs to the battery-status
+    vocabulary (``_is_safe_battery_status_diagnostic``). Any other value, such as
+    an identifier-shaped string, free text or a value of the wrong type, is never
+    logged: it becomes ``UNKNOWN`` (``None`` for an enum without that member)
+    and only a redacted category is reported, once per enum and category.
     """
     if raw is None or raw == "":
         return None
-    if isinstance(raw, str) and _STATUS_TOKEN_PATTERN.fullmatch(raw):
-        return enum_type(raw)
-    enum_name, type_name = enum_type.__name__, type(raw).__name__
-    if (enum_name, type_name) not in _LOGGED_IGNORED_STATUS_TYPES:
-        _LOGGED_IGNORED_STATUS_TYPES.add((enum_name, type_name))
-        _LOGGER.warning("Ignoring non-status %s value for %s; using UNKNOWN", type_name, enum_name)
-    return enum_type.__members__.get("UNKNOWN")
+    fallback = enum_type.__members__.get("UNKNOWN")
+    if isinstance(raw, str):
+        folded = raw.casefold()
+        for member in enum_type:
+            if member.value.casefold() == folded:
+                return member
+        if _is_safe_battery_status_diagnostic(raw):
+            try:
+                return enum_type(raw)
+            except ValueError:
+                return fallback
+        category = "<redacted>"
+    else:
+        category = f"<{type(raw).__name__}>"
+    if (enum_type.__name__, category) not in _LOGGED_IGNORED_STATUS_CATEGORIES:
+        _LOGGED_IGNORED_STATUS_CATEGORIES.add((enum_type.__name__, category))
+        _LOGGER.warning("Ignoring unexpected %s value %s; using UNKNOWN", enum_type.__name__, category)
+    return fallback
 
 
 @dataclass
@@ -4962,8 +4979,11 @@ class SmartBatterySummary:
             SmartBatterySummary: Parsed dataclass instance.
 
         Notes:
-            Missing, null, empty and unrecognized statuses become UNKNOWN. A
-            privacy-filtered warning records the original status category once.
+            Missing, null, empty and unrecognized ``lastKnownStatus`` values
+            become UNKNOWN. A privacy-filtered warning records the original
+            status category once. The optional ``activityStatus``, ``status``
+            and ``gridCongestionStatus`` fields differ: a missing, null or
+            empty value is ``None``, and only an unrecognized one is UNKNOWN.
 
         Raises:
             ValueError: If 'lastUpdate' is missing or invalid.

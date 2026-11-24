@@ -178,6 +178,40 @@ unchanged `MonthSummary` model, including `_id`. The redundant
 `old_from_dict()` parser was removed intentionally; external callers must
 use `MonthSummary.from_dict()`.
 
+### Smart battery summary status fields
+
+`SmartBatterySummary` exposes four status fields, and they mean different
+things:
+
+| Field | Source | Type | Missing, null or empty |
+|---|---|---|---|
+| `last_known_status` | `lastKnownStatus` | `SmartBatteryStatus` | `UNKNOWN` |
+| `activity_status` | `activityStatus` | `SmartBatteryActivityStatus \| None` | `None` |
+| `connection_status` | `status` | `SmartBatteryConnectionStatus \| None` | `None` |
+| `grid_congestion_status` | `gridCongestionStatus` | `SmartBatteryGridCongestionStatus \| None` | `None` |
+
+`last_known_status` is the steering plan. `activity_status` is what the battery
+is doing now, so the two can disagree for a while. The three optional fields
+keep "the API sent nothing" (`None`) apart from "the API sent a value this
+library does not know" (`UNKNOWN`). They are requested by
+`smart_battery_details()`; a field the server rejects fails that call like any
+other request error.
+
+Parsing never raises for these fields, and it never logs an arbitrary upstream
+string. A known value, matched case-insensitively, returns its member. An
+unknown value is logged once, verbatim, only when every word of it belongs to
+the battery-status vocabulary; anything else (an identifier-shaped string, free
+text, a value of the wrong type) becomes `UNKNOWN` and only a redacted category
+is logged, once per enum.
+
+Only some values have been observed from the API: `CHARGING`, `DISCHARGING`
+and `STANDBY` for activity, `CONNECTED` for connection and `NOT_ENROLLED` for
+grid congestion. `SmartBatteryGridCongestionStatus.ENROLLED` and `.ACTIVE` are
+inferred from the Frank Energie app's translation keys and remain unconfirmed.
+The API does not allow schema introspection, so complete value lists cannot be
+queried; verify new values with sanitised observations from an authorised
+account.
+
 ### Migrating from the removed MonthSummary parser
 
 `from_dict()` is **not** a drop-in replacement for malformed or incomplete
