@@ -98,29 +98,37 @@ jobs:
             "contributing/"
             "privacy-policy/"
           )
-          failed=0
-          for page in "${pages[@]}"; do
-            url="${SITE_URL}${page}"
-            passed=false
-            for attempt in 1 2 3; do
+          # Share one propagation window across all routes. A final sweep may
+          # finish after the deadline, but every request has a 15-second cap.
+          retry_deadline=$((SECONDS + 300))
+          pending=("${pages[@]}")
+          while true; do
+            retry=()
+            for page in "${pending[@]}"; do
+              url="${SITE_URL}${page}"
               if status=$(curl --silent --show-error --output /dev/null \
                 --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "$url"); then
                 if [[ "$status" == "200" ]]; then
                   echo "HTTP 200: $url"
-                  passed=true
-                  break
+                  continue
                 fi
-                echo "HTTP $status: $url (attempt $attempt/3)"
+                echo "HTTP $status: $url"
               else
-                echo "Request failed: $url (attempt $attempt/3)"
+                echo "Request failed: $url"
               fi
-              if [[ "$attempt" != "3" ]]; then
-                sleep 10
-              fi
+              retry+=("$page")
             done
-            if [[ "$passed" != "true" ]]; then
-              echo "::error::Published page is not reachable: $url"
-              failed=1
+            pending=("${retry[@]}")
+            if (( ${#pending[@]} == 0 )); then
+              exit 0
             fi
+            remaining=$((retry_deadline - SECONDS))
+            if (( remaining <= 0 )); then
+              break
+            fi
+            sleep "$((remaining < 20 ? remaining : 20))"
           done
-          exit "$failed"
+          for page in "${pending[@]}"; do
+            echo "::error::Published page is not reachable: ${SITE_URL}${page}"
+          done
+          exit 1
