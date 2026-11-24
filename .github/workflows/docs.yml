@@ -69,3 +69,58 @@ jobs:
       - name: Deploy Pages artifact
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+
+  verify:
+    name: Verify published documentation
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    steps:
+      - name: Check public documentation URLs
+        shell: bash
+        env:
+          SITE_URL: https://hidiho01.github.io/python-frank-energie/
+        run: |
+          set -euo pipefail
+          pages=(
+            ""
+            "getting-started/"
+            "ARCHITECTURE/"
+            "authentication/"
+            "rate-limits/"
+            "extra-read-only-queries/"
+            "smart-hvac/"
+            "smart-pv/"
+            "smart-pv-field-matrix/"
+            "weighted-average-prices/"
+            "contributing/"
+            "privacy-policy/"
+          )
+          failed=0
+          for page in "${pages[@]}"; do
+            url="${SITE_URL}${page}"
+            passed=false
+            for attempt in 1 2 3; do
+              if status=$(curl --silent --show-error --output /dev/null \
+                --write-out '%{http_code}' --connect-timeout 5 --max-time 15 "$url"); then
+                if [[ "$status" == "200" ]]; then
+                  echo "HTTP 200: $url"
+                  passed=true
+                  break
+                fi
+                echo "HTTP $status: $url (attempt $attempt/3)"
+              else
+                echo "Request failed: $url (attempt $attempt/3)"
+              fi
+              if [[ "$attempt" != "3" ]]; then
+                sleep 10
+              fi
+            done
+            if [[ "$passed" != "true" ]]; then
+              echo "::error::Published page is not reachable: $url"
+              failed=1
+            fi
+          done
+          exit "$failed"
