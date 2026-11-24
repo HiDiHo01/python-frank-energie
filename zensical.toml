@@ -9,6 +9,10 @@ edit_uri = "edit/main/docs/"
 docs_dir = "docs"
 site_dir = "site"
 copyright = "Community-maintained SDK. Not affiliated with or supported by Frank Energie."
+exclude_docs = """
+/AGENTS.md
+/AI_POLICY.md
+"""
 extra_css = ["stylesheets/extra.css"]
 nav = [
   { "Home" = "index.md" },
