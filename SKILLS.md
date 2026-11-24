@@ -44,7 +44,11 @@ Apply these practices alongside [`AGENTS.md`](AGENTS.md) and [`AI_POLICY.md`](AI
    are repository files, not website pages: exclude `AGENTS.md` and
    `AI_POLICY.md` from the build, and use checkout-relative links between
    instruction files. Verify their absence from generated pages, search
-   and sitemap, not just navigation.
+   and sitemap, not just navigation. Zensical's `exclude_docs` uses gitignore
+   patterns: unanchored basenames match at any depth; a leading slash only
+   matches the documentation root. The Pages build checks the actual output
+   and an isolated fixture with root and nested instruction files plus a
+   public control page before any upload.
 
 ### Development and validation
 

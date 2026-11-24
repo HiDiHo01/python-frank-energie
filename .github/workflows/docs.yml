@@ -46,6 +46,76 @@ jobs:
           test -s site/getting-started/index.html
           test -s site/ARCHITECTURE/index.html
           test -s site/privacy-policy/index.html
+      - name: Verify contributor instruction exclusion
+        run: |
+          python - <<'PY'
+          """Check the real site and an isolated recursive exclusion fixture."""
+          import json
+          import shutil
+          import subprocess
+          import tempfile
+          import xml.etree.ElementTree as ET
+          from pathlib import Path, PurePosixPath
+          from urllib.parse import unquote, urlsplit
+
+          instruction_names = ("AGENTS.md", "AI_POLICY.md")
+          excluded_stems = {Path(name).stem.casefold() for name in instruction_names}
+          probe_marker = "ContributorExclusionProbeUnique"
+          control_route = "exclusion-check/level-two/public-control/"
+
+          def is_instruction_route(location: str) -> bool:
+              """Identify instruction page paths, not legitimate prose references."""
+              path = PurePosixPath(unquote(urlsplit(location).path))
+              return any(PurePosixPath(part).stem.casefold() in excluded_stems for part in path.parts)
+
+          def verify_site(site: Path, *, probe: bool = False) -> None:
+              """Require populated indexes and reject instruction output at any depth."""
+              files = [file for file in site.rglob("*") if file.is_file()]
+              if any(is_instruction_route(file.relative_to(site).as_posix()) for file in files):
+                  raise SystemExit("Contributor instruction file was published")
+              search_text = (site / "search.json").read_text(encoding="utf-8")
+              items = json.loads(search_text)["items"]
+              locations = [item["location"] for item in items]
+              sitemap_text = (site / "sitemap.xml").read_text(encoding="utf-8")
+              sitemap_urls = [node.text or "" for node in ET.fromstring(sitemap_text).findall(".//{*}loc")]
+              if not locations or not sitemap_urls:
+                  raise SystemExit("Expected populated documentation search index and sitemap")
+              if any(is_instruction_route(location) for location in locations + sitemap_urls):
+                  raise SystemExit("Contributor instructions appear in search or sitemap")
+              if probe:
+                  verify_probe(site, files, search_text, sitemap_text)
+
+          def verify_probe(site: Path, files: list[Path], search_text: str, sitemap_text: str) -> None:
+              """Ensure recursive exclusion is not merely caused by ignoring unlisted pages."""
+              if not (site / control_route / "index.html").is_file():
+                  raise SystemExit("Nested public control page was not built")
+              if control_route not in search_text or control_route not in sitemap_text:
+                  raise SystemExit("Nested public control page is absent from search or sitemap")
+              if probe_marker in search_text or probe_marker in sitemap_text:
+                  raise SystemExit("Synthetic instruction content leaked into an index")
+              if any(
+                  probe_marker in file.read_text(encoding="utf-8")
+                  for file in files
+                  if file.suffix == ".html"
+              ):
+                  raise SystemExit("Synthetic instruction content leaked into HTML")
+
+          verify_site(Path("site"))
+          with tempfile.TemporaryDirectory(prefix="docs-exclusion-") as directory:
+              project = Path(directory)
+              shutil.copytree("docs", project / "docs")
+              shutil.copy2("zensical.toml", project / "zensical.toml")
+              for depth in ("", "exclusion-check", "exclusion-check/level-two"):
+                  parent = project / "docs" / depth
+                  parent.mkdir(parents=True, exist_ok=True)
+                  for name in instruction_names:
+                      (parent / name).write_text(f"# {probe_marker}\n", encoding="utf-8")
+              control = project / "docs/exclusion-check/level-two/public-control.md"
+              control.write_text("# Public control page\n", encoding="utf-8")
+              subprocess.run(["zensical", "build", "--clean"], cwd=project, check=True, timeout=120)
+              verify_site(project / "site", probe=True)
+          print("Contributor instructions excluded from HTML, search and sitemap at all tested depths")
+          PY
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
