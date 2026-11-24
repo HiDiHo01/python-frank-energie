@@ -3594,9 +3594,12 @@ class FrankEnergie:
                         }
                     }
                     smartBatterySummary(deviceId: $deviceId) {
+                        activityStatus
+                        gridCongestionStatus
                         lastKnownStateOfCharge
                         lastKnownStatus
                         lastUpdate
+                        status
                         totalResult
                     }
                 }

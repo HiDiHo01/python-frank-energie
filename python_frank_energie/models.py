@@ -27,6 +27,9 @@ from .domain import (
     PowerDeliveryState,
     ServiceStatus,
     SessionStatus,
+    SmartBatteryActivityStatus,
+    SmartBatteryConnectionStatus,
+    SmartBatteryGridCongestionStatus,
     SmartBatteryImbalanceStrategy,
     SmartBatteryMode,
     SmartBatteryStatus,
@@ -4903,6 +4906,18 @@ def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
     return SmartBatteryStatus.UNKNOWN
 
 
+def _lenient_enum[EnumT: StrEnum](enum_type: type[EnumT], raw: Any) -> EnumT | None:
+    """Return ``enum_type(raw)``, or ``None`` when the API sent no value.
+
+    Unlike ``_optional_enum`` this never raises, so an optional informational
+    field cannot make the whole payload unparseable. Only ``None`` and ``""``
+    count as "no value"; anything else, including a value of the wrong type,
+    goes through the enum so a ``_FallbackStrEnum`` maps it to ``UNKNOWN`` and
+    logs it once instead of hiding it as ``None``.
+    """
+    return enum_type(raw) if raw not in (None, "") else None
+
+
 @dataclass
 class SmartBatterySummary:
     """Data representation of a smart battery session summary."""
@@ -4911,6 +4926,12 @@ class SmartBatterySummary:
     last_known_status: SmartBatteryStatus
     last_update: datetime
     total_result: float
+    activity_status: SmartBatteryActivityStatus | None = None
+    """What the battery is doing now; ``None`` when the API sent no value."""
+    connection_status: SmartBatteryConnectionStatus | None = None
+    """Connection state from the summary's ``status``; ``None`` when absent."""
+    grid_congestion_status: SmartBatteryGridCongestionStatus | None = None
+    """Grid-congestion steering state; ``None`` when the API sent no value."""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SmartBatterySummary:
@@ -4940,6 +4961,9 @@ class SmartBatterySummary:
             last_known_status=_parse_smart_battery_status(data.get("lastKnownStatus", _MISSING_BATTERY_STATUS)),
             last_update=last_update,
             total_result=data.get("totalResult", 0.0),
+            activity_status=_lenient_enum(SmartBatteryActivityStatus, data.get("activityStatus")),
+            connection_status=_lenient_enum(SmartBatteryConnectionStatus, data.get("status")),
+            grid_congestion_status=_lenient_enum(SmartBatteryGridCongestionStatus, data.get("gridCongestionStatus")),
         )
 
 

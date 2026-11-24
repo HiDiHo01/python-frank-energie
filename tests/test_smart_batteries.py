@@ -11,7 +11,14 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.domain import SmartBatteryMode, SmartBatteryStatus, SmartBatteryTradingAlgorithm
+from python_frank_energie.domain import (
+    SmartBatteryActivityStatus,
+    SmartBatteryConnectionStatus,
+    SmartBatteryGridCongestionStatus,
+    SmartBatteryMode,
+    SmartBatteryStatus,
+    SmartBatteryTradingAlgorithm,
+)
 from python_frank_energie.exceptions import (
     AuthException,
     AuthRequiredException,
@@ -302,7 +309,7 @@ async def test_smart_battery_settings_missing_or_malformed(response):
             assert await api.smart_battery_settings("device_id") is None
 
 
-def _details_response(trading_algorithm_field: dict) -> str:
+def _details_response(trading_algorithm_field: dict, summary_extra: dict | None = None) -> str:
     """Build a SmartBattery response whose settings carry the given tradingAlgorithm field."""
     return json.dumps(
         {
@@ -324,6 +331,7 @@ def _details_response(trading_algorithm_field: dict) -> str:
                     "lastKnownStatus": "ONLINE",
                     "lastUpdate": "2026-11-05T08:00:00.000Z",
                     "totalResult": 1.5,
+                    **(summary_extra or {}),
                 },
             }
         }
@@ -366,6 +374,66 @@ async def test_smart_battery_details_trading_algorithm(aresponses, trading_algor
     assert details.smart_battery.settings is not None
     assert details.smart_battery.settings.battery_mode is SmartBatteryMode.IMBALANCE_TRADING
     assert details.smart_battery.settings.trading_algorithm is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("summary_extra", "activity", "connection", "congestion"),
+    [
+        (
+            {"activityStatus": "CHARGING", "status": "CONNECTED", "gridCongestionStatus": "NOT_ENROLLED"},
+            SmartBatteryActivityStatus.CHARGING,
+            SmartBatteryConnectionStatus.CONNECTED,
+            SmartBatteryGridCongestionStatus.NOT_ENROLLED,
+        ),
+        (
+            {"activityStatus": "standby", "status": "connected", "gridCongestionStatus": "active"},
+            SmartBatteryActivityStatus.STANDBY,
+            SmartBatteryConnectionStatus.CONNECTED,
+            SmartBatteryGridCongestionStatus.ACTIVE,
+        ),
+        (
+            {"activityStatus": "HIBERNATING", "status": "OFFLINE", "gridCongestionStatus": "PAUSED"},
+            SmartBatteryActivityStatus.UNKNOWN,
+            SmartBatteryConnectionStatus.UNKNOWN,
+            SmartBatteryGridCongestionStatus.UNKNOWN,
+        ),
+        (
+            {"activityStatus": 1, "status": {"state": "CONNECTED"}, "gridCongestionStatus": 0},
+            SmartBatteryActivityStatus.UNKNOWN,
+            SmartBatteryConnectionStatus.UNKNOWN,
+            SmartBatteryGridCongestionStatus.UNKNOWN,
+        ),
+        ({"activityStatus": None, "status": None, "gridCongestionStatus": None}, None, None, None),
+        ({"activityStatus": "", "status": "", "gridCongestionStatus": ""}, None, None, None),
+        ({}, None, None, None),
+    ],
+    ids=["known", "lowercase", "unrecognised", "wrong-type", "null", "empty", "absent"],
+)
+async def test_smart_battery_details_activity_connection_and_congestion_status(
+    aresponses, summary_extra, activity, connection, congestion
+):
+    """smart_battery_details keeps known and unrecognised values and leaves null, empty and absent as None."""
+    aresponses.add(
+        SIMPLE_DATA_URL,
+        "/",
+        "POST",
+        aresponses.Response(
+            text=_details_response({}, summary_extra),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        ),
+    )
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        details = await api.smart_battery_details("device_id")
+        await api.close()
+
+    assert details is not None
+    assert details.smart_battery_summary.activity_status is activity
+    assert details.smart_battery_summary.connection_status is connection
+    assert details.smart_battery_summary.grid_congestion_status is congestion
 
 
 @pytest.mark.asyncio
