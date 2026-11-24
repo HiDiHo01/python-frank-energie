@@ -4906,16 +4906,33 @@ def _parse_smart_battery_status(raw_status: object) -> SmartBatteryStatus:
     return SmartBatteryStatus.UNKNOWN
 
 
+_STATUS_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_.-]{1,64}", re.ASCII)
+_LOGGED_IGNORED_STATUS_TYPES: set[tuple[str, str]] = set()
+
+
 def _lenient_enum[EnumT: StrEnum](enum_type: type[EnumT], raw: Any) -> EnumT | None:
     """Return ``enum_type(raw)``, or ``None`` when the API sent no value.
 
     Unlike ``_optional_enum`` this never raises, so an optional informational
     field cannot make the whole payload unparseable. Only ``None`` and ``""``
-    count as "no value"; anything else, including a value of the wrong type,
-    goes through the enum so a ``_FallbackStrEnum`` maps it to ``UNKNOWN`` and
-    logs it once instead of hiding it as ``None``.
+    count as "no value".
+
+    A status-shaped token (letters, digits, ``_``, ``-`` and ``.``, at most 64
+    characters) goes through the enum, so a ``_FallbackStrEnum`` maps an
+    unrecognised one to ``UNKNOWN`` and logs that token once. Anything else (a
+    value of the wrong type, free text, whitespace, control or non-ASCII
+    characters) is never logged: it becomes ``UNKNOWN`` and only its type is
+    reported, once per enum and type.
     """
-    return enum_type(raw) if raw not in (None, "") else None
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str) and _STATUS_TOKEN_PATTERN.fullmatch(raw):
+        return enum_type(raw)
+    enum_name, type_name = enum_type.__name__, type(raw).__name__
+    if (enum_name, type_name) not in _LOGGED_IGNORED_STATUS_TYPES:
+        _LOGGED_IGNORED_STATUS_TYPES.add((enum_name, type_name))
+        _LOGGER.warning("Ignoring non-status %s value for %s; using UNKNOWN", type_name, enum_name)
+    return enum_type.__members__.get("UNKNOWN")
 
 
 @dataclass
