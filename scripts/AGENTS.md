@@ -1,6 +1,6 @@
 # AGENTS.md
 
-These instructions apply to `scripts/` and its descendants. Read the repository [AGENTS.md](https://github.com/HiDiHo01/python-frank-energie/blob/main/AGENTS.md), [AI_POLICY.md](https://github.com/HiDiHo01/python-frank-energie/blob/main/AI_POLICY.md) and the local [AI_POLICY.md](https://github.com/HiDiHo01/python-frank-energie/blob/main/scripts/AI_POLICY.md) before working here. The root requirements remain mandatory; report conflicts and do not weaken them.
+These instructions apply to `scripts/` and its descendants. Read the repository [AGENTS.md](../AGENTS.md), [AI_POLICY.md](../AI_POLICY.md) and the local [AI_POLICY.md](AI_POLICY.md) before working here. The root requirements remain mandatory; report conflicts and do not weaken them.
 
 ## Diagnostic and maintenance scripts
 
