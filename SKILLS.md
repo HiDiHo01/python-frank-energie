@@ -622,3 +622,24 @@ zensical serve
   with a mocked response and assert one request only. This characterizes the
   current behavior; it is not evidence that a provider actually rejects the
   field and must not introduce a fallback or retry.
+
+
+## Remove an unsupported GraphQL operation and its public client method
+
+- Confirm the failing operation at the live request boundary, but do not infer
+  deprecation or provider schema details from a generic validation error. In
+  issue #294, the operation declared a `siteReference` variable that its
+  selection never used; a live request independently returned a GraphQL
+  validation error. That establishes the checked-in operation is unusable in
+  the tested context, not that Frank Energie formally deprecated the root
+  fields.
+- Trace the operation through its client method, request variables, response
+  model/parser, tests, package exports, documentation, rate-limit guarantees
+  and known downstream consumers. Remove operation-specific implementation
+  artifacts only when repository-wide usage confirms they are not shared.
+- Treat removal of a public method or importable model as a breaking API
+  change. Document the absence of a drop-in replacement; a related usage or
+  billing operation must not be described as equivalent without verified
+  semantics.
+- Do not add an assumed replacement GraphQL selection. Frank Energie schema
+  introspection is prohibited; preserve unknown provider behavior as unknown.
