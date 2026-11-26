@@ -210,9 +210,10 @@ class SmartBatteryConnectionStatus(_FallbackStrEnum):
 class SmartBatteryGridCongestionStatus(_FallbackStrEnum):
     """Whether a Smart Battery takes part in grid-congestion steering.
 
-    Only ``NOT_ENROLLED`` has been observed from the API. ``ENROLLED`` and
-    ``ACTIVE`` are inferred from the Frank Energie app's translation keys, so
-    treat them as unconfirmed; any other value falls back to ``UNKNOWN`` and is
+    ``NOT_ENROLLED`` and ``ENROLLED`` have been observed from the API;
+    ``ENROLLED`` was returned by two Sessy batteries on 2026-11-24.
+    ``ACTIVE`` is inferred from the Frank Energie app's translation keys and
+    remains unverified. Any other value falls back to ``UNKNOWN`` and is
     logged once.
     """
 
