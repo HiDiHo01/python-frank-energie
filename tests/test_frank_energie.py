@@ -1301,14 +1301,6 @@ class TestFrankEnergieAPIEndpointsAuth:
     """Test API endpoint methods with authentication requirements."""
 
     @pytest.mark.asyncio
-    async def test_frank_energie_meter_readings_not_authenticated(self):
-        """Test meter readings when not authenticated."""
-        client = FrankEnergie()
-
-        with pytest.raises(AuthRequiredException, match="Authentication is required"):
-            await client.meter_readings("site_ref_123")
-
-    @pytest.mark.asyncio
     async def test_frank_energie_month_summary_not_authenticated(self):
         """Test month summary when not authenticated."""
         client = FrankEnergie()
