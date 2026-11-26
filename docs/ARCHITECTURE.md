@@ -227,11 +227,12 @@ behavior and additional values remain unverified. The API does not allow
 schema introspection, so complete value lists cannot be queried; verify new
 values only with sanitised observations from an authorised account.
 
-A field rejected by GraphQL currently fails the details operation through
-the existing request-error path; no provider-specific rejection has been
-observed. Do not add a fallback query or retry until a real rejection and
-the affected provider contract are established. A fallback would need to
-preserve typed authentication, rate-limit, network and cancellation behavior.
+A field rejected by GraphQL is not recovered by a compatibility
+fallback; the details method follows its existing request-failure contract.
+No provider-specific rejection has been observed. Do not add a fallback
+query or retry until a real rejection and the affected provider contract are
+established. Any fallback would need to preserve typed authentication,
+rate-limit, network and cancellation behavior.
 
 ### Migrating from the removed MonthSummary parser
 
