@@ -84,10 +84,6 @@ from .weighted_average_prices import WeightedAveragePrices
 T = TypeVar("T")
 
 _LOGGER = logging.getLogger(__name__)
-
-if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 _DISTRIBUTION_NAME = "python-frank-energie"
 _SMART_BATTERY_NOT_FOUND_LOG = "Smart battery not found for device_id: %s"
 # Fixed, non-identifying detail failure categories; never include upstream text or IDs.
