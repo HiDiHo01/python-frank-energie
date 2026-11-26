@@ -11,6 +11,7 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
+from python_frank_energie.frank_energie import FrankEnergieQuery
 from python_frank_energie.domain import (
     SmartBatteryActivityStatus,
     SmartBatteryConnectionStatus,
@@ -496,6 +497,53 @@ async def test_smart_battery_details_requests_status_fields(aresponses) -> None:
             break
     for field_name in ("activityStatus", "gridCongestionStatus", "status"):
         assert field_name in summary_selection.split(), field_name
+
+
+@pytest.mark.asyncio
+async def test_smart_battery_graphql_field_validation_error_keeps_request_contract(aresponses) -> None:
+    """A mocked field-validation error raises the existing request exception without retrying."""
+    requests: list[dict[str, Any]] = []
+
+    async def handler(request: Any) -> Any:
+        requests.append(await request.json())
+        return aresponses.Response(
+            text=json.dumps(
+                {
+                    "data": None,
+                    "errors": [
+                        {
+                            "message": "Graphql validation error",
+                            "path": ["smartBatterySummary", "gridCongestionStatus"],
+                        }
+                    ],
+                }
+            ),
+            status=200,
+            headers={"Content-Type": "application/json"},
+        )
+
+    aresponses.add(SIMPLE_DATA_URL, "/", "POST", handler)
+
+    async with aiohttp.ClientSession() as session:
+        api = FrankEnergie(session, auth_token="a", refresh_token="b")  # noqa: S106
+        query = FrankEnergieQuery(
+            """
+            query SmartBattery($deviceId: String!) {
+                smartBatterySummary(deviceId: $deviceId) {
+                    gridCongestionStatus
+                }
+            }
+            """,
+            "SmartBattery",
+            {"deviceId": "synthetic-device"},
+        )
+        with pytest.raises(FrankEnergieException, match="Request failed: Graphql validation error"):
+            await api._query(query)
+        await api.close()
+
+    assert len(requests) == 1
+    assert requests[0]["operationName"] == "SmartBattery"
+    assert requests[0]["variables"] == {"deviceId": "synthetic-device"}
 
 
 _UUID_SHAPED = "123e4567-e89b-12d3-a456-426614174000"
