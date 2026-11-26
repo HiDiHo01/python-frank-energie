@@ -405,6 +405,12 @@ async def test_smart_battery_details_trading_algorithm(aresponses, trading_algor
             SmartBatteryGridCongestionStatus.UNKNOWN,
         ),
         (
+            {"activityStatus": "UNKNOWN", "status": "UNKNOWN", "gridCongestionStatus": "UNKNOWN"},
+            SmartBatteryActivityStatus.UNKNOWN,
+            SmartBatteryConnectionStatus.UNKNOWN,
+            SmartBatteryGridCongestionStatus.UNKNOWN,
+        ),
+        (
             {"activityStatus": None, "status": "NO_RECENT_DATA", "gridCongestionStatus": "NOT_ENROLLED"},
             None,
             SmartBatteryConnectionStatus.NO_RECENT_DATA,
@@ -425,6 +431,7 @@ async def test_smart_battery_details_trading_algorithm(aresponses, trading_algor
         "lowercase",
         "unrecognised",
         "wrong-type",
+        "explicit-unknown",
         "no-recent-data",
         "no-recent-data-lowercase",
         "null",
@@ -435,7 +442,7 @@ async def test_smart_battery_details_trading_algorithm(aresponses, trading_algor
 async def test_smart_battery_details_activity_connection_and_congestion_status(
     aresponses, summary_extra, activity, connection, congestion
 ):
-    """smart_battery_details keeps known and unrecognised values and leaves null, empty and absent as None."""
+    """Keep explicit UNKNOWN distinct from null, empty and absent optional status values."""
     aresponses.add(
         SIMPLE_DATA_URL,
         "/",
