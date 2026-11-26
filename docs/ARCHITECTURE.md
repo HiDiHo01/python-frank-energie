@@ -204,13 +204,34 @@ the battery-status vocabulary; anything else (an identifier-shaped string, free
 text, a value of the wrong type) becomes `UNKNOWN` and only a redacted category
 is logged, once per enum.
 
-Only some values have been observed from the API: `CHARGING`, `DISCHARGING` and
-`STANDBY` for activity, `CONNECTED` and `NO_RECENT_DATA` for connection and
-`NOT_ENROLLED` for grid congestion. `SmartBatteryGridCongestionStatus.ENROLLED`
-and `.ACTIVE` are inferred from the Frank Energie app's translation keys and
-remain unconfirmed. The API does not allow schema introspection, so complete
-value lists cannot be queried; verify new values with sanitised observations
-from an authorised account.
+Observed values are limited to the following provider evidence:
+
+- Activity: `CHARGING`, `DISCHARGING` and `STANDBY` (HYXI author report),
+  plus `CHARGING` on two Sessy batteries.
+- Connection: `CONNECTED` (HYXI and two Sessy batteries) and
+  `NO_RECENT_DATA` (one HYXI observation).
+- Grid congestion: `NOT_ENROLLED` (HYXI author report) and `ENROLLED`
+  (two Sessy batteries in an independent, read-only diagnostic on
+  2026-11-24). `ACTIVE` remains inferred from the Frank Energie app's
+  translation keys and is not verified.
+
+The combined Sessy observation had `activityStatus=CHARGING`,
+`status=CONNECTED`, `gridCongestionStatus=ENROLLED` and
+`lastKnownStatus=null`. The SDK maps the absent steering plan to
+`SmartBatteryStatus.UNKNOWN` while retaining the three other fields
+independently. A synthetic regression test locks this separation.
+
+This is a small set of observations, not a provider-wide compatibility
+guarantee or a complete enum contract. Anker acceptance, offline/unreachable
+behavior and additional values remain unverified. The API does not allow
+schema introspection, so complete value lists cannot be queried; verify new
+values only with sanitised observations from an authorised account.
+
+A field rejected by GraphQL currently fails the details operation through
+the existing request-error path; no provider-specific rejection has been
+observed. Do not add a fallback query or retry until a real rejection and
+the affected provider contract are established. A fallback would need to
+preserve typed authentication, rate-limit, network and cancellation behavior.
 
 ### Migrating from the removed MonthSummary parser
 
