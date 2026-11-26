@@ -51,7 +51,6 @@ from .models import (
     Authentication,
     ContractPriceResolutionChangeResult,
     ContractPriceResolutionState,
-    EnergyConsumption,
     EnodeChargers,
     EnodeVehicle,
     EnodeVehicles,
@@ -1286,43 +1285,6 @@ class FrankEnergie:
             )
 
         return self._auth
-
-    async def meter_readings(self, site_reference: str) -> EnergyConsumption | None:
-        """Retrieve the meter_readings.
-
-        Args:
-            month: The month for which to retrieve the summary. Defaults to the current month.
-
-        Returns:
-            The Meter Readings.
-
-        Raises:
-            AuthRequiredException: If the client is not authenticated.
-            FrankEnergieException: If the request fails.
-        """
-        if not self.is_authenticated:
-            raise AuthRequiredException("Authentication is required.")
-
-        query = FrankEnergieQuery(
-            """
-            query ActualAndExpectedMeterReadings($siteReference: String!) {
-            completenessPercentage
-            actualMeterReadings {
-                date
-                consumptionKwh
-            }
-            expectedMeterReadings {
-                date
-                consumptionKwh
-            }
-            }
-            """,
-            "ActualAndExpectedMeterReadings",
-            {"siteReference": site_reference},
-        )
-
-        response = await self._query(query)
-        return EnergyConsumption.from_dict(response)
 
     async def month_summary(self, site_reference: str) -> MonthSummary | None:
         """Retrieve the month summary for the specified site.
