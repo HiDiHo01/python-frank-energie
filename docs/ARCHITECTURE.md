@@ -131,7 +131,6 @@ All operations in this table are async. Most result models come from `models.py`
 | Account | `user(site_reference=None)` | `User` |
 | Public prices | `prices(start_date=None, resolution="PT15M")`, `country_prices(country, start_date=None, end_date=None, resolution="PT15M")`, `be_prices(start_date=None, end_date=None, resolution="PT15M")`, `fr_prices(start_date=None, end_date=None, resolution="PT15M")` | `MarketPrices` |
 | Customer prices | `user_prices(site_reference, user_country, start_date, end_date=None, resolution="PT15M")` | `MarketPrices` |
-| Readings and billing | `meter_readings(site_reference)` | `EnergyConsumption \| None` |
 | Readings and billing | `month_summary(site_reference)` | `MonthSummary \| None` |
 | Readings and billing | `month_insights(site_reference, date)` | `MonthInsights \| None` |
 | Readings and billing | `invoices(site_reference)` | `Invoices` |
@@ -540,3 +539,19 @@ and returns `None` without leaking account identifiers. An explicit null
 without GraphQL errors is also `None`, but a missing/malformed response,
 unknown error or multiple errors remains a sanitized failure. The matching
 rule is provider-observation-based, not a guarantee of future API behavior.
+
+
+#### Removed meter-reading operation
+
+The former `meter_readings(site_reference)` method and its
+`ActualAndExpectedMeterReadings` GraphQL operation were removed because the
+operation fails GraphQL validation and no verified supported query is available
+as a replacement. The associated `EnergyConsumption` and
+`DailyConsumption` models were implementation-only and have also been
+removed.
+
+This is a breaking API change for consumers importing or calling these
+symbols. There is no drop-in replacement: `period_usage_and_costs()` exposes
+period usage and cost data, but it does not establish equivalent
+actual-versus-expected meter-reading semantics. Consumers must migrate only
+if that distinct data contract meets their requirements.
