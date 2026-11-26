@@ -613,3 +613,12 @@ zensical serve
   GraphQL introspection or speculative fallback requests. A mocked GraphQL
   field-validation error can characterize the existing exception path, but
   cannot establish that a provider rejects the field.
+
+- The SDK must not set a process-wide asyncio event-loop policy based on
+  `sys.platform`; event-loop policy belongs to the consuming application.
+  Keep the regression test asserting that importing the SDK under a simulated
+  Windows platform does not call `asyncio.set_event_loop_policy()`.
+- For a GraphQL field-validation error, test the existing exception contract
+  with a mocked response and assert one request only. This characterizes the
+  current behavior; it is not evidence that a provider actually rejects the
+  field and must not introduce a fallback or retry.
