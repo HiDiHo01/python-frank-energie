@@ -12,10 +12,10 @@ def test_sessy_summary_preserves_independent_status_fields() -> None:
     """Keep the observed Sessy activity, connection and congestion states independent of steering."""
     summary = SmartBatterySummary.from_dict(
         {
-            "lastKnownStateOfCharge": 50,
+            "lastKnownStateOfCharge": 42,
             "lastKnownStatus": None,
-            "lastUpdate": "2026-11-24T11:56:53.892Z",
-            "totalResult": 1.5,
+            "lastUpdate": "2025-01-01T00:00:00.000Z",
+            "totalResult": 0.0,
             "activityStatus": "CHARGING",
             "status": "CONNECTED",
             "gridCongestionStatus": "ENROLLED",
