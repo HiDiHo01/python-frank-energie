@@ -1579,41 +1579,23 @@ class TestFrankEnergieEdgeCasesAndRobustness:
 
 
 class TestFrankEnergieWindowsPlatformHandling:
-    """Test Windows-specific platform handling."""
+    """Test that the SDK leaves platform event-loop policy to the application."""
 
-    def test_frank_energie_windows_event_loop_policy(self):
-        """Test Windows event loop policy is set."""
-        import asyncio
+    def test_frank_energie_does_not_override_windows_event_loop_policy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Importing the SDK on Windows must not mutate the process-wide event-loop policy."""
+        import importlib
         import sys
-        from unittest.mock import MagicMock
+
+        import python_frank_energie.frank_energie as frank_energie_module
 
         original_platform = sys.platform
-        original_policy_class = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
-        mock_policy_class = MagicMock()
-        mock_policy = MagicMock()
-        mock_policy_class.return_value = mock_policy
+        with patch("asyncio.set_event_loop_policy") as mock_set_policy:
+            monkeypatch.setattr(sys, "platform", "win32")
+            importlib.reload(frank_energie_module)
+            mock_set_policy.assert_not_called()
 
-        # Set the attribute before changing the platform to bypass standard library __getattr__ bug
-        asyncio.WindowsSelectorEventLoopPolicy = mock_policy_class
-        try:
-            sys.platform = "win32"
-            with patch("asyncio.set_event_loop_policy") as mock_set_policy:
-                # Re-import the module to trigger the Windows check
-                import importlib
-
-                import python_frank_energie.frank_energie
-
-                importlib.reload(python_frank_energie.frank_energie)
-
-                # Verify Windows event loop policy was set
-                mock_set_policy.assert_called_with(mock_policy)
-        finally:
-            sys.platform = original_platform
-            if original_policy_class is None:
-                if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
-                    del asyncio.WindowsSelectorEventLoopPolicy
-            else:
-                asyncio.WindowsSelectorEventLoopPolicy = original_policy_class
+        monkeypatch.setattr(sys, "platform", original_platform)
+        importlib.reload(frank_energie_module)
 
 
 #
