@@ -598,3 +598,18 @@ zensical serve
   head/base and branch state rather than trusting a PR description that
   still says "Draft". Once a PR is merged and its branch deleted, start
   any new documentation change from current `main` in a separate PR.
+
+## Validate Smart Battery provider status evidence
+
+- Keep the provider and observation scope explicit. As of 2026-11-24,
+  HYXI author observations include `CHARGING`, `DISCHARGING`, `STANDBY`,
+  `CONNECTED` and `NOT_ENROLLED`; two Sessy devices independently returned
+  `CHARGING`, `CONNECTED` and `ENROLLED` with a null `lastKnownStatus`.
+- Preserve `lastKnownStatus`, `activityStatus`, `status` and
+  `gridCongestionStatus` independently. `ENROLLED` is observed;
+  `ACTIVE`, Anker acceptance and offline/unreachable semantics remain
+  unverified.
+- Add enum values only from sanitised, authorised observations. Never use
+  GraphQL introspection or speculative fallback requests. A mocked GraphQL
+  field-validation error can characterize the existing exception path, but
+  cannot establish that a provider rejects the field.
