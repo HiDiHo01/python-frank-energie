@@ -2069,56 +2069,6 @@ class DeliverySiteList:
 
 
 @dataclass
-class DailyConsumption:
-    def __init__(self, date: str, consumption_kwh: float):
-        """
-        Initialize a DailyConsumption instance.
-
-        Parameters:
-        - date (str): The date of the daily consumption.
-        - consumption_kwh (float): The energy consumption in kilowatt-hours for the specified date.
-        """
-        self.date = date
-        self.consumption_kwh = consumption_kwh
-
-
-@dataclass
-class EnergyConsumption:
-    def __init__(self, user_id: str, daily_consumption: list[DailyConsumption]):
-        """
-        Initialize an EnergyConsumption instance.
-
-        Parameters:
-        - user_id (str): The unique identifier of the user.
-        - daily_consumption (List[DailyConsumption]): A list of DailyConsumption instances representing daily energy consumption.
-        """
-        self.user_id = user_id
-        self.daily_consumption = daily_consumption
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> EnergyConsumption | None:
-        """
-        Create an EnergyConsumption instance from a dictionary.
-
-        Parameters:
-        - data (Dict[str, Any]): The input dictionary containing user and energy consumption data.
-
-        Returns:
-        - EnergyConsumption: An instance of the EnergyConsumption class.
-        """
-        user_data = data.get("user", {})
-        user_id = user_data.get("id")
-        daily_consumption_data = user_data.get("energyConsumption", {}).get("daily", [])
-
-        daily_consumption = [
-            DailyConsumption(date=item.get("date"), consumption_kwh=item.get("consumptionKwh"))
-            for item in daily_consumption_data
-        ]
-
-        return cls(user_id, daily_consumption)
-
-
-@dataclass
 class User:
     """User data, including the current status of the connection."""
 
