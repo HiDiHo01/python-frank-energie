@@ -11,7 +11,6 @@ import pytest
 from syrupy.assertion import SnapshotAssertion
 
 from python_frank_energie import FrankEnergie
-from python_frank_energie.frank_energie import FrankEnergieQuery
 from python_frank_energie.domain import (
     SmartBatteryActivityStatus,
     SmartBatteryConnectionStatus,
@@ -29,6 +28,7 @@ from python_frank_energie.exceptions import (
     RequestException,
     SmartBatteryNotFoundException,
 )
+from python_frank_energie.frank_energie import FrankEnergieQuery
 from python_frank_energie.models import SmartBatterySessions, SmartBatterySummary
 
 from . import load_fixtures
